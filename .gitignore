@@ -1,0 +1,12 @@
+.idea/
+.vscode/
+.DS_Store
+backend/target/
+backend/data/
+backend/application-local-secrets.properties
+.m2-cache/
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+*.log
+*.tsbuildinfo

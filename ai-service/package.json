@@ -1,0 +1,28 @@
+{
+  "name": "ims-resume-ai-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "model:setup": "node scripts/setup-model.mjs && node scripts/setup-jd-model.mjs",
+    "model:setup:jd": "node scripts/setup-jd-model.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:real": "AI_REAL_MODEL_TEST=true node --import tsx --test test/real-model.test.ts"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
+    "@fastify/multipart": "^9.2.1",
+    "fastify": "^5.6.1",
+    "resume-extract": "0.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "docx": "^9.5.1",
+    "pdf-lib": "^1.17.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

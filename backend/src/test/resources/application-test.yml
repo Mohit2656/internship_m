@@ -1,0 +1,39 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:ims;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+app:
+  profile-encryption-key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+  file-storage:
+    root: ${java.io.tmpdir}/ims-test-internship-documents
+    max-file-size-bytes: 10485760
+    resume-max-file-size-bytes: 5242880
+  jwt:
+    secret: test-only-secret-with-more-than-thirty-two-bytes
+    expiration-seconds: 3600
+    cookie-name: ims_auth
+    cookie-secure: false
+  cors:
+    allowed-origins: http://localhost:3000
+  resume-ai:
+    base-url: http://127.0.0.1:8091
+    connect-timeout-seconds: 1
+    read-timeout-seconds: 2
+  opportunity-ai:
+    base-url: http://127.0.0.1:8091
+    connect-timeout-seconds: 1
+    read-timeout-seconds: 2
+bootstrap:
+  admin:
+    email: ""
+    password: ""
+  students:
+    emails: ""
+    passwords: ""

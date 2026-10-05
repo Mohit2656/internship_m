@@ -1,0 +1,5 @@
+spring:
+  config:
+    # Intentionally required for the local profile: missing secrets should fail
+    # before any security bean is initialized, rather than as a JWT placeholder error.
+    import: file:./application-local-secrets.properties
