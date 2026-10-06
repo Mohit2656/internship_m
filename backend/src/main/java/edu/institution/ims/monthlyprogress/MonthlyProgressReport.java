@@ -26,12 +26,25 @@ public class MonthlyProgressReport {
     @Column(name = "photo_mime_type", nullable = false, length = 50) private String photoMimeType;
     @Column(name = "photo_size", nullable = false) private long photoSize;
     @Column(name = "exif_captured_at") private Instant exifCapturedAt;
-    @Column(name = "exif_latitude", precision = 9, scale = 6) private BigDecimal exifLatitude;
-    @Column(name = "exif_longitude", precision = 10, scale = 6) private BigDecimal exifLongitude;
+    @Column(name = "exif_latitude", precision = 12, scale = 9) private BigDecimal exifLatitude;
+    @Column(name = "exif_longitude", precision = 12, scale = 9) private BigDecimal exifLongitude;
     @Column(name = "location_name", length = 255) private String locationName;
     @Column(name = "submitted_at", nullable = false, updatable = false) private Instant submittedAt;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
+
+    @Enumerated(EnumType.STRING) @Column(name = "geo_verification_status", length = 40) private GeoVerificationStatus geoVerificationStatus;
+    @Column(name = "geo_verification_message", length = 500) private String geoVerificationMessage;
+    @Column(name = "capture_time_status", length = 32) private String captureTimeStatus;
+    @Column(name = "gps_altitude", precision = 18, scale = 6) private BigDecimal gpsAltitude;
+    @Column(name = "gps_timestamp") private Instant gpsTimestamp;
+    @Column(name = "camera_make", length = 255) private String cameraMake;
+    @Column(name = "camera_model", length = 255) private String cameraModel;
+    @Column(name = "image_width") private Integer imageWidth;
+    @Column(name = "image_height") private Integer imageHeight;
+    @Column(name = "exif_present") private Boolean exifPresent;
+    @Column(name = "gps_present") private Boolean gpsPresent;
+    @Column(name = "image_sha256", length = 64) private String imageSha256;
 
     protected MonthlyProgressReport() {}
 
@@ -72,4 +85,31 @@ public class MonthlyProgressReport {
     public Instant getSubmittedAt() { return submittedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+
+    public void applyMetadata(ValidatedProgressPhoto image) {
+        this.geoVerificationStatus = image.geoVerificationStatus();
+        this.geoVerificationMessage = image.geoVerificationMessage();
+        this.captureTimeStatus = image.captureTimeStatus();
+        this.gpsAltitude = image.gpsAltitude();
+        this.gpsTimestamp = image.gpsTimestamp();
+        this.cameraMake = image.cameraMake();
+        this.cameraModel = image.cameraModel();
+        this.imageWidth = image.imageWidth();
+        this.imageHeight = image.imageHeight();
+        this.exifPresent = image.exifPresent();
+        this.gpsPresent = image.gpsPresent();
+        this.imageSha256 = image.imageSha256();
+    }
+    public GeoVerificationStatus getGeoVerificationStatus() { return geoVerificationStatus; }
+    public String getGeoVerificationMessage() { return geoVerificationMessage; }
+    public String getCaptureTimeStatus() { return captureTimeStatus; }
+    public BigDecimal getGpsAltitude() { return gpsAltitude; }
+    public Instant getGpsTimestamp() { return gpsTimestamp; }
+    public String getCameraMake() { return cameraMake; }
+    public String getCameraModel() { return cameraModel; }
+    public Integer getImageWidth() { return imageWidth; }
+    public Integer getImageHeight() { return imageHeight; }
+    public Boolean getExifPresent() { return exifPresent; }
+    public Boolean getGpsPresent() { return gpsPresent; }
+    public String getImageSha256() { return imageSha256; }
 }

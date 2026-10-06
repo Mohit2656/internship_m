@@ -24,4 +24,16 @@ public record MonthlyProgressReportResponse(
         BigDecimal exifLatitude,
         BigDecimal exifLongitude,
         String locationName,
-        Instant submittedAt) {}
+        Instant submittedAt,
+        GeoVerificationStatus geoVerificationStatus,
+        String geoVerificationMessage,
+        String captureTimeStatus,
+        BigDecimal gpsAltitude,
+        Instant gpsTimestamp,
+        String cameraMake,
+        String cameraModel,
+        Integer imageWidth,
+        Integer imageHeight,
+        Boolean exifPresent,
+        Boolean gpsPresent,
+        String imageSha256) {}

@@ -65,11 +65,19 @@ public class MonthlyProgressService {
         if (reports.existsByStudentInternshipIdAndReportMonthNumber(internship.getId(), monthNumber)) throw duplicate();
         ValidatedProgressPhoto image = photos.validate(photo);
         String storageKey;
-        try (InputStream input = photo.getInputStream()) { storageKey = storage.store(input, image.extension()); }
+        try (InputStream input = new java.io.ByteArrayInputStream(image.bytes())) { storageKey = storage.store(input, image.extension()); }
         catch (IOException exception) { throw error(HttpStatus.BAD_REQUEST, "PHOTO_READ_FAILED", "The uploaded photograph could not be read"); }
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+                @Override public void afterCompletion(int status) {
+                    if (status != STATUS_COMMITTED) storage.delete(storageKey);
+                }
+            });
+        }
         try {
             MonthlyProgressReport report = new MonthlyProgressReport(internship, monthNumber, period.start(), period.end(), work,
                     storageKey, image.originalName(), image.mimeType(), image.size(), image.capturedAt(), image.latitude(), image.longitude(), clock.instant());
+            report.applyMetadata(image);
             return response(reports.saveAndFlush(report));
         } catch (DataIntegrityViolationException exception) {
             storage.delete(storageKey);
@@ -181,7 +189,19 @@ public class MonthlyProgressService {
                 internship.getId(), internship.getCompanyName(), internship.getInternshipMode().getLabel(),
                 report.getReportMonthNumber(), report.getPeriodStart(), report.getPeriodEnd(), report.getWorkDescription(),
                 report.getPhotoOriginalName(), report.getPhotoMimeType(), report.getPhotoSize(), report.getExifCapturedAt(),
-                report.getExifLatitude(), report.getExifLongitude(), report.getLocationName(), report.getSubmittedAt());
+                report.getExifLatitude(), report.getExifLongitude(), report.getLocationName(), report.getSubmittedAt(),
+                report.getGeoVerificationStatus(),
+                report.getGeoVerificationMessage(),
+                report.getCaptureTimeStatus(),
+                report.getGpsAltitude(),
+                report.getGpsTimestamp(),
+                report.getCameraMake(),
+                report.getCameraModel(),
+                report.getImageWidth(),
+                report.getImageHeight(),
+                report.getExifPresent(),
+                report.getGpsPresent(),
+                report.getImageSha256());
     }
     private static MonthlyProgressException duplicate() { return error(HttpStatus.CONFLICT, "MONTHLY_REPORT_ALREADY_SUBMITTED", "A report has already been submitted for this internship month"); }
     private static MonthlyProgressException invalidMonth() { return error(HttpStatus.BAD_REQUEST, "INVALID_REPORT_MONTH", "The report month is outside the registered internship period"); }

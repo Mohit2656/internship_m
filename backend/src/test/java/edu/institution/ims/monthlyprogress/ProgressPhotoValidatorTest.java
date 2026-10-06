@@ -1,0 +1,78 @@
+package edu.institution.ims.monthlyprogress;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.*;
+import java.nio.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.*;
+import static org.assertj.core.api.Assertions.*;
+
+class ProgressPhotoValidatorTest {
+    private final ProgressPhotoValidator validator = new ProgressPhotoValidator(5242880);
+    static byte[] fixture(boolean gps, boolean capture, int degrees) throws Exception {
+        ByteBuffer t = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN);
+        t.put((byte)'I').put((byte)'I').putShort((short)42).putInt(8);
+        t.position(206);
+        directory(t,8,List.of(ascii(0x10f,"Test Camera"),ascii(0x110,"Model, \"One\""),number(0x8769,62),number(0x8825,gps?92:0)));
+        directory(t,62,capture?List.of(ascii(0x9003,"2026:10:06 16:02:00"),ascii(0x9011,"+05:30")):List.of());
+        if(gps) directory(t,92,List.of(ascii(1,"N"),rationals(2,degrees,7,30),ascii(3,"E"),rationals(4,79,5,15),new Tag(5,1,1,new byte[]{0}),rationals(6,317),rationals(7,10,32,0),ascii(29,"2026:10:06")));
+        else { t.putInt(8+2+3*12+8,0); t.putShort(8,(short)3); t.putInt(8+2+3*12,0); }
+        byte[] jpeg=plain("jpeg"); ByteArrayOutputStream out=new ByteArrayOutputStream();
+        out.write(jpeg,0,2);out.write(0xff);out.write(0xe1);int length=t.position()+8;
+        out.write(length>>>8);out.write(length&255);out.write("Exif\0\0".getBytes(StandardCharsets.US_ASCII));out.write(t.array(),0,t.position());out.write(jpeg,2,jpeg.length-2);return out.toByteArray();
+    }
+    private record Tag(int tag,int type,int count,byte[] data) {}
+    private static Tag ascii(int tag,String value) {return new Tag(tag,2,value.length()+1,(value+"\0").getBytes(StandardCharsets.US_ASCII));}
+    private static Tag number(int tag,int value) {return new Tag(tag,4,1,ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array());}
+    private static Tag rationals(int tag,int... values) {ByteBuffer b=ByteBuffer.allocate(values.length*8).order(ByteOrder.LITTLE_ENDIAN);for(int v:values)b.putInt(v).putInt(1);return new Tag(tag,5,values.length,b.array());}
+    private static void directory(ByteBuffer b,int offset,List<Tag> tags) {
+        b.putShort(offset,(short)tags.size());int entry=offset+2;
+        for(Tag tag:tags){ b.putShort(entry,(short)tag.tag()).putShort(entry+2,(short)tag.type()).putInt(entry+4,tag.count());
+            if(tag.data().length<=4){for(int n=0;n<tag.data().length;n++)b.put(entry+8+n,tag.data()[n]);}
+            else {b.putInt(entry+8,b.position());b.put(tag.data());}entry+=12;
+        }b.putInt(entry,0);
+    }
+    static byte[] plain(String format) throws Exception {ByteArrayOutputStream out=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(16,12,BufferedImage.TYPE_INT_RGB),format,out);return out.toByteArray();}
+    private ValidatedProgressPhoto read(String name,byte[] bytes) {return validator.validate(new MockMultipartFile("photo",name,name.endsWith("png")?"image/png":"image/jpeg",bytes));}
+    @Test void completeExifGpsAndOffsetTimeAreReadFromRealJpeg() throws Exception {
+        var photo=read("complete.jpg",fixture(true,true,21));
+        assertThat(photo.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
+        assertThat(photo.latitude()).isEqualByComparingTo("21.125");assertThat(photo.longitude()).isEqualByComparingTo("79.0875");
+        assertThat(photo.gpsAltitude()).isEqualByComparingTo("317");assertThat(photo.gpsTimestamp()).isEqualTo(Instant.parse("2026-10-06T10:32:00Z"));
+        assertThat(photo.capturedAt()).isEqualTo(Instant.parse("2026-10-06T10:32:00Z"));assertThat(photo.captureTimeStatus()).isEqualTo("PRESENT");
+        assertThat(photo.cameraMake()).isEqualTo("Test Camera");assertThat(photo.cameraModel()).isEqualTo("Model, \"One\"");
+        assertThat(photo.exifPresent()).isTrue();assertThat(photo.gpsPresent()).isTrue();assertThat(photo.imageWidth()).isEqualTo(16);assertThat(photo.imageHeight()).isEqualTo(12);
+    }
+    @Test void absentGpsAndPngRemainValid() throws Exception {
+        for(var photo:List.of(read("plain.jpg",plain("jpeg")),read("plain.png",plain("png")))) {
+            assertThat(photo.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.MISSING_GPS);assertThat(photo.latitude()).isNull();assertThat(photo.longitude()).isNull();
+            assertThat(photo.capturedAt()).isNull();assertThat(photo.gpsPresent()).isFalse();assertThat(photo.exifPresent()).isFalse();
+            assertThat(photo.geoVerificationMessage()).isEqualTo("No GPS coordinates were found in the image EXIF metadata.");
+        }
+    }
+    @Test void invalidGpsAndMissingCaptureAreIndependent() throws Exception {
+        assertThat(read("invalid.jpg",fixture(true,true,91)).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.INVALID_GPS);
+        var missing=read("missing-time.jpg",fixture(true,false,21));assertThat(missing.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);assertThat(missing.capturedAt()).isNull();assertThat(missing.captureTimeStatus()).isEqualTo("MISSING_CAPTURE_TIME");
+    }
+    @Test void hashTracksExactBytesAndChangesWithImageMetadata() throws Exception {
+        byte[] source=fixture(true,true,21);var original=read("one.jpg",source);assertThat(original.bytes()).isEqualTo(source);
+        assertThat(original.imageSha256()).isEqualTo(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source)));
+        assertThat(read("same.jpg",source).imageSha256()).isEqualTo(original.imageSha256());assertThat(read("different.jpg",fixture(true,true,22)).imageSha256()).isNotEqualTo(original.imageSha256());
+    }
+    @Test void corruptAndOversizedFilesFailCleanly() {
+        assertThatThrownBy(()->read("corrupt.jpg",new byte[]{(byte)255,(byte)216,1,(byte)255,(byte)217})).isInstanceOf(MonthlyProgressException.class);
+        assertThatThrownBy(()->read("oversize.jpg",new byte[5242881])).isInstanceOfSatisfying(MonthlyProgressException.class,e->{assertThat(e.getCode()).isEqualTo("PHOTO_TOO_LARGE");assertThat(e.getStatus().value()).isEqualTo(413);});
+    }
+    @Test void writeDeterministicLocalBrowserFixtures() throws Exception {
+        Path root=Path.of("target","exif-fixtures");Files.createDirectories(root);
+        Files.write(root.resolve("valid-gps.jpg"),fixture(true,true,21));Files.write(root.resolve("invalid-gps.jpg"),fixture(true,true,91));
+        Files.write(root.resolve("missing-capture.jpg"),fixture(true,false,21));Files.write(root.resolve("no-gps.jpg"),plain("jpeg"));Files.write(root.resolve("no-exif.png"),plain("png"));
+        Files.write(root.resolve("corrupt.jpg"),new byte[]{1,2,3});Files.write(root.resolve("oversize.jpg"),new byte[5242881]);
+    }
+}

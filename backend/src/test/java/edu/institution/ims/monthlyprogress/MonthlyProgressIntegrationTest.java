@@ -85,6 +85,9 @@ class MonthlyProgressIntegrationTest {
                 .andExpect(jsonPath("$.periodStart").value("2026-10-17"))
                 .andExpect(jsonPath("$.periodEnd").value("2026-11-16"))
                 .andExpect(jsonPath("$.workDescription").value("Completed API integration and testing."))
+                .andExpect(jsonPath("$.geoVerificationStatus").value("MISSING_GPS"))
+                .andExpect(jsonPath("$.exifPresent").value(false))
+                .andExpect(jsonPath("$.imageWidth").value(4))
                 .andExpect(jsonPath("$.exifLatitude").value(org.hamcrest.Matchers.nullValue()))
                 .andReturn();
         long id = json.readTree(created.getResponse().getContentAsString()).get("id").asLong();
@@ -112,6 +115,8 @@ class MonthlyProgressIntegrationTest {
         Cookie student = loginCookie(studentA.getEmail(), "StudentPassword!23");
         MvcResult created = submit(student, 1, exifJpeg("geo.jpg", 21, 7, 30, 79, 5, 15), "On-site development work")
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.geoVerificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$.captureTimeStatus").value("MISSING_CAPTURE_TIME"))
                 .andExpect(jsonPath("$.exifLatitude").value(org.hamcrest.Matchers.closeTo(21.125, 0.0001)))
                 .andExpect(jsonPath("$.exifLongitude").value(org.hamcrest.Matchers.closeTo(79.0875, 0.0001)))
                 .andReturn();
@@ -130,6 +135,93 @@ class MonthlyProgressIntegrationTest {
         mvc.perform(get("/api/v1/student/monthly-progress")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/mentor/monthly-progress").cookie(student)).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/admin/monthly-progress").cookie(assignedMentor)).andExpect(status().isForbidden());
+    }
+
+    @Test void validationUsesRealImageBytesAndPreservesOriginal() throws Exception {
+        ProgressPhotoValidator validator = new ProgressPhotoValidator(5242880);
+        MockMultipartFile source = exifJpeg("original.jpg", 21, 7, 30, 79, 5, 15);
+        ValidatedProgressPhoto verified = validator.validate(source);
+        assertThat(verified.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
+        assertThat(verified.bytes()).isEqualTo(source.getBytes());
+        assertThat(verified.imageSha256()).isEqualTo(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(source.getBytes())));
+        assertThat(verified.cameraMake()).isNull();
+        assertThat(verified.capturedAt()).isNull();
+        assertThat(validator.validate(exifJpeg("zero.jpg", 0, 0, 0, 0, 0, 0)).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
+        assertThat(validator.validate(exifJpeg("invalid.jpg", 91, 0, 0, 79, 0, 0)).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.INVALID_GPS);
+        assertThat(validator.validate(exifJpeg("invalid.jpg", 21, 60, 0, 79, 0, 0)).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.INVALID_GPS);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> validator.validate(new MockMultipartFile("photo", "corrupt.jpg", "image/jpeg", new byte[]{1,2,3}))).isInstanceOf(MonthlyProgressException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> validator.validate(new MockMultipartFile("photo", "large.png", "image/png", new byte[5242881]))).isInstanceOf(MonthlyProgressException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> validator.validate(new MockMultipartFile("photo", "fake.jpg", "image/jpeg", png("real.png").getBytes()))).isInstanceOf(MonthlyProgressException.class);
+        Cookie session = loginCookie(studentA.getEmail(), "StudentPassword!23");
+        MvcResult created = submit(session,1,source,"Work").andExpect(status().isCreated()).andReturn();
+        long id = json.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+        MonthlyProgressReport stored = reports.findById(id).orElseThrow();
+        assertThat(stored.getImageSha256()).isEqualTo(verified.imageSha256());
+        assertThat(stored.getGeoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
+        mvc.perform(get("/api/v1/student/monthly-progress/{id}",id).cookie(session)).andExpect(status().isOk()).andExpect(jsonPath("$.imageSha256").value(verified.imageSha256()));
+        byte[] downloaded = mvc.perform(get("/api/v1/student/monthly-progress/{id}/photo",id).cookie(session)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        assertThat(downloaded).isEqualTo(source.getBytes());
+    }
+
+    @Test void separatelySubmittedCoordinatesCannotVerifyImage() throws Exception {
+        mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(png("no-gps.png"))
+                .file(new MockMultipartFile("workDescription","","text/plain","Work".getBytes(StandardCharsets.UTF_8)))
+                .param("gpsLatitude","21.1458").param("gpsLongitude","79.0882").param("geoVerificationStatus","VERIFIED")
+                .cookie(loginCookie(studentA.getEmail(),"StudentPassword!23")))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.geoVerificationStatus").value("MISSING_GPS"))
+                .andExpect(jsonPath("$.exifLatitude").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test void monthlyMetadataExportsUseSelectedFieldsAndAuthorizedScope() throws Exception {
+        Cookie student = loginCookie(studentA.getEmail(),"StudentPassword!23");
+        submit(student,1,exifJpeg("export.jpg",21,7,30,79,5,15),"Work").andExpect(status().isCreated());
+        Cookie adminSession = loginCookie(admin.getEmail(),"AdminPassword!23");
+        List<String> fields = List.of("uid","geoVerificationStatus","gpsLatitude","imageSha256","exifPresent");
+        for (String format : List.of("CSV","XLSX")) {
+            String body = json.writeValueAsString(Map.of("reportType","MONTHLY_PROGRESS","fields",fields,"filters",Map.of("geoVerificationStatus","VERIFIED","gpsPresent","true","exifPresent","true"),"studentIds",List.of(studentA.getId()),"page",0,"format",format));
+            MvcResult result = mvc.perform(post("/api/v1/admin/reports/generate").cookie(adminSession).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk()).andReturn();
+            if (format.equals("CSV")) assertThat(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("Geo Tag Status","GPS Latitude","Image SHA-256","VERIFIED","21.125");
+            else try (var workbook = org.apache.poi.ss.usermodel.WorkbookFactory.create(new ByteArrayInputStream(result.getResponse().getContentAsByteArray()))) {
+                var sheet = workbook.getSheet("Students");
+                assertThat(sheet.getRow(3).getCell(1).getStringCellValue()).isEqualTo("Geo Tag Status");
+                assertThat(sheet.getRow(4).getCell(1).getStringCellValue()).isEqualTo("VERIFIED");
+                assertThat(sheet.getRow(4).getCell(2).getNumericCellValue()).isEqualTo(21.125);
+                assertThat(sheet.getRow(4).getCell(3).getStringCellValue()).hasSize(64);
+            }
+        }
+        String body = json.writeValueAsString(Map.of("reportType","MONTHLY_PROGRESS","fields",fields,"filters",Map.of(),"studentIds",List.of(studentA.getId()),"page",0,"format","CSV"));
+        mvc.perform(post("/api/v1/mentor/reports/generate").cookie(loginCookie(mentorB.getEmail(),"MentorPassword!24")).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/mentor/reports/table").cookie(loginCookie(mentorA.getEmail(),"MentorPassword!23")).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].geoVerificationStatus").value("VERIFIED"));
+    }
+
+    @Test void captureTimestampIsPersistedIndependentlyAndInvalidDatesRemainNull() throws Exception {
+        MockMultipartFile valid = jpegWithCapture("2026:10:06 16:02:00");
+        var metadata = new ProgressPhotoValidator(5242880).validate(valid);
+        assertThat(metadata.capturedAt()).isEqualTo(Instant.parse("2026-10-06T16:02:00Z"));
+        assertThat(metadata.captureTimeStatus()).isEqualTo("PRESENT");
+        var invalid = new ProgressPhotoValidator(5242880).validate(jpegWithCapture("2026:02:30 16:02:00"));
+        assertThat(invalid.capturedAt()).isNull();
+        assertThat(invalid.captureTimeStatus()).isEqualTo("INVALID_METADATA");
+        Cookie session = loginCookie(studentA.getEmail(),"StudentPassword!23");
+        var result = submit(session,1,valid,"Work").andExpect(status().isCreated())
+                .andExpect(jsonPath("$.exifCapturedAt").value("2026-10-06T16:02:00Z")).andReturn();
+        var report = reports.findById(json.readTree(result.getResponse().getContentAsString()).get("id").asLong()).orElseThrow();
+        assertThat(report.getExifCapturedAt()).isEqualTo(metadata.capturedAt());
+        assertThat(report.getExifCapturedAt()).isNotEqualTo(report.getSubmittedAt());
+    }
+
+    private MockMultipartFile jpegWithCapture(String timestamp) throws IOException {
+        ByteArrayOutputStream exif = new ByteArrayOutputStream();
+        exif.write("Exif\0\0".getBytes(StandardCharsets.US_ASCII));
+        exif.write('I'); exif.write('I'); le16(exif,42); le32(exif,8); le16(exif,1);
+        le16(exif,0x8769); le16(exif,4); le32(exif,1); le32(exif,26); le32(exif,0);
+        le16(exif,1); le16(exif,0x9003); le16(exif,2); le32(exif,20); le32(exif,44); le32(exif,0);
+        exif.write(timestamp.getBytes(StandardCharsets.US_ASCII)); exif.write(0);
+        ByteArrayOutputStream image = new ByteArrayOutputStream(); ImageIO.write(new BufferedImage(4,4,BufferedImage.TYPE_INT_RGB),"jpeg",image);
+        byte[] source=image.toByteArray(), block=exif.toByteArray();
+        ByteArrayOutputStream output=new ByteArrayOutputStream();output.write(source,0,2);output.write(0xff);output.write(0xe1);
+        output.write((block.length+2) >>> 8);output.write((block.length+2)&255);output.write(block);output.write(source,2,source.length-2);
+        return new MockMultipartFile("photo","capture.jpg","image/jpeg",output.toByteArray());
     }
 
     private ResultActions submit(Cookie session, int month, MockMultipartFile photo, String work) throws Exception {

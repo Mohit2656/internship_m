@@ -17,6 +17,18 @@ export type MonthlyProgressReport = {
   photoOriginalName: string;
   photoMimeType: string;
   photoSize: number;
+  geoVerificationStatus: "VERIFIED" | "MISSING_GPS" | "INVALID_GPS" | "METADATA_READ_FAILED" | null;
+  geoVerificationMessage: string | null;
+  captureTimeStatus: "PRESENT" | "MISSING_CAPTURE_TIME" | "INVALID_METADATA" | null;
+  gpsAltitude: number | null;
+  gpsTimestamp: string | null;
+  cameraMake: string | null;
+  cameraModel: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+  exifPresent: boolean | null;
+  gpsPresent: boolean | null;
+  imageSha256: string | null;
   exifCapturedAt: string | null;
   exifLatitude: number | null;
   exifLongitude: number | null;

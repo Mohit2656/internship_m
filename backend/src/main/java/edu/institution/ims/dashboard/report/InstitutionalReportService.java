@@ -48,6 +48,7 @@ public class InstitutionalReportService {
         types.add(type("PLACEMENT","Placement Offer Analysis","Uses the recorded full-time employment offered flag; unknowns remain separate.",fields("category","Category","total","Total Students","offers","Placement Offer","noOffers","No Placement Offer","unknown","Offer Unavailable")));
         types.add(type("PLACEMENT_COMPANY","Company-wise Placement Offers","Recorded full-time offers grouped by company.",fields("company","Company","total","Total Students","offers","Placement Offer","noOffers","No Placement Offer")));
         types.add(type("WORKFLOW","Internship Status Analysis","Actual onboarding workflow states; not a completion or joining status.",fields("category","Category","total","Students")));
+        types.add(new Type("MONTHLY_PROGRESS","Monthly Progress Photos","Original image EXIF/GPS metadata; this does not prove physical presence.",true,"Attedance report ",monthlyFields()));
         types.add(new Type("ATTENDANCE","Attendance Records","One row per stored attendance record. Missing submissions are not absent records.",true,"Attedance report ",attendanceFields()));
         types.add(new Type("ATTENDANCE_SUMMARY","Student Attendance Summary","Present/absent counts and percentages among stored records. Working-day totals are unavailable.",true,"Attedance report ",summaryFields()));
         types.add(new Type("DIARY_ISSUANCE","Diary Issuance","Uses the existing diary-issued flag. Submission and evaluation data are unavailable.",true,"DATA reguired  from students",fields("category","Category","issued","Diary Issued","notIssued","Diary Not Issued","total","Total")));
@@ -60,6 +61,8 @@ public class InstitutionalReportService {
         filters.add(new DashboardReportCatalog.Filter("historyTo","Attendance through","date",List.of(),"Inclusive attendance record date"));
         filters.add(new DashboardReportCatalog.Filter("attendanceStatus","Attendance status","select",List.of(new DashboardReportCatalog.Choice("PRESENT","Present"),new DashboardReportCatalog.Choice("ABSENT","Absent")),"Filters stored attendance records"));
         filters.add(new DashboardReportCatalog.Filter("verificationStatus","Verification status","select",List.of(new DashboardReportCatalog.Choice("VERIFIED","Verified"),new DashboardReportCatalog.Choice("UNVERIFIED","Unverified")),"Filters stored attendance records"));
+        filters.add(new DashboardReportCatalog.Filter("geoVerificationStatus","Geo tag status","select",List.of(new DashboardReportCatalog.Choice("VERIFIED","Verified"),new DashboardReportCatalog.Choice("MISSING_GPS","Missing GPS"),new DashboardReportCatalog.Choice("INVALID_GPS","Invalid GPS"),new DashboardReportCatalog.Choice("METADATA_READ_FAILED","Metadata read failed")),"Monthly progress only"));
+        for (String id : List.of("gpsPresent","exifPresent")) filters.add(new DashboardReportCatalog.Filter(id,id,"select",List.of(new DashboardReportCatalog.Choice("true","Yes"),new DashboardReportCatalog.Choice("false","No")),"Monthly progress only"));
         if(!catalog.isAdmin(user)) {
             filters.add(new DashboardReportCatalog.Filter("paid","Stipend","select",List.of(new DashboardReportCatalog.Choice("PAID","Paid"),new DashboardReportCatalog.Choice("UNPAID","Unpaid")),""));
             filters.add(new DashboardReportCatalog.Filter("fullTimeOffered","Full-time employment offered","select",List.of(new DashboardReportCatalog.Choice("YES","Yes"),new DashboardReportCatalog.Choice("NO","No")),""));
@@ -71,6 +74,25 @@ public class InstitutionalReportService {
     }
     private List<DashboardReportCatalog.Field> identity() {
         return List.of(field("studentId","Student account ID",TEXT),field("uid","UID",TEXT),field("studentName","Student",TEXT),field("branch","Branch",TEXT),field("mentorName","Faculty Mentor",TEXT),field("company","Company",TEXT),field("workflow","Internship workflow",TEXT));
+    }
+    private List<DashboardReportCatalog.Field> monthlyFields() {
+        var f = new ArrayList<>(identity());
+        f.add(field("monthNumber","Report Month",NUMBER));
+        f.add(new DashboardReportCatalog.Field("geoVerificationStatus","Geo Tag Status","Photo metadata",TEXT,false,null,false));
+        f.add(new DashboardReportCatalog.Field("gpsLatitude","GPS Latitude","Photo metadata",NUMBER,false,null,false));
+        f.add(new DashboardReportCatalog.Field("gpsLongitude","GPS Longitude","Photo metadata",NUMBER,false,null,false));
+        f.add(new DashboardReportCatalog.Field("gpsAltitude","GPS Altitude","Photo metadata",NUMBER,false,null,false));
+        f.add(new DashboardReportCatalog.Field("gpsTimestamp","GPS Timestamp","Photo metadata",DATETIME,false,null,false));
+        f.add(new DashboardReportCatalog.Field("imageCaptureTimestamp","Image Capture Timestamp","Photo metadata",DATETIME,false,null,false));
+        f.add(new DashboardReportCatalog.Field("cameraMake","Camera Make","Photo metadata",TEXT,false,null,false));
+        f.add(new DashboardReportCatalog.Field("cameraModel","Camera Model","Photo metadata",TEXT,false,null,false));
+        f.add(new DashboardReportCatalog.Field("exifPresent","EXIF Present","Photo metadata",BOOLEAN,false,null,false));
+        f.add(new DashboardReportCatalog.Field("gpsPresent","GPS Present","Photo metadata",BOOLEAN,false,null,false));
+        f.add(new DashboardReportCatalog.Field("captureTimeStatus","Capture Time Status","Photo metadata",TEXT,false,null,false));
+        f.add(new DashboardReportCatalog.Field("exifVerificationStatus","EXIF Verification Status","Photo metadata",TEXT,false,null,false));
+        f.add(new DashboardReportCatalog.Field("geoVerificationMessage","EXIF Verification Message","Photo metadata",TEXT,false,null,false));
+        f.add(new DashboardReportCatalog.Field("imageSha256","Image SHA-256","Photo metadata",TEXT,false,null,false));
+        return f;
     }
     private List<DashboardReportCatalog.Field> attendanceFields() {
         List<DashboardReportCatalog.Field> f=new ArrayList<>(identity());
@@ -104,6 +126,15 @@ public class InstitutionalReportService {
         for(String id:List.of("historyFrom","historyTo","attendanceStatus","verificationStatus")) studentFilters.remove(id);
         // Mentor report filters share the same predicates; access still derives from the principal.
         String paid=studentFilters.remove("paid"), offer=studentFilters.remove("fullTimeOffered");
+        String monthlyWindow = "";
+        for (String id : List.of("geoVerificationStatus","gpsPresent","exifPresent")) {
+            String value = studentFilters.remove(id);
+            if (value != null && !value.isBlank()) {
+                if (!type.id().equals("MONTHLY_PROGRESS")) throw new IllegalArgumentException("Photo filters require a monthly progress report");
+                String column = id.equals("geoVerificationStatus") ? "geo_verification_status" : id.equals("gpsPresent") ? "gps_present" : "exif_present";
+                monthlyWindow += " and m." + column + " = :" + id;
+            }
+        }
         var scope=repository.scope(user,studentFilters);
         String studentSql=repository.reportStudentsSql(scope);
         MapSqlParameterSource params=new MapSqlParameterSource(scope.params().getValues());
@@ -118,6 +149,7 @@ public class InstitutionalReportService {
             if(authorized==null||authorized!=request.studentIds().size()) throw new AccessDeniedException("One or more students are outside your authorized report scope");
             studentSql+=" and u.id in (:reportIds)";
         }
+        for (String id : List.of("geoVerificationStatus","gpsPresent","exifPresent")) if (filters.containsKey(id) && !filters.get(id).isBlank()) params.addValue(id,id.equals("geoVerificationStatus") ? filters.get(id) : Boolean.valueOf(filters.get(id)));
         String base="("+studentSql+") s";
         String window="";
         LocalDate from=null,to=null;
@@ -132,6 +164,7 @@ public class InstitutionalReportService {
             window+=" and ar."+pair[1]+" = :"+pair[0];params.addValue(pair[0],filters.get(pair[0]));
         }
         String sql=switch(type.id()) {
+            case "MONTHLY_PROGRESS" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,m.id as recordId,m.report_month_number as monthNumber,m.geo_verification_status as geoVerificationStatus,m.exif_latitude as gpsLatitude,m.exif_longitude as gpsLongitude,m.gps_altitude as gpsAltitude,m.gps_timestamp as gpsTimestamp,m.exif_captured_at as imageCaptureTimestamp,m.camera_make as cameraMake,m.camera_model as cameraModel,m.exif_present as exifPresent,m.gps_present as gpsPresent,m.geo_verification_status as exifVerificationStatus,m.capture_time_status as captureTimeStatus,m.geo_verification_message as geoVerificationMessage,m.image_sha256 as imageSha256 from "+base+" join monthly_progress_reports m on m.student_internship_id=s.internshipId where 1=1"+monthlyWindow;
             case "ROSTER" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,s.source,s.stipend,s.offer from "+base;
             case "OVERALL" -> "select source as category,count(*) as total,cast(cast(count(*) as decimal(18,4))*100/nullif((select count(*) from "+base+"),0) as decimal(12,4)) as percentage from "+base+" group by source";
             case "STIPEND" -> "select source as category,count(*) as total,"+sums()+",sum(case when stipend is null then 1 else 0 end) as \"unknown\" from "+base+" group by source";
@@ -146,7 +179,7 @@ public class InstitutionalReportService {
             case "ATTENDANCE_SUMMARY" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,count(ar.id) as total,sum(case when ar.attendance_result='PRESENT' then 1 else 0 end) as present,sum(case when ar.attendance_result='ABSENT' then 1 else 0 end) as absent,sum(case when ar.verification_status='VERIFIED' then 1 else 0 end) as verified,sum(case when ar.verification_status='UNVERIFIED' then 1 else 0 end) as unverified,cast(100.0*sum(case when ar.attendance_result='PRESENT' then 1 else 0 end)/nullif(count(ar.id),0) as decimal(12,4)) as percentage from "+base+" left join attendance_records ar on ar.student_user_id=s.sid and ar.internship_id=s.internshipId"+window+" group by s.sid,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow";
             default -> throw new IllegalArgumentException("Unsupported report type");
         };
-        List<DashboardReportCatalog.Field> selected=type.fields();
+        List<DashboardReportCatalog.Field> selected=type.id().equals("MONTHLY_PROGRESS") ? type.fields().stream().filter(DashboardReportCatalog.Field::defaultSelected).toList() : type.fields();
         if(request.fields()!=null&&!request.fields().isEmpty()) {
             if(new HashSet<>(request.fields()).size()!=request.fields().size()) throw new IllegalArgumentException("Duplicate report fields");
             selected=request.fields().stream().map(id->type.fields().stream().filter(f->f.id().equals(id)).findFirst().orElseThrow(()->new IllegalArgumentException("Unsupported report field"))).toList();

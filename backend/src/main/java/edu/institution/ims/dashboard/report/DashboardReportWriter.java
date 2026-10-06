@@ -82,7 +82,7 @@ final class DashboardReportWriter implements AutoCloseable {
             if (text.length() > 32_767) throw new IllegalArgumentException("The '" + field.label() + "' cell exceeds Excel's 32,767 character limit. Use a narrower history date range or CSV.");
             if (field.kind() == DashboardReportCatalog.Kind.NUMBER && value instanceof Number number) {
                 cell.setCellValue(number.doubleValue());
-                if (!Set.of("stipend","percentage","studentId").contains(field.id())) totals.merge(n,number.doubleValue(),Double::sum);
+                if (!Set.of("stipend","percentage","studentId","gpsLatitude","gpsLongitude","gpsAltitude","monthNumber").contains(field.id())) totals.merge(n,number.doubleValue(),Double::sum);
             }
             else if (field.kind() == DashboardReportCatalog.Kind.DATE) cell.setCellValue(value instanceof java.sql.Date date ? date.toLocalDate() : LocalDate.parse(text));
             else if (field.kind() == DashboardReportCatalog.Kind.DATETIME) cell.setCellValue(instant(value).atZone(zone).toLocalDateTime());
@@ -164,7 +164,7 @@ final class DashboardReportWriter implements AutoCloseable {
         });
     }
     private CellStyle style(DashboardReportCatalog.Field field, boolean alternate) {
-        String format = switch (field.kind()) { case DATE -> "yyyy-mm-dd"; case DATETIME -> "yyyy-mm-dd hh:mm:ss"; case NUMBER -> field.id().equals("stipend") ? "\"INR\" #,##0.00" : field.id().equals("percentage") ? "0.0\"%\"" : historical ? "#,##0" : "0.######"; default -> "@"; };
+        String format = switch (field.kind()) { case DATE -> "yyyy-mm-dd"; case DATETIME -> "yyyy-mm-dd hh:mm:ss"; case NUMBER -> Set.of("gpsLatitude","gpsLongitude").contains(field.id()) ? "0.#########" : field.id().equals("gpsAltitude") ? "0.######" : field.id().equals("stipend") ? "\"INR\" #,##0.00" : field.id().equals("percentage") ? "0.0\"%\"" : historical ? "#,##0" : "0.######"; default -> "@"; };
         return styles.computeIfAbsent(format + alternate, unused -> {
             CellStyle style = workbook.createCellStyle(); style.setWrapText(true); style.setVerticalAlignment(VerticalAlignment.TOP);
             style.setDataFormat(workbook.createDataFormat().getFormat(format));

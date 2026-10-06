@@ -216,7 +216,7 @@ public class DashboardReportRepository {
                 var row = byId.get(rs.getLong("sid")); row.put("monthlyReportCount", ((Number) row.get("monthlyReportCount")).longValue() + 1);
                 String month = "Month " + rs.getInt("report_month_number") + ": ";
                 append(row, selected, "monthlyReports", month + describe(rs, "period_start", "period_end", "work_description", "submitted_at"));
-                append(row, selected, "monthlyPhotos", month + describe(rs, "photo_original_name", "photo_mime_type", "photo_size", "exif_captured_at", "exif_latitude", "exif_longitude", "location_name"));
+                append(row, selected, "monthlyPhotos", month + describe(rs, "photo_original_name", "photo_mime_type", "photo_size", "exif_captured_at", "exif_latitude", "exif_longitude", "location_name", "geo_verification_status", "geo_verification_message", "capture_time_status", "gps_altitude", "gps_timestamp", "camera_make", "camera_model", "image_width", "image_height", "exif_present", "gps_present", "image_sha256"));
             });
         }
         if (selected.contains("assignmentHistory")) batch("select a.student_user_id as sid, mp.name, mu.email, au.email as assigned_by_email, a.assigned_at, a.ended_at, a.active from mentor_student_assignments a join users mu on mu.id=a.mentor_user_id left join mentor_profiles mp on mp.user_id=mu.id join users au on au.id=a.assigned_by where a.student_user_id in (:ids) order by a.assigned_at", params,
