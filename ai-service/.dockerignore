@@ -1,0 +1,15 @@
+# Only AI code, locked dependencies, and setup/test inputs enter the context.
+# Excludes local models, Windows node_modules, .env files, logs, and documents.
+**
+!Dockerfile
+!.dockerignore
+!package.json
+!package-lock.json
+!tsconfig.json
+!scripts/
+!scripts/setup-model.mjs
+!scripts/setup-jd-model.mjs
+!src/
+!src/**/*.ts
+!test/
+!test/**/*.ts
