@@ -310,6 +310,69 @@ class DashboardReportIntegrationTest {
         return postReport(user, "export", fields, filters, format).andExpect(status().isOk()).andReturn();
     }
     private Workbook workbook(MvcResult response) throws IOException { return WorkbookFactory.create(new ByteArrayInputStream(response.getResponse().getContentAsByteArray())); }
+
+    private ResultActions typedReport(User user, String action, String type, List<String> fields, Map<String,String> filters, List<Long> ids, String format) throws Exception {
+        Map<String,Object> body=new LinkedHashMap<>();body.put("reportType",type);body.put("fields",fields);body.put("filters",filters);body.put("studentIds",ids);body.put("page",0);body.put("format",format);
+        return mvc.perform(post("/api/v1/"+(user.getRole()==Role.ADMIN?"admin":"mentor")+"/reports/"+action).cookie(cookie(user)).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)));
+    }
+    @Test void everyAvailableInstitutionalReportPreviewsAndExportsBothFormats() throws Exception {
+        var options=mvc.perform(get("/api/v1/admin/reports/types").cookie(cookie(admin))).andExpect(status().isOk()).andReturn();
+        var types=json.readTree(options.getResponse().getContentAsString()).get("types");
+        for(var type:types) {
+            if(!type.get("available").asBoolean())continue;
+            List<String> fields=new ArrayList<>();type.get("fields").forEach(f->fields.add(f.get("id").asText()));
+            typedReport(admin,"table",type.get("id").asText(),fields,Map.of(),List.of(),"XLSX").andExpect(status().isOk());
+            for(String format:List.of("XLSX","CSV")) {
+                var response=typedReport(admin,"generate",type.get("id").asText(),fields,Map.of(),List.of(),format).andExpect(status().isOk()).andReturn();
+                if(format.equals("XLSX"))try(Workbook book=workbook(response)) {
+                    String previewDir=System.getProperty("report.previewDir");
+                    if(previewDir!=null) {Files.createDirectories(Path.of(previewDir));Files.write(Path.of(previewDir,type.get("id").asText()+".xlsx"),response.getResponse().getContentAsByteArray());}
+                    Sheet sheet=book.getSheet("Students");assertThat(sheet.getRow(3).getLastCellNum()).isEqualTo((short)fields.size());
+                    assertThat(sheet.getPaneInformation().isFreezePane()).isTrue();assertThat(sheet.getNumMergedRegions()).isEqualTo(2);
+                    assertThat(book.getFontAt(sheet.getRow(3).getCell(0).getCellStyle().getFontIndex()).getFontName()).isEqualTo("Times New Roman");
+                    if(type.get("id").asText().equals("ROSTER")) {
+                        assertThat(sheet.getRow(4).getCell(fields.indexOf("uid")).getStringCellValue()).isEqualTo("00001");
+                        Cell amount=sheet.getRow(4).getCell(fields.indexOf("stipend"));assertThat(amount.getNumericCellValue()).isEqualTo(12345.67);assertThat(amount.getCellStyle().getDataFormatString()).contains("INR");
+                    }
+                } else assertThat(response.getResponse().getContentAsByteArray()).startsWith((byte)0xef,(byte)0xbb,(byte)0xbf);
+            }
+        }
+    }
+    @Test void typedReportsRejectGuessedIdsUnknownFieldsFiltersAndUnavailableTypes() throws Exception {
+        for(String action:List.of("table","generate")) {
+            typedReport(mentorA,action,"ATTENDANCE",List.of("uid"),Map.of("company","does not match"),List.of(studentB.getId()),"CSV").andExpect(status().isForbidden());
+            typedReport(mentorA,action,"ATTENDANCE",List.of("uid"),Map.of(),List.of(studentA.getId(),studentB.getId()),"XLSX").andExpect(status().isForbidden());
+            typedReport(mentorA,action,"ATTENDANCE",List.of("uid"),Map.of("studentId",studentB.getId().toString()),List.of(),"CSV").andExpect(status().isForbidden());
+            typedReport(admin,action,"ATTENDANCE",List.of("password_hash"),Map.of(),List.of(),"XLSX").andExpect(status().isBadRequest());
+            typedReport(admin,action,"ATTENDANCE",List.of("uid"),Map.of("sql","1=1"),List.of(),"XLSX").andExpect(status().isBadRequest());
+            typedReport(admin,action,"SEMINAR",List.of("uid"),Map.of(),List.of(),"XLSX").andExpect(status().isBadRequest());
+        }
+    }
+    @Test void mentorAttendanceHistoryAndFilteredExportsUseSameAuthorizedDataset() throws Exception {
+        typedReport(mentorA,"table","ATTENDANCE",List.of("uid","date","result","verification"),Map.of(),List.of(),"XLSX")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(2)).andExpect(jsonPath("$.summary.present").value(2)).andExpect(jsonPath("$.summary.verified").value(1));
+        var filters=Map.of("historyFrom","2026-10-04","historyTo","2026-10-04","verificationStatus","UNVERIFIED");
+        typedReport(mentorA,"table","ATTENDANCE",List.of("uid","date","verification"),filters,List.of(),"XLSX")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(1)).andExpect(jsonPath("$.rows[0].uid").value("00001"));
+        var csv=typedReport(mentorA,"generate","ATTENDANCE",List.of("uid","date","verification"),filters,List.of(),"CSV").andExpect(status().isOk()).andReturn();
+        assertThat(csv.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("2026-10-04","UNVERIFIED").doesNotContain("2026-10-05","00002");
+        typedReport(mentorB,"table","ATTENDANCE",List.of("uid"),Map.of(),List.of(),"XLSX").andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(0));
+    }
+    @Test void summaryUsesStoredRecordsWithoutInventingWorkingDaysOrAbsentSubmissions() throws Exception {
+        typedReport(mentorA,"table","ATTENDANCE_SUMMARY",List.of("uid","total","present","absent","percentage"),Map.of(),List.of(studentA.getId()),"XLSX")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].total").value(2)).andExpect(jsonPath("$.rows[0].absent").value(0)).andExpect(jsonPath("$.rows[0].percentage").value(100));
+        typedReport(admin,"table","ATTENDANCE_SUMMARY",List.of("uid","total","percentage"),Map.of("studentId",missing.getId().toString()),List.of(),"XLSX")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].total").value(0)).andExpect(jsonPath("$.rows[0].percentage").isEmpty());
+    }
+    @Test void summariesPreserveUnknownDataAndActualWorkflow() throws Exception {
+        typedReport(admin,"table","OVERALL",List.of("category","total","percentage"),Map.of(),List.of(studentA.getId()),"XLSX")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].category").value("SELF")).andExpect(jsonPath("$.rows[0].total").value(1)).andExpect(jsonPath("$.rows[0].percentage").value(100));
+        typedReport(mentorA,"table","STIPEND",List.of("category","paid","unpaid","unknown","total"),Map.of(),List.of(),"XLSX")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].paid").value(1)).andExpect(jsonPath("$.rows[0].unpaid").value(0));
+        typedReport(admin,"table","WORKFLOW",List.of("category","total"),Map.of("studentId",studentA.getId().toString()),List.of(),"XLSX")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].category").value("INTERNSHIP_DETAILS_COMPLETE"));
+    }
+
     @TestConfiguration static class FixedClock {
         @Bean @Primary Clock reportClock() { return Clock.fixed(NOW, ZoneId.of("Asia/Kolkata")); }
     }

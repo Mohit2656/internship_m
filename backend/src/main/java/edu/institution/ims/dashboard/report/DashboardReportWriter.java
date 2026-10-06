@@ -21,6 +21,31 @@ final class DashboardReportWriter implements AutoCloseable {
     private final Map<String, CellStyle> styles = new HashMap<>();
     private int count;
     private boolean finished;
+    private int headerRow;
+    private String reportTitle = "Dashboard Student Report";
+    private String reference = "Main report ";
+    private final Map<Integer,Double> totals = new HashMap<>();
+    private boolean historical;
+
+    DashboardReportWriter(Path file, DashboardReportRequest.Format format, List<DashboardReportCatalog.Field> fields, ZoneId zone, String title, String reference) throws IOException {
+        this(file, format, fields, zone);
+        this.reportTitle=title; this.reference=reference; historical=true; styles.remove("header");
+        if (workbook != null) {
+            // The historical template uses merged title bands above the data table.
+            students.removeRow(students.getRow(0)); headerRow=3;
+            Row titleRow=students.createRow(0); titleRow.setHeightInPoints(32);
+            Cell cell=titleRow.createCell(0);cell.setCellValue(title);cell.setCellStyle(bandStyle("FFFFFF"));
+            if(fields.size()>1) students.addMergedRegion(new CellRangeAddress(0,0,0,fields.size()-1));
+            Row cellRow=students.createRow(1);cellRow.setHeightInPoints(24);cell=cellRow.createCell(0);cell.setCellValue("Industry–Institute Interaction (III) Cell");cell.setCellStyle(bandStyle("B3CEFB"));
+            if(fields.size()>1) students.addMergedRegion(new CellRangeAddress(1,1,0,fields.size()-1));
+            Row header=students.createRow(headerRow);header.setHeightInPoints(54);
+            for(int n=0;n<fields.size();n++) {cell=header.createCell(n);cell.setCellValue(fields.get(n).label());
+                String fill=reference.startsWith("Attedance") ? (fields.get(n).kind()==DashboardReportCatalog.Kind.DATE || fields.get(n).kind()==DashboardReportCatalog.Kind.DATETIME ? "FFFF00" : Set.of("uid","studentName","company","studentId").contains(fields.get(n).id()) ? "FFFFFF" : "FBDAD7") : reference.startsWith("CDC") ? "FFFFFF" : "FBDAD7";
+                cell.setCellStyle(bandStyle(fill));}
+            students.createFreezePane(Math.min(2,fields.size()),headerRow+1);
+            students.setRepeatingRows(new CellRangeAddress(0,headerRow,-1,-1));
+        }
+    }
 
     DashboardReportWriter(Path file, DashboardReportRequest.Format format, List<DashboardReportCatalog.Field> fields, ZoneId zone) throws IOException {
         this.file = file; this.fields = fields; this.zone = zone;
@@ -42,26 +67,31 @@ final class DashboardReportWriter implements AutoCloseable {
         }
     }
     void row(Map<String, Object> values) throws IOException {
-        if (workbook != null && count >= 1_048_575) throw new IllegalArgumentException("This report exceeds the Excel row limit. Narrow the student filters.");
+        if (workbook != null && count >= 1_048_575 - headerRow) throw new IllegalArgumentException("This report exceeds the Excel row limit. Narrow the student filters.");
         if (csv != null) {
             List<String> cells = new ArrayList<>();
             for (var field : fields) cells.add(display(values.get(field.id())));
             csvRow(cells); count++; return;
         }
-        Row row = students.createRow(++count); int lines = 1;
+        Row row = students.createRow(++count + headerRow); int lines = 1;
         for (int n = 0; n < fields.size(); n++) {
             var field = fields.get(n); Object value = values.get(field.id()); Cell cell = row.createCell(n);
             cell.setCellStyle(style(field, count % 2 == 0));
             if (value == null) continue;
             String text = display(value);
             if (text.length() > 32_767) throw new IllegalArgumentException("The '" + field.label() + "' cell exceeds Excel's 32,767 character limit. Use a narrower history date range or CSV.");
-            if (field.kind() == DashboardReportCatalog.Kind.NUMBER && value instanceof Number number) cell.setCellValue(number.doubleValue());
+            if (field.kind() == DashboardReportCatalog.Kind.NUMBER && value instanceof Number number) {
+                cell.setCellValue(number.doubleValue());
+                if (!Set.of("stipend","percentage","studentId").contains(field.id())) totals.merge(n,number.doubleValue(),Double::sum);
+            }
             else if (field.kind() == DashboardReportCatalog.Kind.DATE) cell.setCellValue(value instanceof java.sql.Date date ? date.toLocalDate() : LocalDate.parse(text));
             else if (field.kind() == DashboardReportCatalog.Kind.DATETIME) cell.setCellValue(instant(value).atZone(zone).toLocalDateTime());
             else cell.setCellValue(text); // Always a string, never a formula from student-controlled content.
-            lines = Math.max(lines, Math.min(20, text.split("\n", -1).length + text.length() / 80));
+            double widthCharacters=Math.max(8,students.getColumnWidth(n)/256.0-3);
+            int wrappedLines=Arrays.stream(text.split("\n",-1)).mapToInt(part->Math.max(1,(int)Math.ceil(part.length()/widthCharacters))).sum();
+            lines=Math.max(lines,wrappedLines);
         }
-        row.setHeightInPoints(Math.min(409, Math.max(24, lines * 15)));
+        row.setHeightInPoints(Math.min(409, Math.max(24, lines * 17)));
     }
     private String display(Object value) {
         if (value instanceof OffsetDateTime || value instanceof Timestamp || value instanceof Instant)
@@ -90,15 +120,19 @@ final class DashboardReportWriter implements AutoCloseable {
     int count() { return count; }
     void finish(Map<String, String> metadata) throws IOException {
         if (workbook != null) {
-            students.setAutoFilter(new CellRangeAddress(0, count, 0, fields.size() - 1));
-            Sheet info = workbook.createSheet("Report Details"); workbook.setSheetOrder("Report Details", 0); workbook.setActiveSheet(0);
+            students.setAutoFilter(new CellRangeAddress(headerRow, count + headerRow, 0, fields.size() - 1));
+            if(historical && !reference.startsWith("Attedance") && !reportTitle.contains("Comparison") && count>0 && !totals.isEmpty() && !reportTitle.equals("Stipend Distribution")) {
+                Row total=students.createRow(count+headerRow+1);total.setHeightInPoints(28);
+                for(int n=0;n<fields.size();n++) {Cell c=total.createCell(n);c.setCellStyle(bandStyle("BFBFBF"));if(n==0 && fields.get(n).kind()!=DashboardReportCatalog.Kind.NUMBER)c.setCellValue("Total");else if(totals.containsKey(n))c.setCellValue(totals.get(n));}
+            }
+            Sheet info = workbook.createSheet("Report Details"); if(!historical) workbook.setSheetOrder("Report Details", 0); workbook.setActiveSheet(0);
             info.setColumnWidth(0, 30 * 256); info.setColumnWidth(1, 100 * 256);
             Row title = info.createRow(0); title.setHeightInPoints(32);
-            Cell cell = title.createCell(0); cell.setCellValue("Dashboard Student Report"); cell.setCellStyle(headerStyle());
+            Cell cell = title.createCell(0); cell.setCellValue(reportTitle); cell.setCellStyle(headerStyle());
             info.addMergedRegion(new CellRangeAddress(0, 0, 0, 1));
             int index = 2;
             for (var entry : metadata.entrySet()) {
-                Row row = info.createRow(index++); row.setHeightInPoints(entry.getValue().length() > 100 ? 75 : 30);
+                Row row = info.createRow(index++); row.setHeightInPoints(Math.min(409,Math.max(30,17*(int)Math.ceil(entry.getValue().length()/90.0))));
                 row.createCell(0).setCellValue(entry.getKey());
                 Cell detail = row.createCell(1); detail.setCellValue(entry.getValue());
                 var field = new DashboardReportCatalog.Field("metadata", "", "", DashboardReportCatalog.Kind.TEXT, false, null, false);
@@ -108,19 +142,34 @@ final class DashboardReportWriter implements AutoCloseable {
         } else csv.flush();
         finished = true;
     }
+    private CellStyle bandStyle(String hex) {
+        CellStyle base=headerStyle();
+        return styles.computeIfAbsent("band"+hex,unused->{
+            CellStyle style=workbook.createCellStyle();style.cloneStyleFrom(base);
+            ((org.apache.poi.xssf.usermodel.XSSFCellStyle)style).setFillForegroundColor(new org.apache.poi.xssf.usermodel.XSSFColor(java.util.HexFormat.of().parseHex(hex),new org.apache.poi.xssf.usermodel.DefaultIndexedColorMap()));
+            return style;
+        });
+    }
     private CellStyle headerStyle() {
         return styles.computeIfAbsent("header", unused -> {
-            CellStyle style = workbook.createCellStyle(); style.setFillForegroundColor(IndexedColors.DARK_BLUE.getIndex()); style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            CellStyle style = workbook.createCellStyle(); style.setFillForegroundColor(IndexedColors.YELLOW.getIndex()); style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            if(historical && !reference.startsWith("Attedance")) {
+                // The source workbook theme uses accent1 4285F4 and accent4 34A853.
+                String hex=reference.startsWith("CDC")?"FFFFFF":"FBDAD7";
+                ((org.apache.poi.xssf.usermodel.XSSFCellStyle)style).setFillForegroundColor(new org.apache.poi.xssf.usermodel.XSSFColor(java.util.HexFormat.of().parseHex(hex),new org.apache.poi.xssf.usermodel.DefaultIndexedColorMap()));
+            }
             style.setWrapText(true); style.setVerticalAlignment(VerticalAlignment.CENTER);
-            Font font = workbook.createFont(); font.setBold(true); font.setColor(IndexedColors.WHITE.getIndex()); font.setFontHeightInPoints((short) 11); style.setFont(font); return style;
+            Font font = workbook.createFont(); font.setBold(true); font.setColor(IndexedColors.BLACK.getIndex()); font.setFontName("Times New Roman"); font.setFontHeightInPoints((short) 12); style.setFont(font); style.setAlignment(HorizontalAlignment.CENTER);
+            style.setBorderTop(BorderStyle.THIN);style.setBorderBottom(BorderStyle.THIN);style.setBorderLeft(BorderStyle.THIN);style.setBorderRight(BorderStyle.THIN);return style;
         });
     }
     private CellStyle style(DashboardReportCatalog.Field field, boolean alternate) {
-        String format = switch (field.kind()) { case DATE -> "yyyy-mm-dd"; case DATETIME -> "yyyy-mm-dd hh:mm:ss"; case NUMBER -> field.id().equals("stipend") ? "#,##0.00" : "0.######"; default -> "@"; };
+        String format = switch (field.kind()) { case DATE -> "yyyy-mm-dd"; case DATETIME -> "yyyy-mm-dd hh:mm:ss"; case NUMBER -> field.id().equals("stipend") ? "\"INR\" #,##0.00" : field.id().equals("percentage") ? "0.0\"%\"" : historical ? "#,##0" : "0.######"; default -> "@"; };
         return styles.computeIfAbsent(format + alternate, unused -> {
             CellStyle style = workbook.createCellStyle(); style.setWrapText(true); style.setVerticalAlignment(VerticalAlignment.TOP);
             style.setDataFormat(workbook.createDataFormat().getFormat(format));
-            if (alternate) { style.setFillForegroundColor(IndexedColors.LIGHT_CORNFLOWER_BLUE.getIndex()); style.setFillPattern(FillPatternType.SOLID_FOREGROUND); }
+            Font bodyFont=workbook.createFont();bodyFont.setFontName("Times New Roman");bodyFont.setFontHeightInPoints((short)12);style.setFont(bodyFont);
+            style.setBorderTop(BorderStyle.THIN);style.setBorderBottom(BorderStyle.THIN);style.setBorderLeft(BorderStyle.THIN);style.setBorderRight(BorderStyle.THIN);
             return style;
         });
     }

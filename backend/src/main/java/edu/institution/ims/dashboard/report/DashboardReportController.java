@@ -12,10 +12,19 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
 @RestController
-@RequestMapping({"/api/v1/admin/dashboard/reports", "/api/v1/mentor/dashboard/reports"})
+@RequestMapping({"/api/v1/admin/dashboard/reports", "/api/v1/mentor/dashboard/reports", "/api/v1/admin/reports", "/api/v1/mentor/reports"})
 public class DashboardReportController {
     private final DashboardReportService service;
-    public DashboardReportController(DashboardReportService service) { this.service = service; }
+    private final InstitutionalReportService institutional;
+    public DashboardReportController(DashboardReportService service, InstitutionalReportService institutional) { this.service = service; this.institutional = institutional; }
+    @GetMapping("/types")
+    public InstitutionalReportService.Options types(@AuthenticationPrincipal UserPrincipal user) { return institutional.options(user); }
+    @PostMapping("/table")
+    public InstitutionalReportService.Table table(@AuthenticationPrincipal UserPrincipal user, @Valid @RequestBody ReportTableRequest request) { return institutional.preview(user, request); }
+    @PostMapping("/generate")
+    public ResponseEntity<Resource> generate(@AuthenticationPrincipal UserPrincipal user, @Valid @RequestBody ReportTableRequest request) throws IOException {
+        return download(institutional.export(user,request));
+    }
     @GetMapping("/options")
     public DashboardReportService.Options options(@AuthenticationPrincipal UserPrincipal user) { return service.options(user); }
     @PostMapping("/preview")
@@ -25,7 +34,9 @@ public class DashboardReportController {
     @PostMapping("/export")
     public ResponseEntity<Resource> export(@AuthenticationPrincipal UserPrincipal user, @Valid @RequestBody DashboardReportRequest request) throws IOException {
         // Generate before committing response headers so validation / generation failures remain JSON errors.
-        var download = service.export(user, request);
+        return download(service.export(user, request));
+    }
+    private ResponseEntity<Resource> download(DashboardReportService.Download download) throws IOException {
         try {
             long length = Files.size(download.path());
             InputStream stream = new FilterInputStream(Files.newInputStream(download.path())) {

@@ -117,6 +117,10 @@ public class DashboardReportRepository {
         try { long id = Long.parseLong(value); if (id <= 0) throw new IllegalArgumentException(); return id; }
         catch (RuntimeException e) { throw new IllegalArgumentException("Student and mentor account IDs must be positive integers"); }
     }
+    /** Authorized, one-row-per-student projection shared by institutional report types. */
+    String reportStudentsSql(Scope scope) {
+        return "select u.id as sid,coalesce(p.uid,sa.uid) as uid,coalesce(p.student_name,sa.student_name) as studentName,p.branch,mp.name as mentorName,i.id as internshipId,i.company_name as company,coalesce(o.source,'UNRECORDED') as source,i.stipend_per_month as stipend,i.full_time_employment_offered as offer,coalesce(o.workflow_status,'NOT_SECURED') as workflow,o.diary_issued as diary " + FROM + scope.where();
+    }
     public long count(Scope scope) {
         return Objects.requireNonNull(jdbc.queryForObject("select count(*) " + FROM + scope.where(), scope.params(), Long.class));
     }
