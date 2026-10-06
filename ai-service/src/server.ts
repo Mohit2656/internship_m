@@ -3,7 +3,9 @@ import Fastify from "fastify";
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { analyzeResume } from "./analysis.js";
+import { inspect } from "node:util";
+import { analyzeResume, type ResumeAnalysisStage, type ResumeAnalysisMetadata } from "./analysis.js";
+import { createDiagnosticRedactor, describeError, resourceFailure, resourceSnapshot } from "./resume-diagnostics.js";
 import { analyzeOpportunity } from "./jd-analysis.js";
 import { matchOpportunity, matchOpportunities, type OpportunityMatchInput } from "./opportunity-matching.js";
 
@@ -21,13 +23,50 @@ export function buildApp(options: { modelPath?: string; analyzer?: typeof analyz
 
   app.get("/health", async () => ({ status: "UP", modelReady: existsSync(resolve(modelPath, "onnx/model_quantized.onnx")) }));
   app.post("/internal/resume/analyze", async (request, reply) => {
+    const startedAt = Date.now();
+    const requestId = request.id;
+    const { redact, registerSensitiveText } = createDiagnosticRedactor();
+    let stage = "request_received";
+    let filename: string | undefined;
+    let mimeType: string | undefined;
+    let fileSize: number | undefined;
+    const context = () => ({ requestId, stage, filename: filename === undefined ? undefined : redact(filename),
+      mimeType: mimeType === undefined ? undefined : redact(mimeType), fileSize,
+      elapsedMs: Date.now() - startedAt, resources: resourceSnapshot() });
+    const reportStage = (nextStage: ResumeAnalysisStage, metadata?: ResumeAnalysisMetadata) => {
+      stage = nextStage;
+      console.info("[resume-analysis]", { ...context(), event: nextStage, ...metadata });
+    };
+    console.info("[resume-analysis]", { ...context(), event: "request_received" });
     try {
+      stage = "upload_reading";
       const part = await request.file();
-      if (!part) return reply.code(400).send({ code: "FILE_REQUIRED", message: "A resume file is required" });
+      if (!part) {
+        console.warn("[resume-analysis]", { ...context(), event: "failed", code: "FILE_REQUIRED" });
+        return reply.code(400).send({ code: "FILE_REQUIRED", message: "A resume file is required" });
+      }
+      filename = part.filename;
+      mimeType = part.mimetype;
+      console.info("[resume-analysis]", { ...context(), event: "file_received" });
       const bytes = new Uint8Array(await part.toBuffer());
-      if (bytes.length === 0) return reply.code(400).send({ code: "EMPTY_DOCUMENT", message: "The resume is empty" });
-      return await analyzer(bytes, part.filename, part.mimetype, modelPath);
+      fileSize = bytes.length;
+      stage = "upload_read";
+      console.info("[resume-analysis]", { ...context(), event: "file_read" });
+      if (bytes.length === 0) {
+        console.warn("[resume-analysis]", { ...context(), event: "failed", code: "EMPTY_DOCUMENT" });
+        return reply.code(400).send({ code: "EMPTY_DOCUMENT", message: "The resume is empty" });
+      }
+      const result = await analyzer(bytes, part.filename, part.mimetype, modelPath, reportStage, registerSensitiveText);
+      stage = "completed";
+      console.info("[resume-analysis]", { ...context(), event: "completed" });
+      return result;
     } catch (error) {
+      const safeError = describeError(error, redact);
+      // Explicit stack fields avoid Node's abbreviated cause stacks; only sanitized fields reach stderr.
+      console.error("[resume-analysis] failed", {
+        ...context(), event: "failed", resourceFailure: resourceFailure(safeError),
+        errorName: safeError.name, errorMessage: safeError.message, stack: safeError.stack, cause: safeError.cause
+      }, inspect(safeError, { depth: null, colors: false, maxStringLength: null, maxArrayLength: null }));
       const message = error instanceof Error ? error.message : "";
       const clientError = message === "UNSUPPORTED_DOCUMENT" || /empty|unreadable|extract text/i.test(message);
       return reply.code(clientError ? 422 : 500).send({

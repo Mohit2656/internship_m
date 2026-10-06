@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, resolve } from "node:path";
-import { parseResumeDocx, parseResumePdf, type ParsedResume } from "resume-extract";
+import { extractTextFromDocx, extractTextFromPdf, parseResume, type ParsedResume } from "resume-extract";
+import { loadRuntime } from "resume-extract/src/runtime";
 
 export type ExtractedExperience = { title: string | null; company: string | null; startDate: string | null; endDate: string | null };
 export type ExtractedEducation = { degree: string | null; field: string | null; institution: string | null };
@@ -65,15 +66,53 @@ export function toAnalysisResult(parsed: ParsedResume, modelPath: string): Resum
   };
 }
 
-export async function analyzeResume(bytes: Uint8Array, filename: string, contentType: string, modelPath: string) {
+export type ResumeAnalysisStage = "extraction_started" | "extraction_completed" | "model_loading_started"
+  | "model_initialization_started" | "model_initialization_completed" | "model_loading_completed" | "tokenizer_ready"
+  | "model_inference_started" | "model_inference_completed" | "response_preparation_started" | "response_preparation_completed";
+export type ResumeAnalysisMetadata = {
+  modelFiles?: { filename: string; available: boolean; sizeBytes?: number }[];
+  tokenizerReady?: boolean;
+};
+
+function modelFileMetadata(modelPath: string): NonNullable<ResumeAnalysisMetadata["modelFiles"]> {
+  return ["resume_config.json", "companies.json", "config.json", "tokenizer.json", "onnx/model_quantized.onnx"].map(filename => {
+    try {
+      const stat = statSync(resolve(modelPath, filename));
+      return { filename, available: stat.isFile(), sizeBytes: stat.size };
+    } catch { return { filename, available: false }; }
+  });
+}
+
+export async function analyzeResume(bytes: Uint8Array, filename: string, contentType: string, modelPath: string,
+    reportStage?: (stage: ResumeAnalysisStage, metadata?: ResumeAnalysisMetadata) => void,
+    registerSensitiveText?: (text: string) => void) {
   const extension = extname(filename).toLowerCase();
-  let parsed: ParsedResume;
+  let text: string;
+  // These are the same extraction and parsing calls used by resume-extract's PDF/DOCX wrappers.
   if (contentType === "application/pdf" && extension === ".pdf") {
-    parsed = await parseResumePdf(bytes, modelPath);
+    reportStage?.("extraction_started");
+    text = await extractTextFromPdf(bytes);
   } else if (contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" && extension === ".docx") {
-    parsed = await parseResumeDocx(bytes, modelPath);
+    reportStage?.("extraction_started");
+    text = await extractTextFromDocx(bytes);
   } else {
     throw new Error("UNSUPPORTED_DOCUMENT");
   }
-  return toAnalysisResult(parsed, modelPath);
+  registerSensitiveText?.(text);
+  reportStage?.("extraction_completed");
+  reportStage?.("model_loading_started", { modelFiles: modelFileMetadata(modelPath) });
+  reportStage?.("model_initialization_started");
+  // Use the parser's own cached initializer; parseResume below reuses this exact same runtime.
+  const runtime = await loadRuntime(modelPath);
+  reportStage?.("model_initialization_completed");
+  reportStage?.("model_loading_completed");
+  reportStage?.("tokenizer_ready", { tokenizerReady: runtime.tokenizer !== null });
+  reportStage?.("model_inference_started");
+  const parsed = await parseResume(text, modelPath);
+  reportStage?.("model_inference_completed");
+  for (const value of Object.values(parsed.personal)) if (typeof value === "string") registerSensitiveText?.(value);
+  reportStage?.("response_preparation_started");
+  const result = toAnalysisResult(parsed, modelPath);
+  reportStage?.("response_preparation_completed");
+  return result;
 }
