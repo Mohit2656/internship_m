@@ -17,6 +17,7 @@ public class User {
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20) private Role role;
     @Column(nullable = false) private boolean active = true;
     @Column(name = "must_change_password", nullable = false) private boolean mustChangePassword;
+    @Column(name = "token_version", nullable = false) private long tokenVersion;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
     @OneToOne(mappedBy = "user", fetch = FetchType.LAZY) private StudentProfile studentProfile;
@@ -36,7 +37,9 @@ public class User {
     public boolean isActive() { return active; }
     public boolean isMustChangePassword() { return mustChangePassword; }
     public void requirePasswordChange() { this.mustChangePassword = true; }
-    public void changePassword(String passwordHash) { this.passwordHash = passwordHash; this.mustChangePassword = false; }
+    public long getTokenVersion() { return tokenVersion; }
+    public void resetPassword(String passwordHash) { this.passwordHash = passwordHash; this.mustChangePassword = true; this.tokenVersion++; }
+    public void changePassword(String passwordHash) { this.passwordHash = passwordHash; this.mustChangePassword = false; this.tokenVersion++; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public StudentProfile getStudentProfile() { return studentProfile; }

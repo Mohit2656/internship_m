@@ -20,7 +20,7 @@ public class PasswordChangeRequiredFilter extends OncePerRequestFilter {
     public PasswordChangeRequiredFilter(ObjectMapper mapper) { this.mapper = mapper; }
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return !path.startsWith("/api/v1/") || path.equals("/api/v1/auth/me") || path.equals("/api/v1/auth/logout") || path.equals("/api/v1/auth/change-password");
+        return !path.startsWith("/api/v1/") || path.equals("/api/v1/auth/login") || path.equals("/api/v1/auth/me") || path.equals("/api/v1/auth/logout") || path.equals("/api/v1/auth/change-password");
     }
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

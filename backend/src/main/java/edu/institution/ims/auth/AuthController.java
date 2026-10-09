@@ -21,7 +21,9 @@ public class AuthController {
     }
     @GetMapping("/me") public CurrentUserResponse me(@AuthenticationPrincipal UserPrincipal principal) { return auth.response(principal); }
     @PostMapping("/change-password") public ResponseEntity<Void> changePassword(@AuthenticationPrincipal UserPrincipal principal, @Valid @RequestBody ChangePasswordRequest request) {
-        auth.changePassword(principal, request); return ResponseEntity.noContent().build();
+        String token = auth.changePassword(principal, request);
+        var cookie = ResponseCookie.from(cookieName, token).httpOnly(true).secure(secure).sameSite("Lax").path("/").maxAge(Duration.ofSeconds(expiration)).build();
+        return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, cookie.toString()).cacheControl(CacheControl.noStore()).build();
     }
     @PostMapping("/logout") public ResponseEntity<Void> logout() {
         var cookie = ResponseCookie.from(cookieName, "").httpOnly(true).secure(secure).sameSite("Lax").path("/").maxAge(Duration.ZERO).build();

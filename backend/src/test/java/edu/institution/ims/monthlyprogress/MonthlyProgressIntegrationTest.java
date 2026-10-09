@@ -125,11 +125,17 @@ class MonthlyProgressIntegrationTest {
         Cookie unassignedMentor = loginCookie(mentorB.getEmail(), "MentorPassword!24");
         Cookie adminSession = loginCookie(admin.getEmail(), "AdminPassword!23");
 
-        mvc.perform(get("/api/v1/mentor/monthly-progress").cookie(assignedMentor)).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(id));
+        mvc.perform(get("/api/v1/mentor/monthly-progress").cookie(assignedMentor)).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(id))
+                .andExpect(jsonPath("$[0].geoVerificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$[0].exifLatitude").value(org.hamcrest.Matchers.closeTo(21.125, 0.0001)))
+                .andExpect(jsonPath("$[0].exifLongitude").value(org.hamcrest.Matchers.closeTo(79.0875, 0.0001)));
         mvc.perform(get("/api/v1/mentor/monthly-progress/{id}/photo", id).cookie(assignedMentor)).andExpect(status().isOk());
         mvc.perform(get("/api/v1/mentor/monthly-progress/{id}/pdf", id).cookie(assignedMentor)).andExpect(status().isOk());
         mvc.perform(get("/api/v1/mentor/monthly-progress/{id}", id).cookie(unassignedMentor)).andExpect(status().isNotFound());
-        mvc.perform(get("/api/v1/admin/monthly-progress").cookie(adminSession)).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(id));
+        mvc.perform(get("/api/v1/admin/monthly-progress").cookie(adminSession)).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(id))
+                .andExpect(jsonPath("$[0].geoVerificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$[0].exifLatitude").value(org.hamcrest.Matchers.closeTo(21.125, 0.0001)))
+                .andExpect(jsonPath("$[0].exifLongitude").value(org.hamcrest.Matchers.closeTo(79.0875, 0.0001)));
         mvc.perform(get("/api/v1/admin/monthly-progress/{id}/photo", id).cookie(adminSession)).andExpect(status().isOk());
         mvc.perform(get("/api/v1/admin/monthly-progress/{id}/pdf", id).cookie(adminSession)).andExpect(status().isOk());
         mvc.perform(get("/api/v1/student/monthly-progress")).andExpect(status().isUnauthorized());
@@ -222,6 +228,17 @@ class MonthlyProgressIntegrationTest {
         ByteArrayOutputStream output=new ByteArrayOutputStream();output.write(source,0,2);output.write(0xff);output.write(0xe1);
         output.write((block.length+2) >>> 8);output.write((block.length+2)&255);output.write(block);output.write(source,2,source.length-2);
         return new MockMultipartFile("photo","capture.jpg","image/jpeg",output.toByteArray());
+    }
+
+    @Test void mentorRetrievalPreservesMissingGpsInsteadOfInventingLocation() throws Exception {
+        var result = submit(loginCookie(studentA.getEmail(),"StudentPassword!23"),1,png("no-gps.png"),"Work").andExpect(status().isCreated()).andReturn();
+        long id = json.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+        mvc.perform(get("/api/v1/mentor/monthly-progress/{id}",id).cookie(loginCookie(mentorA.getEmail(),"MentorPassword!23")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.geoVerificationStatus").value("MISSING_GPS"))
+                .andExpect(jsonPath("$.exifLatitude").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.exifLongitude").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.exifCapturedAt").value(org.hamcrest.Matchers.nullValue()));
+        mvc.perform(get("/api/v1/mentor/monthly-progress/{id}",id).cookie(loginCookie(mentorB.getEmail(),"MentorPassword!24"))).andExpect(status().isNotFound());
     }
 
     private ResultActions submit(Cookie session, int month, MockMultipartFile photo, String work) throws Exception {

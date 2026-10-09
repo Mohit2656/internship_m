@@ -15,6 +15,12 @@ import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificationExecutor<User> {
     Optional<User> findByEmailIgnoreCase(String email);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findByIdForPasswordUpdate(@Param("id") Long id);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where lower(u.email) = lower(:email)")
+    Optional<User> findByEmailForPasswordUpdate(@Param("email") String email);
     boolean existsByEmailIgnoreCase(String email);
     @EntityGraph(attributePaths = {"studentProfile", "studentAccount"})
     List<User> findAllByRoleOrderByEmailAsc(Role role);

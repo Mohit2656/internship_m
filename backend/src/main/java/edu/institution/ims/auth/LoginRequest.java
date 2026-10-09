@@ -6,4 +6,5 @@ public record LoginRequest(@NotBlank @Email String email, @NotBlank @Size(max = 
     public LoginRequest {
         if (email != null) email = email.trim().toLowerCase(Locale.ROOT);
     }
+    @Override public String toString() { return "LoginRequest[redacted]"; }
 }

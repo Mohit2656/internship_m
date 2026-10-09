@@ -18,10 +18,16 @@ public class JwtService {
     }
     public String create(UserPrincipal principal) {
         Instant now = Instant.now();
-        return Jwts.builder().subject(principal.id().toString()).claim("role", principal.role()).issuedAt(Date.from(now))
+        return Jwts.builder().subject(principal.id().toString()).claim("role", principal.role()).claim("ver", principal.tokenVersion()).issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(expirationSeconds))).signWith(key).compact();
     }
     public Long userId(String token) { return Long.valueOf(parse(token).getSubject()); }
+    public long tokenVersion(String token) {
+        Object version = parse(token).get("ver");
+        if (version == null) return 0; // Existing tokens remain valid until this account changes its password.
+        if (!(version instanceof Number number) || number.longValue() < 0 || number.doubleValue() != number.longValue()) throw new IllegalArgumentException("Invalid token version");
+        return number.longValue();
+    }
     public boolean valid(String token) { try { parse(token); return true; } catch (JwtException | IllegalArgumentException e) { return false; } }
     private Claims parse(String token) { return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload(); }
 }

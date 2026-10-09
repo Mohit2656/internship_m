@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
 import { MentorAssignmentManager } from "@/components/MentorAssignmentManager";
+import { ResetPasswordButton } from "@/components/ResetPasswordButton";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { api, ApiError } from "@/lib/api";
 import { MentorAccount, MentorAccountInput } from "@/lib/mentor-accounts";
@@ -75,7 +76,7 @@ function MentorAccountsContent() {
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="text-xl font-bold">Existing Mentors</h2>
-          {loading ? <p className="mt-6 text-slate-500">Loading mentors…</p> : mentors.length === 0 ? <p className="mt-6 text-slate-500">No mentor accounts have been created.</p> : <div className="mt-5 space-y-3">{mentors.map(mentor => <article key={mentor.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-semibold text-slate-900">{mentor.name}</p><p className="mt-1 text-xs text-slate-500">{mentor.department} · {mentor.designation}</p></div><div className="text-right"><p className="text-xs uppercase tracking-wide text-slate-500">Assigned students</p><p className="text-xl font-bold">{mentor.assignedStudentCount}</p></div></div><button type="button" onClick={() => setSelectedMentor(mentor)} className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Manage Students</button></article>)}</div>}
+          {loading ? <p className="mt-6 text-slate-500">Loading mentors…</p> : mentors.length === 0 ? <p className="mt-6 text-slate-500">No mentor accounts have been created.</p> : <div className="mt-5 space-y-3">{mentors.map(mentor => <article key={mentor.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-semibold text-slate-900">{mentor.name}</p><p className="mt-1 text-xs text-slate-500">{mentor.department} · {mentor.designation}</p></div><div className="text-right"><p className="text-xs uppercase tracking-wide text-slate-500">Assigned students</p><p className="text-xl font-bold">{mentor.assignedStudentCount}</p></div></div><button type="button" onClick={() => setSelectedMentor(mentor)} className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Manage Students</button> <ResetPasswordButton userId={mentor.userId} name={mentor.name} email={mentor.instituteEmail} disabled={!mentor.active} /></article>)}</div>}
         </section>
       </div>
       {selectedMentor && <MentorAssignmentManager mentor={selectedMentor} onClose={() => setSelectedMentor(null)} onCountChanged={updateCount} />}

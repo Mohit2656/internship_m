@@ -22,8 +22,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (token != null && SecurityContextHolder.getContext().getAuthentication() == null && jwt.valid(token)) {
             try {
                 var principal = users.loadById(jwt.userId(token));
-                if (principal.isEnabled()) SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
-            } catch (UsernameNotFoundException ignored) { }
+                if (principal.isEnabled() && jwt.tokenVersion(token) == principal.tokenVersion()) SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
+            } catch (UsernameNotFoundException | IllegalArgumentException | io.jsonwebtoken.JwtException ignored) { }
         }
         chain.doFilter(request, response);
     }

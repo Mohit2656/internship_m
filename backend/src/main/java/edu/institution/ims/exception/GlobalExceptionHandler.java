@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class) ResponseEntity<ApiError> denied() { return error(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have permission to access this resource"); }
+    @ExceptionHandler(edu.institution.ims.auth.PasswordResetException.class) ResponseEntity<ApiError> passwordReset(edu.institution.ims.auth.PasswordResetException e) { return error(e.getStatus(), "PASSWORD_RESET_FAILED", e.getMessage()); }
     @ExceptionHandler(BadCredentialsException.class) ResponseEntity<ApiError> badCredentials() { return error(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Email or password is incorrect"); }
     @ExceptionHandler(InactiveAccountException.class) ResponseEntity<ApiError> inactive(InactiveAccountException e) { return error(HttpStatus.FORBIDDEN, "ACCOUNT_INACTIVE", e.getMessage()); }
     @ExceptionHandler(DuplicateEmailException.class) ResponseEntity<ApiError> duplicate(DuplicateEmailException e) { return error(HttpStatus.CONFLICT, "DUPLICATE_EMAIL", e.getMessage()); }
