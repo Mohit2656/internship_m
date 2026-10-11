@@ -6,3 +6,10 @@ body { margin: 0; color: var(--ink); background: #f4f7fb; font-family: Arial, He
 button, input { font: inherit; }
 .input { width: 100%; border: 1px solid #cbd5e1; border-radius: .75rem; background: white; padding: .75rem 1rem; font: inherit; font-size: .875rem; outline: none; }
 .input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgb(37 99 235 / .12); }
+
+.college-welcome { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 1.5rem; background: #f4f8ff; animation: college-welcome-fade 1s ease-out both; }
+.college-welcome-content { max-width: 36rem; text-align: center; color: #0b2a52; }
+.college-welcome-logo { display: block; width: 150px; height: auto; object-fit: contain; margin: 0 auto 1.5rem; }
+.college-welcome-content p { margin: 0; font-size: clamp(1.25rem, 4vw, 1.75rem); font-weight: 600; line-height: 1.4; }
+@keyframes college-welcome-fade { 0% { opacity: 0; } 15%, 85% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .college-welcome { animation: none; } }
