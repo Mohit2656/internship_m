@@ -217,3 +217,32 @@ npm run test:real
 ```
 
 The production build uses Webpack because it is reliable in restricted build environments where Turbopack cannot create its internal worker connection.
+
+### Render Maven download failures (HTTP 429)
+
+An HTTP 429 while resolving the Spring Boot parent is a Maven Central download
+rate limit, before compilation or database migrations. It does not indicate a
+missing Spring Boot version or require changing Flyway history.
+
+The backend Docker build preserves its dependency layer cache, limits artifact
+download concurrency to two, and uses Maven 3.9.16's native Resolver retries:
+at most two retries per HTTP request, with 30-second then 60-second waits when
+the server supplies no Retry-After. Server Retry-After is respected up to
+120 seconds; longer requested waits fail rather than stall the build.
+Both dependency resolution and packaging use these settings. There is no
+unbounded build retry loop, alternate public mirror, or disabled TLS validation.
+[Resolver 1.9.27 configuration](https://maven.apache.org/resolver-archives/resolver-1.9.27/configuration.html).
+
+For this failure, wait before using Render's **Deploy latest commit** with the
+normal build cache. Repeated cache-cleared deployments discard reusable
+dependencies and can increase download traffic. If 429 persists, ask Render to
+investigate its outbound build-network rate limiting, or use an approved caching
+repository manager. These build settings cannot remove an upstream block.
+[Maven Central rate-limit guidance](https://central.sonatype.org/faq/429-error/),
+[Render Docker build caching](https://render.com/docs/docker).
+
+Local validation: four disposable HTTP-repository checks reproduced an
+unretried 429, successful recovery, the retry cap, and rejection of excessive
+Retry-After. All passed. Backend `mvn package -DskipTests` with the same Maven
+options exited 0. Docker is unavailable locally; Render execution remains
+unverified. No application code or database migration changed in this fix.
