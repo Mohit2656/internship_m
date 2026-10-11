@@ -224,14 +224,25 @@ An HTTP 429 while resolving the Spring Boot parent is a Maven Central download
 rate limit, before compilation or database migrations. It does not indicate a
 missing Spring Boot version or require changing Flyway history.
 
-The backend Docker build preserves its dependency layer cache, limits artifact
-download concurrency to two, and uses Maven 3.9.16's native Resolver retries:
-at most two retries per HTTP request, with 30-second then 60-second waits when
-the server supplies no Retry-After. Server Retry-After is respected up to
-120 seconds; longer requested waits fail rather than stall the build.
-Both dependency resolution and packaging use these settings. There is no
-unbounded build retry loop, alternate public mirror, or disabled TLS validation.
-[Resolver 1.9.27 configuration](https://maven.apache.org/resolver-archives/resolver-1.9.27/configuration.html).
+The backend Docker build limits artifact download concurrency to two and wraps
+both dependency resolution and packaging with `scripts/maven-with-retry.sh`.
+Each Maven command has at most four attempts, with exponential waits of 30, 60,
+and 120 seconds (210 seconds total backoff). Every attempt, failure, wait, success
+and final exit is logged. Maven's nested HTTP retries are disabled so they do
+not multiply this retry budget. All nonzero Maven exits are retried up to the
+same cap, including permanent compilation failures; the final exit code is
+preserved and the build still fails. These are fixed backoff intervals, not
+an interpretation of the server's Retry-After header.
+
+The wrapper passes `-U` so a retry rechecks a missing release rather than reusing
+Maven's cached failed download. Successful downloads remain in `.m2`.
+[Maven command-line reference](https://maven.apache.org/ref/3.9.16/maven-embedder/cli.html).
+
+`dependency:go-offline` is optional for online packaging, but is retained before
+copying `src` to cache both project dependencies and build plugins in the
+existing POM-only Docker layer. This avoids losing build-plugin caching on
+source-only changes. No cache mount with unverified cross-deploy persistence is
+required. No version, dependency, mirror or TLS setting is changed.
 
 For this failure, wait before using Render's **Deploy latest commit** with the
 normal build cache. Repeated cache-cleared deployments discard reusable
@@ -241,8 +252,21 @@ repository manager. These build settings cannot remove an upstream block.
 [Maven Central rate-limit guidance](https://central.sonatype.org/faq/429-error/),
 [Render Docker build caching](https://render.com/docs/docker).
 
-Local validation: four disposable HTTP-repository checks reproduced an
-unretried 429, successful recovery, the retry cap, and rejection of excessive
-Retry-After. All passed. Backend `mvn package -DskipTests` with the same Maven
-options exited 0. Docker is unavailable locally; Render execution remains
-unverified. No application code or database migration changed in this fix.
+Retry regressions run with `python -m unittest discover -s backend/scripts -p
+'test_*.py'` from the repository root; they require POSIX `sh` (Git Bash on
+Windows). Test commands substitute Maven and sleep without contacting a
+repository or actually waiting through backoff. Docker/Render build success
+must be verified separately; local packaging with cached artifacts does not
+prove that Render's Maven Central rate limit has expired.
+
+Validation on 11 October 2026: the full backend suite passed 250 cases with
+62 opt-in PostgreSQL cases skipped; the Python script checks passed all nine
+cases. Real Maven against a disposable localhost repository recovered from
+a temporary 429 on attempt two and stopped after four persistent 429s.
+Backoff was stubbed during these checks. Dependency prefetch and isolated
+`clean package -DskipTests` both succeeded on attempt one with the Docker Maven
+settings. Clean packaging in the original Windows workspace hit a locked
+existing JAR; the running server was left alone and a disposable source copy
+was used instead. Initial Git Bash test harnesses failed because of inherited
+PATH rewriting; the corrected harnesses passed. Docker is unavailable locally,
+so an actual Docker/Render build remains unverified.
