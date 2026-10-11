@@ -17,5 +17,9 @@ public interface MonthlyProgressReportRepository extends JpaRepository<MonthlyPr
     @EntityGraph(attributePaths = {"studentInternship", "studentInternship.onboarding", "studentInternship.onboarding.student", "studentInternship.onboarding.student.studentProfile", "studentInternship.onboarding.student.studentAccount"})
     List<MonthlyProgressReport> findAll();
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from MonthlyProgressReport r where r.id = :id")
+    Optional<MonthlyProgressReport> findForReviewById(@org.springframework.data.repository.query.Param("id") Long id);
+
     boolean existsByStudentInternshipIdAndReportMonthNumber(Long internshipId, int monthNumber);
 }

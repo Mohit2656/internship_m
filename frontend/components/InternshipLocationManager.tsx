@@ -9,6 +9,7 @@ import type { RegisteredWorkplace } from "@/lib/internship-details";
 import { InternshipLocation } from "@/lib/attendance";
 
 export function InternshipLocationManager({ studentId, scope = "admin" }: { studentId: number; scope?: "admin" | "mentor" } | { scope: "student"; studentId?: never }) {
+  // Dormant while workplace registration is paused; existing locations and approvals are preserved on the server.
   const [correction, setCorrection] = useState(false);
   const [selection, setSelection] = useState<RegisteredWorkplace | null>(null);
   const [reason, setReason] = useState("");

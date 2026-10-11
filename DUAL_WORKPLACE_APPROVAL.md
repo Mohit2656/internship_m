@@ -1,5 +1,7 @@
 # Map registration and dual workplace approval
 
+Current status: workplace registration and review interfaces are temporarily paused, and new daily attendance uses liveness alone. See [LIVENESS_ONLY_ATTENDANCE.md](LIVENESS_ONLY_ATTENDANCE.md). The implementation described below is retained for history and possible restoration; monthly photo EXIF/GPS remains independent.
+
 This document supersedes the single-IIIC-confirmation behavior described in the earlier workplace audit. Existing styling, internship registration, attendance capture, remote/hybrid policy, AI challenges, monthly photo uploads and authentication are retained.
 
 ## Registration and configuration

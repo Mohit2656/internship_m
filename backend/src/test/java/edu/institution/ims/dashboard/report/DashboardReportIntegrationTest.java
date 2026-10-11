@@ -89,18 +89,19 @@ class DashboardReportIntegrationTest {
         internships.saveAndFlush(internship);
         attendance.saveAndFlush(new AttendanceRecord(studentA, internship, TODAY, AttendanceResult.PRESENT, VerificationStatus.VERIFIED, AttendanceSubmissionType.BASIC, NOW));
         attendance.saveAndFlush(new AttendanceRecord(studentA, internship, TODAY.minusDays(1), AttendanceResult.PRESENT, VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC, NOW.minusSeconds(86400)));
+        update("update attendance_records set verification_basis='LEGACY' where student_user_id=?", studentA.getId());
         monthly.saveAndFlush(new MonthlyProgressReport(internship, 1, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), "Built API, tested \"exports\"\nSecond line", "private-photo-key", "progress.png", "image/png", 120, NOW, null, null, NOW));
         monthly.saveAndFlush(new MonthlyProgressReport(internship, 2, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), "Second month", "private-photo-key-2", "second.png", "image/png", 130, null, null, null, NOW));
         StudentProfessionalProfile pp = new StudentProfessionalProfile(studentA); pp.update("Software engineer", "Backend development"); professional.saveAndFlush(pp);
-        jdbc.update("insert into student_skills (professional_profile_id, display_name, normalized_name, active_normalized_name, source, is_active, created_at, updated_at) values (?, ?, ?, ?, 'STUDENT_ADDED', true, ?, ?)", pp.getId(), "Java", "java", "java", NOW, NOW);
-        jdbc.update("insert into student_skills (professional_profile_id, display_name, normalized_name, active_normalized_name, source, is_active, created_at, updated_at) values (?, ?, ?, ?, 'STUDENT_ADDED', true, ?, ?)", pp.getId(), "SQL", "sql", "sql", NOW, NOW);
+        update("insert into student_skills (professional_profile_id, display_name, normalized_name, active_normalized_name, source, is_active, created_at, updated_at) values (?, ?, ?, ?, 'STUDENT_ADDED', true, ?, ?)", pp.getId(), "Java", "java", "java", NOW, NOW);
+        update("insert into student_skills (professional_profile_id, display_name, normalized_name, active_normalized_name, source, is_active, created_at, updated_at) values (?, ?, ?, ?, 'STUDENT_ADDED', true, ?, ?)", pp.getId(), "SQL", "sql", "sql", NOW, NOW);
         entities.clear();
     }
 
     @Test void optionsAreRoleSpecificAndNeverExposeSqlOrPrivateStorageFields() throws Exception {
         var result = mvc.perform(get("/api/v1/admin/dashboard/reports/options").cookie(cookie(admin))).andExpect(status().isOk()).andReturn();
         String body = result.getResponse().getContentAsString();
-        assertThat(body).contains("aadhaarNumber", "resumeFilename", "attendanceHistory").doesNotContain("expression", "password_hash", "storage_key", "aadhaar_encrypted");
+        assertThat(body).contains("aadhaarNumber", "resumeFilename", "attendanceHistory", "Liveness on reference date", "HISTORICAL").doesNotContain("expression", "password_hash", "storage_key", "aadhaar_encrypted", "locationStatus", "expectedLatitude", "geofenceRadius");
         result = mvc.perform(get("/api/v1/mentor/dashboard/reports/options").cookie(cookie(mentorA))).andExpect(status().isOk()).andReturn();
         assertThat(result.getResponse().getContentAsString()).contains("skills", "monthlyReports").doesNotContain("aadhaarNumber", "permanentAddress", "resumeFilename", "attendanceHistory", "mentorId\",\"label\":\"Assigned mentor account ID\",\"type");
     }
@@ -141,7 +142,7 @@ class DashboardReportIntegrationTest {
     }
 
     @Test void filtersComposeWithinAuthorizedStudentsAndEscapeSearchWildcards() throws Exception {
-        preview(admin, List.of("uid"), Map.of("branch", "COMPUTER_ENGINEERING", "semester", "6", "academicYear", "2026-2027", "company", "ALPHA", "mentorId", mentorA.getId().toString(), "paid", "PAID", "fullTimeOffered", "YES", "verificationStatus", "VERIFIED", "workflowStatus", "INTERNSHIP_DETAILS_COMPLETE"))
+        preview(admin, List.of("uid"), Map.of("branch", "COMPUTER_ENGINEERING", "semester", "6", "academicYear", "2026-2027", "company", "ALPHA", "mentorId", mentorA.getId().toString(), "paid", "PAID", "fullTimeOffered", "YES", "verificationStatus", "HISTORICAL", "workflowStatus", "INTERNSHIP_DETAILS_COMPLETE"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.studentCount").value(1)).andExpect(jsonPath("$.students[0].uid").value("00001"));
         preview(admin, List.of("uid"), Map.of("search", "%")).andExpect(status().isOk()).andExpect(jsonPath("$.studentCount").value(0));
         preview(admin, List.of("uid"), Map.of("profileStatus", "INCOMPLETE", "attendanceStatus", "NOT_SUBMITTED")).andExpect(status().isOk()).andExpect(jsonPath("$.studentCount").value(2));
@@ -162,6 +163,18 @@ class DashboardReportIntegrationTest {
         }
     }
 
+    @Test void attendanceReferenceDateExportsAsTypedCalendarDateWithoutTimezoneText() throws Exception {
+        LocalDate reference=TODAY.minusDays(2);
+        var filters=Map.of("studentId",studentA.getId().toString(),"attendanceDate",reference.toString());
+        try (Workbook workbook=workbook(export(admin,List.of("attendanceDate"),filters,"XLSX"))) {
+            Cell value=workbook.getSheet("Students").getRow(1).getCell(0);
+            assertThat(DateUtil.isCellDateFormatted(value)).isTrue();
+            assertThat(value.getLocalDateTimeCellValue().toLocalDate()).isEqualTo(reference);
+        }
+        var csv=export(admin,List.of("attendanceDate"),filters,"CSV").getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(csv).contains("\""+reference+"\"").doesNotContain("+05:30");
+    }
+
     @Test void allFieldsAndCollectionsRemainOneRowPerStudentWithNoPrivateKeys() throws Exception {
         List<String> fields = catalog.fields(UserPrincipal.from(admin)).stream().map(DashboardReportCatalog.Field::id).toList();
         try (Workbook workbook = workbook(export(admin, fields, Map.of(), "XLSX"))) {
@@ -179,36 +192,37 @@ class DashboardReportIntegrationTest {
     }
 
     @Test void historyDateWindowLimitsCollectionsButDoesNotRemoveStudents() throws Exception {
-        List<String> fields = List.of("uid", "attendanceCount", "verifiedCount", "unverifiedCount", "attendanceHistory", "monthlyReportCount", "monthlyReports");
+        List<String> fields = List.of("uid", "attendanceCount", "verifiedCount", "unverifiedCount", "attendanceHistory", "monthlyReportCount", "monthlyReports", "historicalCount");
         try (Workbook workbook = workbook(export(admin, fields, Map.of("historyFrom", "2026-10-05", "historyTo", "2026-10-05"), "XLSX"))) {
             Sheet sheet = workbook.getSheet("Students"); assertThat(sheet.getLastRowNum()).isEqualTo(3);
             Row row = sheet.getRow(1); assertThat(row.getCell(1).getNumericCellValue()).isEqualTo(1);
-            assertThat(row.getCell(2).getNumericCellValue()).isEqualTo(1); assertThat(row.getCell(3).getNumericCellValue()).isZero();
-            assertThat(row.getCell(4).getStringCellValue()).contains("2026-10-05").doesNotContain("2026-10-04");
+            assertThat(row.getCell(2).getNumericCellValue()).isZero(); assertThat(row.getCell(3).getNumericCellValue()).isZero();
+            assertThat(row.getCell(4).getStringCellValue()).contains("2026-10-05", "HISTORICAL").doesNotContain("2026-10-04", "VERIFIED");
             assertThat(row.getCell(5).getNumericCellValue()).isZero();
+            assertThat(row.getCell(7).getNumericCellValue()).isEqualTo(1);
         }
     }
 
     @Test void populatedDocumentsResumeVersionsAnalysisLocationAndHybridScheduleAreExportedSafely() throws Exception {
         long profileId = professional.findByStudentId(studentA.getId()).orElseThrow().getId();
-        jdbc.update("insert into student_resumes (professional_profile_id, active_profile_id, original_filename, storage_key, content_type, file_size, uploaded_at, is_active, parsing_status) values (?, null, 'old.pdf', 'private-resume-old', 'application/pdf', 100, ?, false, 'NOT_PARSED')", profileId, NOW.minusSeconds(100));
-        jdbc.update("insert into student_resumes (professional_profile_id, active_profile_id, original_filename, storage_key, content_type, file_size, uploaded_at, is_active, parsing_status) values (?, ?, 'current.pdf', 'private-resume-current', 'application/pdf', 110, ?, true, 'PARSED')", profileId, profileId, NOW);
+        update("insert into student_resumes (professional_profile_id, active_profile_id, original_filename, storage_key, content_type, file_size, uploaded_at, is_active, parsing_status) values (?, null, 'old.pdf', 'private-resume-old', 'application/pdf', 100, ?, false, 'NOT_PARSED')", profileId, NOW.minusSeconds(100));
+        update("insert into student_resumes (professional_profile_id, active_profile_id, original_filename, storage_key, content_type, file_size, uploaded_at, is_active, parsing_status) values (?, ?, 'current.pdf', 'private-resume-current', 'application/pdf', 110, ?, true, 'PARSED')", profileId, profileId, NOW);
         long resumeId = jdbc.queryForObject("select id from student_resumes where storage_key='private-resume-current'", Long.class);
-        jdbc.update("insert into resume_analyses (resume_id, status, model_name, model_version, started_at, completed_at, created_at, updated_at) values (?, 'PARSED', 'local-model', 'v1', ?, ?, ?, ?)", resumeId, NOW, NOW, NOW, NOW);
+        update("insert into resume_analyses (resume_id, status, model_name, model_version, started_at, completed_at, created_at, updated_at) values (?, 'PARSED', 'local-model', 'v1', ?, ?, ?, ?)", resumeId, NOW, NOW, NOW, NOW);
         long analysisId = jdbc.queryForObject("select id from resume_analyses where resume_id=?", Long.class, resumeId);
-        jdbc.update("insert into resume_extracted_skills (analysis_id, name, sort_order) values (?, 'Kubernetes', 0)", analysisId);
+        update("insert into resume_extracted_skills (analysis_id, name, sort_order) values (?, 'Kubernetes', 0)", analysisId);
         long extractedId = jdbc.queryForObject("select id from resume_extracted_skills where analysis_id=?", Long.class, analysisId);
-        jdbc.update("insert into resume_extracted_experiences (analysis_id, title, company, start_date, end_date, sort_order) values (?, 'Developer', 'Previous Company', '2025', '2026', 0)", analysisId);
-        jdbc.update("insert into resume_extracted_education (analysis_id, degree, field, institution, sort_order) values (?, 'BE', 'Computer Engineering', 'College', 0)", analysisId);
-        jdbc.update("insert into resume_extracted_certifications (analysis_id, name, sort_order) values (?, 'Cloud Certificate', 0)", analysisId);
-        jdbc.update("insert into student_skill_suggestions (professional_profile_id, resume_analysis_id, extracted_skill_id, display_name, normalized_name, review_status, created_at) values (?, ?, ?, 'Kubernetes', 'kubernetes', 'PENDING', ?)", profileId, analysisId, extractedId, NOW);
-        jdbc.update("insert into internship_documents (onboarding_id, document_type, original_file_name, storage_key, content_type, file_size, uploaded_at) values (?, 'OFFER_LETTER', 'offer.pdf', 'private-document-key', 'application/pdf', 100, ?)", internship.getOnboarding().getId(), NOW);
-        jdbc.update("update internship_details set internship_mode='HYBRID' where id=?", internship.getId());
-        jdbc.update("insert into hybrid_work_schedule (internship_id, day_of_week, work_mode, created_at, updated_at) values (?, 'MONDAY', 'REMOTE', ?, ?)", internship.getId(), NOW, NOW);
-        jdbc.update("insert into internship_locations (internship_id, latitude, longitude, geofence_radius_meters, status, created_at, updated_at, confirmed_at, confirmed_by) values (?, 21.125, 79.0875, 200, 'CONFIRMED', ?, ?, ?, ?)", internship.getId(), NOW, NOW, NOW, admin.getId());
+        update("insert into resume_extracted_experiences (analysis_id, title, company, start_date, end_date, sort_order) values (?, 'Developer', 'Previous Company', '2025', '2026', 0)", analysisId);
+        update("insert into resume_extracted_education (analysis_id, degree, field, institution, sort_order) values (?, 'BE', 'Computer Engineering', 'College', 0)", analysisId);
+        update("insert into resume_extracted_certifications (analysis_id, name, sort_order) values (?, 'Cloud Certificate', 0)", analysisId);
+        update("insert into student_skill_suggestions (professional_profile_id, resume_analysis_id, extracted_skill_id, display_name, normalized_name, review_status, created_at) values (?, ?, ?, 'Kubernetes', 'kubernetes', 'PENDING', ?)", profileId, analysisId, extractedId, NOW);
+        update("insert into internship_documents (onboarding_id, document_type, original_file_name, storage_key, content_type, file_size, uploaded_at) values (?, 'OFFER_LETTER', 'offer.pdf', 'private-document-key', 'application/pdf', 100, ?)", internship.getOnboarding().getId(), NOW);
+        update("update internship_details set internship_mode='HYBRID' where id=?", internship.getId());
+        update("insert into hybrid_work_schedule (internship_id, day_of_week, work_mode, created_at, updated_at) values (?, 'MONDAY', 'REMOTE', ?, ?)", internship.getId(), NOW, NOW);
+        update("insert into internship_locations (internship_id, latitude, longitude, geofence_radius_meters, status, created_at, updated_at, confirmed_at, confirmed_by) values (?, 21.125, 79.0875, 200, 'CONFIRMED', ?, ?, ?, ?)", internship.getId(), NOW, NOW, NOW, admin.getId());
         long attendanceId = attendance.findByStudentIdAndAttendanceDate(studentA.getId(), TODAY).orElseThrow().getId();
-        jdbc.update("insert into attendance_evidence (attendance_id, camera_capture_used, verification_reason, image_media_type, image_size_bytes, daily_work_summary, expected_work_mode, ai_face_detected, ai_single_face, ai_quality_passed, ai_liveness_passed, created_at) values (?, true, 'EDGE_AI_VERIFIED', 'image/jpeg', 100, 'Developed and tested backend endpoints', 'REMOTE', true, true, true, true, ?)", attendanceId, NOW);
-        List<String> fields = List.of("resumeFilename", "resumeHistory", "extractedSkills", "experience", "education", "certifications", "skillSuggestions", "documents", "documentsCount", "hybridSchedule", "todayWorkMode", "locationStatus", "locationConfirmedBy", "attendanceEvidence");
+        update("insert into attendance_evidence (attendance_id, camera_capture_used, verification_reason, image_media_type, image_size_bytes, daily_work_summary, expected_work_mode, ai_face_detected, ai_single_face, ai_quality_passed, ai_liveness_passed, created_at) values (?, true, 'EDGE_AI_VERIFIED', 'image/jpeg', 100, 'Developed and tested backend endpoints', 'REMOTE', true, true, true, true, ?)", attendanceId, NOW);
+        List<String> fields = List.of("resumeFilename", "resumeHistory", "extractedSkills", "experience", "education", "certifications", "skillSuggestions", "documents", "documentsCount", "hybridSchedule", "todayWorkMode", "attendanceEvidence");
         try (Workbook workbook = workbook(export(admin, fields, Map.of("studentId", studentA.getId().toString()), "XLSX"))) {
             Row row = workbook.getSheet("Students").getRow(1);
             assertThat(row.getCell(0).getStringCellValue()).isEqualTo("current.pdf");
@@ -222,9 +236,7 @@ class DashboardReportIntegrationTest {
             assertThat(row.getCell(8).getNumericCellValue()).isEqualTo(1);
             assertThat(row.getCell(9).getStringCellValue()).contains("MONDAY", "REMOTE");
             assertThat(row.getCell(10).getStringCellValue()).isEqualTo("REMOTE");
-            assertThat(row.getCell(11).getStringCellValue()).isEqualTo("CONFIRMED");
-            assertThat(row.getCell(12).getStringCellValue()).isEqualTo(admin.getEmail());
-            assertThat(row.getCell(13).getStringCellValue()).contains("EDGE_AI_VERIFIED", "ai liveness passed: Yes");
+            assertThat(row.getCell(11).getStringCellValue()).contains("HISTORICAL", "liveness not reassessed", "ai liveness passed: Yes").doesNotContain("EDGE_AI_VERIFIED", "latitude", "longitude", "geofence", "distance", "GPS_ACCURACY_TOO_LOW");
             for (Cell cell : row) assertThat(new DataFormatter().formatCellValue(cell)).doesNotContain("private-resume", "private-document-key");
         }
     }
@@ -239,7 +251,7 @@ class DashboardReportIntegrationTest {
             postReport(mentorA, "export", List.of(field), Map.of(), "XLSX").andExpect(status().isBadRequest());
         preview(mentorA, List.of("uid"), Map.of("mentorId", mentorB.getId().toString())).andExpect(status().isBadRequest());
         preview(mentorA, List.of("uid"), Map.of("attendanceDate", "2026-10-04")).andExpect(status().isBadRequest());
-        jdbc.update("update mentor_student_assignments set active=false, active_student_user_id=null, ended_at=? where student_user_id=?", NOW.plusSeconds(1), studentA.getId());
+        update("update mentor_student_assignments set active=false, active_student_user_id=null, ended_at=? where student_user_id=?", NOW.plusSeconds(1), studentA.getId());
         preview(mentorA, List.of("uid"), Map.of()).andExpect(status().isOk()).andExpect(jsonPath("$.studentCount").value(0));
     }
 
@@ -250,7 +262,7 @@ class DashboardReportIntegrationTest {
         mvc.perform(get("/api/v1/mentor/dashboard/reports/options").cookie(cookie(studentA))).andExpect(status().isForbidden());
         mentorA.requirePasswordChange(); users.saveAndFlush(mentorA);
         preview(mentorA, List.of("uid"), Map.of()).andExpect(status().isForbidden());
-        jdbc.update("update users set active=false where id=?", mentorB.getId());
+        update("update users set active=false where id=?", mentorB.getId());
         entities.clear();
         mvc.perform(get("/api/v1/mentor/dashboard/reports/options").cookie(cookie(mentorB))).andExpect(status().isUnauthorized());
     }
@@ -293,6 +305,12 @@ class DashboardReportIntegrationTest {
             }
             assertThat(Files.readString(file)).contains("x".repeat(32768));
         } finally { Files.deleteIfExists(file); }
+    }
+
+    private int update(String sql, Object... values) {
+        // JDBC PostgreSQL requires an explicit SQL timestamp rather than an untyped Instant.
+        Object[] parameters=Arrays.stream(values).map(v -> v instanceof Instant instant ? java.sql.Timestamp.from(instant) : v).toArray();
+        return jdbc.update(sql, parameters);
     }
 
     private User user(String email, Role role) { return users.saveAndFlush(new User(email, passwordHash, role, true)); }
@@ -350,12 +368,12 @@ class DashboardReportIntegrationTest {
     }
     @Test void mentorAttendanceHistoryAndFilteredExportsUseSameAuthorizedDataset() throws Exception {
         typedReport(mentorA,"table","ATTENDANCE",List.of("uid","date","result","verification"),Map.of(),List.of(),"XLSX")
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(2)).andExpect(jsonPath("$.summary.present").value(2)).andExpect(jsonPath("$.summary.verified").value(1));
-        var filters=Map.of("historyFrom","2026-10-04","historyTo","2026-10-04","verificationStatus","UNVERIFIED");
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(2)).andExpect(jsonPath("$.summary.present").value(2)).andExpect(jsonPath("$.summary.verified").value(0)).andExpect(jsonPath("$.summary.historical").value(2));
+        var filters=Map.of("historyFrom","2026-10-04","historyTo","2026-10-04","verificationStatus","HISTORICAL");
         typedReport(mentorA,"table","ATTENDANCE",List.of("uid","date","verification"),filters,List.of(),"XLSX")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(1)).andExpect(jsonPath("$.rows[0].uid").value("00001"));
         var csv=typedReport(mentorA,"generate","ATTENDANCE",List.of("uid","date","verification"),filters,List.of(),"CSV").andExpect(status().isOk()).andReturn();
-        assertThat(csv.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("2026-10-04","UNVERIFIED").doesNotContain("2026-10-05","00002");
+        assertThat(csv.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("2026-10-04","HISTORICAL").doesNotContain("2026-10-05","00002","UNVERIFIED");
         typedReport(mentorB,"table","ATTENDANCE",List.of("uid"),Map.of(),List.of(),"XLSX").andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(0));
     }
     @Test void summaryUsesStoredRecordsWithoutInventingWorkingDaysOrAbsentSubmissions() throws Exception {
@@ -363,6 +381,78 @@ class DashboardReportIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].total").value(2)).andExpect(jsonPath("$.rows[0].absent").value(0)).andExpect(jsonPath("$.rows[0].percentage").value(100));
         typedReport(admin,"table","ATTENDANCE_SUMMARY",List.of("uid","total","percentage"),Map.of("studentId",missing.getId().toString()),List.of(),"XLSX")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].total").value(0)).andExpect(jsonPath("$.rows[0].percentage").isEmpty());
+    }
+
+    @Test void livenessCountsFiltersAndExportsAgreeForAdminAndAssignedMentorWithoutReassessingHistory() throws Exception {
+        livenessRecord(TODAY.minusDays(2), VerificationStatus.VERIFIED, true, true);
+        livenessRecord(TODAY.minusDays(3), VerificationStatus.UNVERIFIED, false, true);
+        livenessRecord(TODAY.minusDays(4), VerificationStatus.VERIFIED, null, false);
+        livenessRecord(TODAY.minusDays(5), VerificationStatus.UNVERIFIED, true, false);
+        long historical = attendance.findByStudentIdAndAttendanceDate(studentA.getId(), TODAY).orElseThrow().getId();
+        update("insert into attendance_evidence (attendance_id, latitude, longitude, gps_accuracy_meters, distance_meters, camera_capture_used, verification_reason, image_media_type, image_size_bytes, ai_face_detected, ai_single_face, ai_quality_passed, ai_liveness_passed, created_at) values (?, 21.125, 79.0875, 212, 7220, true, 'GPS_ACCURACY_TOO_LOW', 'image/jpeg', 100, true, true, true, true, ?)", historical, NOW);
+        entities.clear();
+
+        for (User viewer : List.of(admin, mentorA)) {
+            typedReport(viewer,"table","ATTENDANCE",List.of("verification","reason","liveness"),Map.of("studentId",studentA.getId().toString()),List.of(),"XLSX")
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(6))
+                    .andExpect(jsonPath("$.summary.verified").value(1)).andExpect(jsonPath("$.summary.unverified").value(1))
+                    .andExpect(jsonPath("$.summary.notPerformed").value(2)).andExpect(jsonPath("$.summary.historical").value(2))
+                    .andExpect(jsonPath("$.summary.presentRecordPercentage").value(100));
+            typedReport(viewer,"table","ATTENDANCE_SUMMARY",List.of("total","verified","unverified","notPerformed","historical"),Map.of("studentId",studentA.getId().toString()),List.of(),"XLSX")
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].total").value(6))
+                    .andExpect(jsonPath("$.rows[0].verified").value(1)).andExpect(jsonPath("$.rows[0].unverified").value(1))
+                    .andExpect(jsonPath("$.rows[0].notPerformed").value(2)).andExpect(jsonPath("$.rows[0].historical").value(2));
+            for (String outcome : List.of("VERIFIED", "FAILED", "NOT_PERFORMED", "HISTORICAL")) {
+                var filters = Map.of("verificationStatus",outcome,"studentId",studentA.getId().toString());
+                typedReport(viewer,"table","ATTENDANCE",List.of("verification"),filters,List.of(),"XLSX")
+                        .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(Set.of("VERIFIED","FAILED").contains(outcome) ? 1 : 2))
+                        .andExpect(jsonPath("$.rows[0].verification").value(outcome));
+                var response=typedReport(viewer,"generate","ATTENDANCE",List.of("verification","reason"),filters,List.of(),"CSV").andExpect(status().isOk()).andReturn();
+                assertThat(response.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains(outcome).doesNotContain("GPS_ACCURACY_TOO_LOW", "21.125", "79.0875", "7220");
+            }
+        }
+        try (Workbook workbook = workbook(export(admin, List.of("verifiedCount","unverifiedCount","notPerformedCount","historicalCount","attendanceEvidence"),Map.of("studentId",studentA.getId().toString()),"XLSX"))) {
+            Row row=workbook.getSheet("Students").getRow(1);
+            assertThat(row.getCell(0).getNumericCellValue()).isEqualTo(1);
+            assertThat(row.getCell(1).getNumericCellValue()).isEqualTo(1);
+            assertThat(row.getCell(2).getNumericCellValue()).isEqualTo(2);
+            assertThat(row.getCell(3).getNumericCellValue()).isEqualTo(2);
+            assertThat(row.getCell(4).getStringCellValue()).contains("HISTORICAL", "liveness not reassessed").doesNotContain("GPS_ACCURACY_TOO_LOW", "latitude", "longitude", "7220");
+        }
+        assertThat(jdbc.queryForMap("select verification_status, verification_basis from attendance_records where id=?", historical))
+                .containsEntry("verification_status", "VERIFIED").containsEntry("verification_basis", "LEGACY");
+        assertThat(jdbc.queryForObject("select verification_reason from attendance_evidence where attendance_id=?", String.class, historical)).isEqualTo("GPS_ACCURACY_TOO_LOW");
+        var referenceFilter=Map.of("studentId",studentA.getId().toString(),"attendanceDate",TODAY.minusDays(2).toString(),"verificationStatus","VERIFIED");
+        preview(admin,List.of("verificationStatus"),referenceFilter)
+                .andExpect(status().isOk()).andExpect(jsonPath("$.studentCount").value(1)).andExpect(jsonPath("$.students[0].uid").value("00001"));
+        try (Workbook workbook=workbook(export(admin,List.of("verificationStatus"),referenceFilter,"XLSX"))) {
+            assertThat(workbook.getSheet("Students").getRow(1).getCell(0).getStringCellValue()).isEqualTo("VERIFIED");
+        }
+    }
+
+    @Test void pausedLocationColumnsCannotBeRequestedWhileMonthlyImageMetadataRemainsAvailable() throws Exception {
+        var response=mvc.perform(get("/api/v1/admin/reports/types").cookie(cookie(admin))).andExpect(status().isOk()).andReturn();
+        assertThat(response.getResponse().getContentAsString()).contains("reviewStatus","revision","reviewedAt","Liveness status","HISTORICAL")
+                .doesNotContain("attendanceLatitude","accuracyMeters","workplaceLatitude","workplaceRadiusMeters","locationPassed","locationStatus");
+        typedReport(admin,"table","ATTENDANCE",List.of("attendanceLatitude"),Map.of(),List.of(),"XLSX").andExpect(status().isBadRequest());
+        preview(admin,List.of("expectedLatitude"),Map.of()).andExpect(status().isBadRequest());
+        preview(admin,List.of("uid"),Map.of("locationStatus","CONFIRMED")).andExpect(status().isBadRequest());
+        typedReport(admin,"table","ATTENDANCE",List.of("verification"),Map.of("verificationStatus","UNVERIFIED"),List.of(),"XLSX").andExpect(status().isBadRequest());
+    }
+
+    @Test void dateFilteredAttendanceSummaryKeepsStudentsWithoutMatchingRecords() throws Exception {
+        typedReport(admin,"table","ATTENDANCE_SUMMARY",List.of("total","verified","historical"),Map.of("studentId",studentA.getId().toString(),"historyFrom","2026-11-01"),List.of(),"XLSX")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(1)).andExpect(jsonPath("$.rows[0].total").value(0))
+                .andExpect(jsonPath("$.rows[0].verified").value(0)).andExpect(jsonPath("$.rows[0].historical").value(0));
+    }
+
+    private void livenessRecord(LocalDate date, VerificationStatus storedStatus, Boolean passed, boolean processed) {
+        var record=attendance.saveAndFlush(new AttendanceRecord(studentA,internship,date,AttendanceResult.PRESENT,storedStatus,AttendanceSubmissionType.BASIC,NOW));
+        update("update attendance_records set verification_basis='LIVENESS' where id=?",record.getId());
+        if(passed==null) return;
+        String session=UUID.randomUUID().toString();
+        update("insert into attendance_verification_sessions (id,student_user_id,internship_id,attendance_date,challenge_type,created_at,expires_at,consumed_at) values (?, ?, ?, ?, 'BLINK', ?, ?, ?)",session,studentA.getId(),internship.getId(),date,NOW,NOW.plusSeconds(60),NOW);
+        update("insert into attendance_evidence (attendance_id,camera_capture_used,verification_reason,image_media_type,image_size_bytes,ai_verification_session_id,ai_face_detected,ai_single_face,ai_quality_passed,ai_liveness_passed,ai_processed_at,ai_failure_reason,created_at) values (?, true, ?, 'image/jpeg', 100, ?, true, true, true, ?, ?, ?, ?)",record.getId(),passed?"EDGE_AI_VERIFIED":"EDGE_AI_LIVENESS_FAILED",session,passed,processed?NOW:null,passed?null:"EDGE_AI_LIVENESS_FAILED",NOW);
     }
     @Test void summariesPreserveUnknownDataAndActualWorkflow() throws Exception {
         typedReport(admin,"table","OVERALL",List.of("category","total","percentage"),Map.of(),List.of(studentA.getId()),"XLSX")

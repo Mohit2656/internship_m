@@ -30,12 +30,11 @@ class MonthlyProgressPostgresIntegrationTest extends MonthlyProgressIntegrationT
         var created=mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(new MockMultipartFile("photo","complete.jpg","image/jpeg",original)).file(new MockMultipartFile("workDescription","","text/plain","Local PostgreSQL test".getBytes(StandardCharsets.UTF_8))).cookie(session)).andExpect(status().isCreated()).andReturn();
         long id=json.readTree(created.getResponse().getContentAsString()).get("id").asLong();
         var row=jdbc.queryForMap("select * from monthly_progress_reports where id=?",id);
-        assertThat(row.get("geo_verification_status")).isEqualTo("VERIFIED");assertThat(row.get("capture_time_status")).isEqualTo("PRESENT");
-        assertThat(row.get("exif_latitude").toString()).isEqualTo("21.125000000");assertThat(row.get("exif_longitude").toString()).isEqualTo("79.087500000");
-        assertThat(row.get("gps_altitude").toString()).isEqualTo("317.000000");assertThat(row.get("gps_timestamp")).isNotNull();assertThat(row.get("exif_captured_at")).isNotNull();
-        assertThat(row.get("camera_make")).isEqualTo("Test Camera");assertThat(row.get("camera_model")).isEqualTo("Model, \"One\"");
-        assertThat(row.get("image_width")).isEqualTo(16);assertThat(row.get("image_height")).isEqualTo(12);assertThat(row.get("gps_present")).isEqualTo(true);assertThat(row.get("exif_present")).isEqualTo(true);
+        assertThat(row.get("review_status")).isEqualTo("PENDING_MENTOR_REVIEW");assertThat(row.get("reviewer_id")).isNull();
+        assertThat(row.get("geo_verification_status")).isNull();assertThat(row.get("exif_latitude")).isNull();assertThat(row.get("workplace_verification_status")).isNull();
+        assertThat(row.get("image_width")).isEqualTo(16);assertThat(row.get("image_height")).isEqualTo(12);
         assertThat(row.get("image_sha256")).isEqualTo(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(original)));
-        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where version='22' and success=true",Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where version='29' and success=true",Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from monthly_progress_review_events where report_id=? and event_type='SUBMITTED'",Integer.class,id)).isEqualTo(1);
     }
 }

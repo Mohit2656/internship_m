@@ -8,6 +8,7 @@ type Place = { id: string; displayName?: string; formattedAddress?: string; loca
 type PlacesApi = { maps: { importLibrary(name: "places"): Promise<{ PlaceAutocompleteElement: new () => HTMLElement }> } };
 
 export function WorkplacePlaceSelector({ value, onSelect }: { value: RegisteredWorkplace | null; onSelect: (place: RegisteredWorkplace) => void }) {
+  // Retained for reversibility; no active page mounts workplace registration while attendance is liveness-only.
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const mapHost = useRef<HTMLDivElement>(null);
   const mapKey = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID || "DEMO_MAP_ID";

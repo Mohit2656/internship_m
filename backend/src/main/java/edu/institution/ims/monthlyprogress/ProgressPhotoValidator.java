@@ -1,18 +1,12 @@
 package edu.institution.ims.monthlyprogress;
 
-import com.drew.imaging.ImageMetadataReader;
-import com.drew.lang.GeoLocation;
-import com.drew.metadata.Metadata;
-import com.drew.metadata.exif.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 import javax.imageio.ImageIO;
 import java.io.*;
-import java.math.BigDecimal;
 import java.nio.file.Paths;
-import java.time.Instant;
 import java.util.*;
 
 @Component
@@ -69,68 +63,11 @@ public class ProgressPhotoValidator {
             }
         } catch (IOException | IllegalArgumentException exception) { throw bad("INVALID_PHOTO", "The uploaded photograph could not be read"); }
 
-        Instant capturedAt = null, gpsTimestamp = null;
-        BigDecimal latitude = null, longitude = null, altitude = null;
-        boolean exifPresent = false, gpsPresent = false;
-        String make = null, model = null, captureStatus = "MISSING_CAPTURE_TIME";
-        GeoVerificationStatus status = GeoVerificationStatus.MISSING_GPS;
-        try {
-            Metadata metadata = ImageMetadataReader.readMetadata(new ByteArrayInputStream(bytes));
-            exifPresent = metadata.getDirectories().iterator().hasNext() &&
-                    (metadata.getFirstDirectoryOfType(ExifIFD0Directory.class) != null || metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class) != null || metadata.getFirstDirectoryOfType(GpsDirectory.class) != null);
-            ExifIFD0Directory camera = metadata.getFirstDirectoryOfType(ExifIFD0Directory.class);
-            if (camera != null) { make = clean(camera.getString(ExifIFD0Directory.TAG_MAKE)); model = clean(camera.getString(ExifIFD0Directory.TAG_MODEL)); }
-            ExifSubIFDDirectory exif = metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class);
-            if (exif != null && exif.containsTag(ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL)) {
-                // EXIF without an offset is represented in UTC, matching the existing convention.
-                try {
-                    String date = exif.getString(ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL);
-                    var local = java.time.LocalDateTime.parse(date, java.time.format.DateTimeFormatter.ofPattern("uuuu:MM:dd HH:mm:ss").withResolverStyle(java.time.format.ResolverStyle.STRICT));
-                    String offset = exif.getString(0x9011);
-                    capturedAt = local.toInstant(offset == null ? java.time.ZoneOffset.UTC : java.time.ZoneOffset.of(offset));
-                    captureStatus = "PRESENT";
-                } catch (RuntimeException invalid) { captureStatus = "INVALID_METADATA"; }
-            }
-            GpsDirectory gps = metadata.getFirstDirectoryOfType(GpsDirectory.class);
-            gpsPresent = gps != null;
-            if (gps != null) {
-                boolean coordinates = gps.containsTag(GpsDirectory.TAG_LATITUDE) || gps.containsTag(GpsDirectory.TAG_LONGITUDE);
-                if (coordinates) {
-                    status = GeoVerificationStatus.INVALID_GPS;
-                    try {
-                        var lat = gps.getRationalArray(GpsDirectory.TAG_LATITUDE);
-                        var lon = gps.getRationalArray(GpsDirectory.TAG_LONGITUDE);
-                        String latRef = gps.getString(GpsDirectory.TAG_LATITUDE_REF), lonRef = gps.getString(GpsDirectory.TAG_LONGITUDE_REF);
-                        if (validDms(lat) && validDms(lon) && Set.of("N", "S").contains(latRef == null ? "" : latRef) && Set.of("E", "W").contains(lonRef == null ? "" : lonRef)) {
-                            GeoLocation point = gps.getGeoLocation();
-                            if (point != null && Double.isFinite(point.getLatitude()) && Double.isFinite(point.getLongitude()) && Math.abs(point.getLatitude()) <= 90 && Math.abs(point.getLongitude()) <= 180) {
-                                latitude = BigDecimal.valueOf(point.getLatitude()).setScale(9, java.math.RoundingMode.HALF_UP);
-                                longitude = BigDecimal.valueOf(point.getLongitude()).setScale(9, java.math.RoundingMode.HALF_UP);
-                                status = GeoVerificationStatus.VERIFIED;
-                            }
-                        }
-                    } catch (RuntimeException invalid) { status = GeoVerificationStatus.INVALID_GPS; }
-                } else if (gps.hasErrors() || gps.containsTag(GpsDirectory.TAG_LATITUDE_REF) || gps.containsTag(GpsDirectory.TAG_LONGITUDE_REF)) status = GeoVerificationStatus.INVALID_GPS;
-                try {
-                    var value = gps.getRational(GpsDirectory.TAG_ALTITUDE);
-                    Integer ref = gps.getInteger(GpsDirectory.TAG_ALTITUDE_REF);
-                    if (value != null && value.getDenominator() != 0 && Double.isFinite(value.doubleValue()) && Math.abs(value.doubleValue()) < 1_000_000 && ref != null && (ref == 0 || ref == 1)) altitude = BigDecimal.valueOf(value.doubleValue() * (ref == 1 ? -1 : 1)).setScale(6, java.math.RoundingMode.HALF_UP);
-                } catch (RuntimeException invalid) { /* Optional altitude does not affect coordinates. */ }
-                try { Date time = gps.getGpsDate(); if (time != null) gpsTimestamp = time.toInstant(); }
-                catch (RuntimeException invalid) { /* Optional GPS time remains absent. */ }
-            }
-        } catch (Exception failed) { status = GeoVerificationStatus.METADATA_READ_FAILED; }
-        String message = switch (status) {
-            case VERIFIED -> "Valid GPS latitude and longitude were found in the image EXIF metadata.";
-            case MISSING_GPS -> "No GPS coordinates were found in the image EXIF metadata.";
-            case INVALID_GPS -> "GPS metadata was present but the coordinates were invalid.";
-            case METADATA_READ_FAILED -> "The image metadata could not be read safely.";
-        };
         String sha256;
         try { sha256 = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)); }
         catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
-        return new ValidatedProgressPhoto(name, extension, expectedType, bytes.length, capturedAt, latitude, longitude, bytes,
-                status, message, captureStatus, altitude, gpsTimestamp, make, model, width, height, exifPresent, gpsPresent, sha256);
+        return new ValidatedProgressPhoto(name, extension, expectedType, bytes.length, null, null, null, bytes,
+                null, null, null, null, null, null, null, width, height, null, null, sha256);
     }
 
     public long maxBytes() { return maxBytes; }
@@ -194,17 +131,6 @@ public class ProgressPhotoValidator {
             if (value != 0 && value != 255 && value != 32 && value != 9 && value != 10 && value != 13) return false;
         }
         return true;
-    }
-
-    private static boolean validDms(com.drew.lang.Rational[] values) {
-        if (values == null || values.length != 3) return false;
-        for (var value : values) if (value == null || value.getDenominator() == 0 || !Double.isFinite(value.doubleValue()) || value.doubleValue() < 0) return false;
-        return values[1].doubleValue() < 60 && values[2].doubleValue() < 60;
-    }
-    private static String clean(String value) {
-        if (value == null) return null;
-        String cleaned = value.replaceAll("[\\p{Cntrl}]", "").trim();
-        return cleaned.isEmpty() ? null : cleaned.substring(0, Math.min(255, cleaned.length()));
     }
 
     private static MonthlyProgressException bad(String code, String message) {

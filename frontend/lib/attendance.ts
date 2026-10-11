@@ -1,5 +1,6 @@
 export type AttendanceResult = "PRESENT" | "ABSENT";
 export type VerificationStatus = "UNVERIFIED" | "VERIFIED";
+export type LivenessStatus = "VERIFIED" | "FAILED" | "NOT_PERFORMED" | "HISTORICAL";
 export type AttendanceSubmissionType = "BASIC" | "PHYSICAL_CAPTURE" | "REMOTE_CAPTURE";
 
 export type Attendance = {
@@ -8,6 +9,8 @@ export type Attendance = {
   attendanceDate: string;
   attendanceResult: AttendanceResult;
   verificationStatus: VerificationStatus;
+  livenessStatus: LivenessStatus;
+  verificationBasis: "LEGACY" | "LIVENESS";
   submissionType: AttendanceSubmissionType;
   serverSubmittedAt: string;
   evidence?: { latitude: number | null; longitude: number | null; gpsAccuracyMeters?: number | null; locationCheckPassed?: boolean | null; expectedLatitude: number | null; expectedLongitude: number | null; distanceMeters: number | null; geofenceRadiusMeters: number | null; workplaceAddress: string | null; verificationReason: string | null } | null;
@@ -15,7 +18,16 @@ export type Attendance = {
 
 export function attendanceLabel(attendance: Attendance) {
   if (attendance.attendanceResult !== "PRESENT") return "Absent";
-  return attendance.verificationStatus === "VERIFIED" ? "Present — Verified" : "Present — Unverified";
+  return `Present — ${livenessLabel(attendance.livenessStatus)}`;
+}
+
+export function livenessLabel(status: LivenessStatus | undefined) {
+  switch (status) {
+    case "VERIFIED": return "Liveness verified";
+    case "FAILED": return "Liveness not confirmed";
+    case "NOT_PERFORMED": return "Liveness not performed";
+    default: return "Historical attendance — liveness not reassessed";
+  }
 }
 
 export type TodayAttendance = {

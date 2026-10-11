@@ -25,7 +25,7 @@ class MentorRecordDeletionIntegrationTest extends MonthlyProgressIntegrationTest
  @AfterEach void removeRetainedTestRecords() {
   jdbc.update("delete from mentor_record_deletion_audit"); jdbc.update("delete from attendance_evidence"); jdbc.update("delete from attendance_verification_sessions"); jdbc.update("delete from attendance_records");
   for(var key:jdbc.queryForList("select distinct photo_storage_key from monthly_progress_reports",String.class)) storage.delete(key);
-  jdbc.update("delete from monthly_progress_reports");
+  jdbc.update("delete from monthly_progress_review_events");jdbc.update("delete from monthly_progress_reports");
  }
  Cookie session(edu.institution.ims.user.User u,String password) throws Exception {
   return mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new LoginRequest(u.getEmail(),password)))).andExpect(status().isOk()).andReturn().getResponse().getCookie("ims_auth");

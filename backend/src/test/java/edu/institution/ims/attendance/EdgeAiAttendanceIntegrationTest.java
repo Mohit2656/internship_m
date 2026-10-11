@@ -95,7 +95,8 @@ class EdgeAiAttendanceIntegrationTest {
                         .param("attendanceDate", "1999-01-01"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.attendanceDate").value(TODAY.toString()))
-                .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"));
+                .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
         mvc.perform(remote(firstCookie, aiEvidence(issued, 1, true, true)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("AI_SESSION_ALREADY_CONSUMED"));
@@ -127,24 +128,28 @@ class EdgeAiAttendanceIntegrationTest {
         mvc.perform(remote(cookie, aiEvidence(session, 1, true, true)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
-                .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"));
+                .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
+                .andExpect(jsonPath("$.livenessStatus").value("FAILED"));
         AttendanceEvidence stored = storedEvidence(student);
         assertThat(stored.getAiFailureReason()).isEqualTo(VerificationReason.EDGE_AI_SESSION_EXPIRED);
         assertThat(verificationSessions.findById(expired.getId()).orElseThrow().getConsumedAt()).isEqualTo(NOW);
     }
 
     @Test
-    void physicalVerificationRequiresBothEdgeAiAndPhysicalEvidence() throws Exception {
+    void physicalVerificationRequiresLivenessButNotWorkplaceOrBrowserGps() throws Exception {
         User bothPass = studentWithInternship("edge.office.pass@example.edu", "E400", InternshipMode.OFFICE_REPORTING);
         User aiFail = studentWithInternship("edge.office.ai-fail@example.edu", "E500", InternshipMode.OFFICE_REPORTING);
         User locationFail = studentWithInternship("edge.office.location-fail@example.edu", "E600", InternshipMode.OFFICE_REPORTING);
-        confirmLocation(bothPass); confirmLocation(aiFail); confirmLocation(locationFail);
+        confirmLocation(bothPass); confirmLocation(aiFail);
 
         submitPhysical(bothPass, new AiFlags(1, true, true), "18.5204", "VERIFIED");
         submitPhysical(aiFail, new AiFlags(1, true, false), "18.5204", "UNVERIFIED");
-        submitPhysical(locationFail, new AiFlags(1, true, true), "18.5404", "UNVERIFIED");
+        submitPhysical(locationFail, new AiFlags(1, true, true), "18.5404", "VERIFIED");
         assertThat(storedEvidence(aiFail).getAiFailureReason()).isEqualTo(VerificationReason.EDGE_AI_LIVENESS_FAILED);
-        assertThat(storedEvidence(locationFail).getVerificationReason()).isEqualTo(VerificationReason.OUTSIDE_GEOFENCE);
+        assertThat(storedEvidence(locationFail).getVerificationReason()).isEqualTo(VerificationReason.EDGE_AI_VERIFIED);
+        assertThat(storedEvidence(locationFail).getLatitude()).isNull();
+        assertThat(storedEvidence(locationFail).getExpectedLatitude()).isNull();
+        assertThat(storedEvidence(locationFail).getDistanceMeters()).isNull();
     }
 
     private void assertRemoteFailure(String suffix, AiFlags flags, VerificationReason reason) throws Exception {
@@ -159,7 +164,8 @@ class EdgeAiAttendanceIntegrationTest {
         request.cookie(cookie);
         mvc.perform(request).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
-                .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"));
+                .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
+                .andExpect(jsonPath("$.livenessStatus").value(flags == null ? "NOT_PERFORMED" : "FAILED"));
         assertThat(storedEvidence(student).getAiFailureReason()).isEqualTo(reason);
     }
 

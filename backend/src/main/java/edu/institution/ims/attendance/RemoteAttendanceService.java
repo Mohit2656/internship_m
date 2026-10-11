@@ -20,19 +20,17 @@ public class RemoteAttendanceService {
     private final AttendancePolicyService policies;
     private final UserRepository users;
     private final CameraImageValidator imageValidator;
-    private final PhysicalVerificationPolicy metadataPolicy;
     private final AiVerificationService aiVerification;
     private final Clock clock;
 
     public RemoteAttendanceService(AttendanceRepository attendance, AttendanceEvidenceRepository evidence,
             AttendancePolicyService policies, UserRepository users, CameraImageValidator imageValidator,
-            PhysicalVerificationPolicy metadataPolicy, AiVerificationService aiVerification, Clock clock) {
+            AiVerificationService aiVerification, Clock clock) {
         this.attendance = attendance;
         this.evidence = evidence;
         this.policies = policies;
         this.users = users;
         this.imageValidator = imageValidator;
-        this.metadataPolicy = metadataPolicy;
         this.aiVerification = aiVerification;
         this.clock = clock;
     }
@@ -58,21 +56,17 @@ public class RemoteAttendanceService {
         if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today).isPresent()) throw duplicate();
 
         Instant serverTime = clock.instant();
-        PhysicalEvidenceInput metadataInput = new PhysicalEvidenceInput(null, null, null, image);
-        Boolean metadataConsistent = metadataPolicy.metadataConsistency(metadataInput, serverTime);
-        VerificationStatus status = Boolean.FALSE.equals(metadataConsistent) || !aiDecision.accepted()
-                ? VerificationStatus.UNVERIFIED : VerificationStatus.VERIFIED;
-        VerificationReason reason = Boolean.FALSE.equals(metadataConsistent) ? VerificationReason.METADATA_CONTRADICTION
-                : !aiDecision.accepted() ? aiDecision.reason()
-                : VerificationReason.REMOTE_EVIDENCE_COMPLETE;
+        VerificationStatus status = aiDecision.accepted() ? VerificationStatus.VERIFIED : VerificationStatus.UNVERIFIED;
+        VerificationReason reason = aiDecision.reason();
         AttendanceRecord record = new AttendanceRecord(student, internship, today, AttendanceResult.PRESENT,
                 status, AttendanceSubmissionType.REMOTE_CAPTURE, serverTime);
+        record.useLivenessVerification();
         try {
             attendance.saveAndFlush(record);
         } catch (DataIntegrityViolationException exception) {
             throw duplicate();
         }
-        evidence.saveAndFlush(new AttendanceEvidence(record, image, summary, metadataConsistent,
+        evidence.saveAndFlush(new AttendanceEvidence(record, image, summary, null,
                 reason, aiDecision, serverTime));
         return AttendanceService.response(record);
     }

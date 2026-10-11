@@ -32,7 +32,7 @@ public class MonthlyProgressReport {
     @Column(name = "exif_latitude", precision = 12, scale = 9) private BigDecimal exifLatitude;
     @Column(name = "exif_longitude", precision = 12, scale = 9) private BigDecimal exifLongitude;
     @Column(name = "location_name", length = 255) private String locationName;
-    @Column(name = "submitted_at", nullable = false, updatable = false) private Instant submittedAt;
+    @Column(name = "submitted_at", nullable = false) private Instant submittedAt;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
@@ -65,29 +65,31 @@ public class MonthlyProgressReport {
     public String getWorkplaceVerificationStatus() { return workplaceVerificationStatus; }
     @Column(name="workplace_verification_reason", length=255) private String workplaceVerificationReason;
     public String getWorkplaceVerificationReason() { return workplaceVerificationReason; }
-    public void compareWorkplace(edu.institution.ims.attendance.InternshipLocation workplace) {
-        compareWorkplace(workplace,workplace!=null && workplace.dualApproved());
+    @Enumerated(EnumType.STRING) @Column(name="review_status",nullable=false,length=30)
+    private MonthlyProgressStatus status=MonthlyProgressStatus.PENDING_MENTOR_REVIEW;
+    @Column(nullable=false) private int revision=1;
+    @Version @Column(name="row_version",nullable=false) private long rowVersion;
+    @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="reviewer_id") private edu.institution.ims.user.User reviewer;
+    @Column(name="reviewed_at") private Instant reviewedAt;
+    @Column(name="rejection_reason",length=1000) private String rejectionReason;
+    public MonthlyProgressStatus getStatus() { return status; }
+    public int getRevision() { return revision; }
+    public edu.institution.ims.user.User getReviewer() { return reviewer; }
+    public Instant getReviewedAt() { return reviewedAt; }
+    public String getRejectionReason() { return rejectionReason; }
+    public void decide(edu.institution.ims.user.User reviewer, boolean approved, String reason, Instant at) {
+        this.reviewer=reviewer; reviewedAt=at; rejectionReason=approved?null:reason;
+        status=approved?MonthlyProgressStatus.APPROVED:MonthlyProgressStatus.REJECTED;
     }
-    public void compareWorkplace(edu.institution.ims.attendance.InternshipLocation workplace,boolean approved) {
-        workplaceLatitude = workplace == null ? null : workplace.getLatitude();
-        workplaceLongitude = workplace == null ? null : workplace.getLongitude();
-        workplaceRadiusMeters = workplace == null ? null : workplace.getGeofenceRadiusMeters();
-        workplaceAddress = workplace == null ? null : workplace.getWorkplaceAddress();
-        workplacePlaceId = workplace == null ? null : workplace.getPlaceId();
-        workplaceDistanceMeters = exifLatitude == null || exifLongitude == null || workplace == null ? null :
-            edu.institution.ims.attendance.PhysicalVerificationPolicy.haversineMeters(exifLatitude, exifLongitude, workplaceLatitude, workplaceLongitude);
-        if (geoVerificationStatus != GeoVerificationStatus.VERIFIED) {
-            workplaceVerificationStatus = geoVerificationStatus == null ? "UNASSESSED" : "PHOTO_" + geoVerificationStatus.name();
-            workplaceVerificationReason = "Photo GPS extraction: " + (geoVerificationStatus == null ? "unavailable" : geoVerificationMessage);
-        } else if (workplace == null) {
-            workplaceVerificationStatus = "WORKPLACE_UNAVAILABLE"; workplaceVerificationReason = "No registered workplace coordinates are available";
-        } else if (!approved) {
-            workplaceVerificationStatus = "WORKPLACE_NOT_CONFIRMED"; workplaceVerificationReason = "Both the assigned mentor and III Cell must approve this workplace";
-        } else {
-            boolean passed = workplaceDistanceMeters.compareTo(workplaceRadiusMeters) <= 0;
-            workplaceVerificationStatus = passed ? "WITHIN_RADIUS" : "OUTSIDE_RADIUS";
-            workplaceVerificationReason = passed ? "Photo EXIF coordinates are within the registered workplace radius" : "Photo EXIF coordinates are outside the registered workplace radius";
-        }
+    public void resubmit(String work, String key, ValidatedProgressPhoto image, Instant at) {
+        workDescription=work; photoStorageKey=key; photoOriginalName=image.originalName();
+        photoMimeType=image.mimeType(); photoSize=image.size(); submittedAt=at;
+        revision=Math.addExact(revision,1); status=MonthlyProgressStatus.PENDING_MENTOR_REVIEW;
+        reviewer=null; reviewedAt=null; rejectionReason=null; applyImageIntegrity(image);
+        // Original legacy GPS/workplace columns remain historical and are never used or exposed.
+    }
+    public void applyImageIntegrity(ValidatedProgressPhoto image) {
+        imageWidth=image.imageWidth(); imageHeight=image.imageHeight(); imageSha256=image.imageSha256();
     }
     protected MonthlyProgressReport() {}
 
@@ -129,20 +131,6 @@ public class MonthlyProgressReport {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 
-    public void applyMetadata(ValidatedProgressPhoto image) {
-        this.geoVerificationStatus = image.geoVerificationStatus();
-        this.geoVerificationMessage = image.geoVerificationMessage();
-        this.captureTimeStatus = image.captureTimeStatus();
-        this.gpsAltitude = image.gpsAltitude();
-        this.gpsTimestamp = image.gpsTimestamp();
-        this.cameraMake = image.cameraMake();
-        this.cameraModel = image.cameraModel();
-        this.imageWidth = image.imageWidth();
-        this.imageHeight = image.imageHeight();
-        this.exifPresent = image.exifPresent();
-        this.gpsPresent = image.gpsPresent();
-        this.imageSha256 = image.imageSha256();
-    }
     public GeoVerificationStatus getGeoVerificationStatus() { return geoVerificationStatus; }
     public String getGeoVerificationMessage() { return geoVerificationMessage; }
     public String getCaptureTimeStatus() { return captureTimeStatus; }

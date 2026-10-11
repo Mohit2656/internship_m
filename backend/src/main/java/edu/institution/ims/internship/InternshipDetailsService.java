@@ -42,9 +42,6 @@ public class InternshipDetailsService {
         WorkflowStatus status = entity.getOnboarding().getWorkflowStatus();
         if (status != WorkflowStatus.DIARY_ISSUED && status != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE)
             throw conflict("INVALID_WORKFLOW_STATE", "Internship details cannot be updated in the current workflow state");
-        if (entity.getWorkplace()!=null && entity.getWorkplace().getWorkplaceAddress()!=null && request.workplace()==null &&
-            (!java.util.Objects.equals(entity.getCompanyName(),clean(request.companyName())) || !java.util.Objects.equals(entity.getCompanyAddress(),clean(request.companyAddress()))))
-            throw conflict("REGISTERED_WORKPLACE_REQUIRED","Select the actual branch when changing the company; workplace changes require both approvals again");
         validate(request); apply(entity, request); entity.getOnboarding().markInternshipDetailsComplete();
         details.saveAndFlush(entity); locations.registerSelectedPlace(entity, request.workplace());
         return response(entity);
@@ -79,7 +76,7 @@ public class InternshipDetailsService {
                 entity.getCompanyType().getLabel(), entity.getOtherCompanyType(), entity.getCompanyAddress(), entity.getCompanyPhone(),
                 entity.getIndustrySupervisorName(), entity.getIndustrySupervisorDesignation(), entity.getIndustrySupervisorContact(),
                 entity.getDurationMonths(), entity.getStartDate(), entity.getEndDate(), entity.getTotalWeeks(), entity.getInternshipMode().name(),
-                entity.getInternshipMode().getLabel(), entity.getStipendPerMonth(), entity.isFullTimeEmploymentOffered(), entity.getCreatedAt(), entity.getUpdatedAt(), entity.getWorkplace() == null || entity.getWorkplace().getWorkplaceAddress() == null ? null : new RegisteredWorkplaceRequest(entity.getWorkplace().getPlaceId(), entity.getWorkplace().getWorkplaceAddress(), entity.getWorkplace().getLatitude(), entity.getWorkplace().getLongitude(), entity.getWorkplace().getWorkplaceName()));
+                entity.getInternshipMode().getLabel(), entity.getStipendPerMonth(), entity.isFullTimeEmploymentOffered(), entity.getCreatedAt(), entity.getUpdatedAt(), null);
     }
     private static String clean(String value) { if (value == null) return null; String clean = value.trim(); return clean.isBlank() ? null : clean; }
     private static InternshipDetailsException bad(String code, String message) { return new InternshipDetailsException(HttpStatus.BAD_REQUEST, code, message); }

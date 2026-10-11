@@ -82,24 +82,20 @@ public class DashboardReportCatalog {
         internship("stipend", "Monthly stipend (INR)", "stipend_per_month", "Internship", Kind.NUMBER);
         internship("fullTimeOffered", "Full-time employment offered", "full_time_employment_offered", "Internship", Kind.BOOLEAN);
         related("hybridSchedule", "Hybrid weekly schedule", "Internship", false);
-        add("locationStatus", "Internship location confirmation", "Verification", Kind.TEXT, "loc.status", false, true);
-        add("locationConfirmedAt", "Location confirmed at", "Verification", Kind.DATETIME, "loc.confirmed_at", false, true);
-        add("locationConfirmedBy", "Location confirmed by", "Verification", Kind.TEXT, "cu.email", false, true);
-        add("expectedLatitude", "Internship latitude", "Verification", Kind.NUMBER, "loc.latitude", false, true);
-        add("expectedLongitude", "Internship longitude", "Verification", Kind.NUMBER, "loc.longitude", false, true);
-        add("geofenceRadius", "Geofence radius (meters)", "Verification", Kind.NUMBER, "loc.geofence_radius_meters", false, true);
-        add("attendanceDate", "Attendance reference date", "Attendance", Kind.DATE, ":attendanceDate", false, false);
+        add("attendanceDate", "Attendance reference date", "Attendance", Kind.DATE, "cast(:attendanceDate as date)", false, false);
         add("attendanceStatus", "Attendance on reference date", "Attendance", Kind.TEXT, "coalesce(t.attendance_result, 'NOT_SUBMITTED')", true, false);
-        add("verificationStatus", "Verification on reference date", "Attendance", Kind.TEXT, "coalesce(t.verification_status, 'NOT_SUBMITTED')", true, false);
+        add("verificationStatus", "Liveness on reference date", "Attendance", Kind.TEXT, AttendanceLivenessSql.status("t", "te"), true, false);
         add("submissionType", "Attendance submission type", "Attendance", Kind.TEXT, "t.submission_type", false, false);
         add("attendanceSubmittedAt", "Attendance submitted at", "Attendance", Kind.DATETIME, "t.server_submitted_at", false, false);
         add("todayWorkMode", "Work mode on reference date", "Attendance", Kind.TEXT,
                 "case when i.internship_mode = 'HYBRID' then hs.work_mode when i.internship_mode = 'OFFICE_REPORTING' then 'OFFICE' when i.internship_mode = 'ONLINE' then 'REMOTE' else null end", false, false);
-        for (String id : List.of("attendanceCount", "presentCount", "absentCount", "verifiedCount", "unverifiedCount"))
+        for (String id : List.of("attendanceCount", "presentCount", "absentCount", "verifiedCount", "unverifiedCount", "notPerformedCount", "historicalCount"))
             add(id, switch (id) { case "attendanceCount" -> "Attendance submissions"; case "presentCount" -> "Present records";
-                case "absentCount" -> "Absent records"; case "verifiedCount" -> "Verified records"; default -> "Unverified records"; }, "Attendance History", Kind.NUMBER, null, false, true);
-        related("attendanceHistory", "Attendance history (date, result, verification, submission)", "Attendance History", true);
-        related("attendanceEvidence", "Attendance evidence and verification details", "Attendance History", true);
+                case "absentCount" -> "Absent records"; case "verifiedCount" -> "Liveness verified records";
+                case "unverifiedCount" -> "Liveness failed records"; case "notPerformedCount" -> "Liveness not performed records";
+                default -> "Historical verification records"; }, "Attendance History", Kind.NUMBER, null, false, true);
+        related("attendanceHistory", "Attendance history (date, result, liveness, submission)", "Attendance History", true);
+        related("attendanceEvidence", "Attendance liveness evidence details", "Attendance History", true);
         add("headline", "Professional headline", "Career and Skills", Kind.TEXT, "pp.headline", false, false);
         add("careerInterests", "Career interests", "Career and Skills", Kind.TEXT, "pp.career_interests", false, false);
         related("skills", "Confirmed and manually added skills", "Career and Skills", false);
@@ -153,14 +149,13 @@ public class DashboardReportCatalog {
         choice(result, "internshipMode", "Internship mode", "OFFICE_REPORTING", "HYBRID", "ONLINE", "COLLEGE_REPORTING");
         choice(result, "internshipSource", "Internship source", "DEPARTMENT", "CDC", "SELF");
         choice(result, "attendanceStatus", "Attendance on reference date", "PRESENT", "ABSENT", "NOT_SUBMITTED");
-        choice(result, "verificationStatus", "Verification on reference date", "VERIFIED", "UNVERIFIED", "NOT_SUBMITTED");
+        choice(result, "verificationStatus", "Liveness on reference date", "VERIFIED", "FAILED", "NOT_PERFORMED", "HISTORICAL", "NOT_SUBMITTED");
         if (admin) {
             result.add(new Filter("mentorId", "Assigned mentor account ID", "number", List.of(), ""));
             choice(result, "mentorAssignment", "Mentor assignment", "ASSIGNED", "UNASSIGNED");
             choice(result, "companyType", "Company type", "IT", "MANUFACTURING", "CORE", "OTHER");
             choice(result, "paid", "Stipend", "PAID", "UNPAID");
             choice(result, "fullTimeOffered", "Full-time employment offered", "YES", "NO");
-            choice(result, "locationStatus", "Location confirmation", "PENDING", "CONFIRMED", "NOT_CONFIGURED");
             choice(result, "accountActive", "Account active", "YES", "NO");
             result.add(new Filter("attendanceDate", "Attendance reference date", "date", List.of(), "Defaults to today in the institution timezone"));
             result.add(new Filter("historyFrom", "History from", "date", List.of(), "Limits attendance history and monthly reports by attendance date / period start"));

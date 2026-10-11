@@ -92,6 +92,8 @@ class AttendanceIntegrationTest {
                 .andExpect(jsonPath("$.attendanceDate").value("2026-09-18"))
                 .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
                 .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
+                .andExpect(jsonPath("$.livenessStatus").value("NOT_PERFORMED"))
+                .andExpect(jsonPath("$.verificationBasis").value("LIVENESS"))
                 .andExpect(jsonPath("$.submissionType").value("BASIC"))
                 .andExpect(jsonPath("$.serverSubmittedAt").value(NOW.toString()));
 
@@ -113,7 +115,8 @@ class AttendanceIntegrationTest {
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceDate").value(TODAY.toString()));
 
         mvc.perform(get("/api/v1/student/attendance/today").cookie(studentSession))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.attendance.attendanceDate").value(TODAY.toString()));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.attendance.attendanceDate").value(TODAY.toString()))
+                .andExpect(jsonPath("$.attendance.livenessStatus").value("NOT_PERFORMED"));
         mvc.perform(get("/api/v1/student/attendance").cookie(studentSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].internshipId").value(internshipA.getId()));
@@ -147,6 +150,7 @@ class AttendanceIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[?(@.uid == 'UID100')].todayAttendance.attendanceResult").value("PRESENT"))
                 .andExpect(jsonPath("$[?(@.uid == 'UID100')].todayAttendance.verificationStatus").value("UNVERIFIED"))
+                .andExpect(jsonPath("$[?(@.uid == 'UID100')].todayAttendance.livenessStatus").value("HISTORICAL"))
                 .andExpect(jsonPath("$[1].uid").value("UID200"))
                 .andExpect(jsonPath("$[1].todayAttendance").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$[*].uid").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("UID300"))));

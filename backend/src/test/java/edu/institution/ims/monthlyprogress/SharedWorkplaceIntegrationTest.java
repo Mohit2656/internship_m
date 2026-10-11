@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
  @Autowired InternshipLocationService locationService; @Autowired InternshipLocationRepository locations;
  @Autowired PhysicalVerificationPolicy policy; @Autowired JdbcTemplate jdbc;
- @AfterEach void cleanWorkplaces(){jdbc.update("delete from workplace_review_audit");jdbc.update("delete from attendance_evidence");jdbc.update("delete from attendance_records");jdbc.update("delete from workplace_correction_audit"); locations.deleteAll();}
+ @AfterEach void cleanWorkplaces(){jdbc.update("delete from workplace_review_audit");jdbc.update("delete from attendance_evidence");jdbc.update("delete from attendance_records");jdbc.update("delete from attendance_verification_sessions");jdbc.update("delete from workplace_correction_audit"); locations.deleteAll();}
  Cookie login(User u,String password) throws Exception { return mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new LoginRequest(u.getEmail(),password)))).andExpect(status().isOk()).andReturn().getResponse().getCookie("ims_auth"); }
  void register(User u,String lat,String lng,String name) {
   locationService.registerSelectedPlace(internships.findByOnboardingStudentId(u.getId()).orElseThrow(),new RegisteredWorkplaceRequest("test-place-"+u.getId(),name+" test address",new BigDecimal(lat),new BigDecimal(lng),name));
@@ -34,7 +34,7 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
   var result=mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(new MockMultipartFile("photo","test.jpg","image/jpeg",ProgressPhotoValidatorTest.fixture(true,true,21))).file(new MockMultipartFile("workDescription","","text/plain","GPS comparison test".getBytes())).cookie(login(u,password))).andExpect(status().isCreated()).andReturn();
   return json.readTree(result.getResponse().getContentAsString()).get("id").asLong();
  }
- @Test void differentStudentsResolveDifferentWorkplacesForPhotoAndAttendance() throws Exception {
+ @Test void differentStudentsResolveDifferentWorkplacesForPhotoAndRetainedLegacyPolicy() throws Exception {
   register(studentA,"21.125","79.0875","Branch A"); register(studentB,"19.076","72.8777","Branch B");
   approve(studentA);approve(studentB);
   var a=locations.findByInternshipId(internships.findByOnboardingStudentId(studentA.getId()).orElseThrow().getId()).orElseThrow();
@@ -43,12 +43,39 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
   assertThat(policy.evaluate(InternshipMode.OFFICE_REPORTING,a,gps,NOW,locationService.fullyApproved(a)).status()).isEqualTo(VerificationStatus.VERIFIED);
   assertThat(policy.evaluate(InternshipMode.OFFICE_REPORTING,b,gps,NOW,locationService.fullyApproved(b)).reason()).isEqualTo(VerificationReason.OUTSIDE_GEOFENCE);
   long aid=submitPhoto(studentA,"StudentPassword!23"),bid=submitPhoto(studentB,"StudentPassword!24");
-  assertThat(reports.findById(aid).orElseThrow().getWorkplaceVerificationStatus()).isEqualTo("WITHIN_RADIUS");
-  assertThat(reports.findById(bid).orElseThrow().getWorkplaceVerificationStatus()).isEqualTo("OUTSIDE_RADIUS");
+  assertThat(reports.findById(aid).orElseThrow().getWorkplaceVerificationStatus()).isNull();
+  assertThat(reports.findById(bid).orElseThrow().getWorkplaceVerificationStatus()).isNull();
   mvc.perform(get("/api/v1/mentor/students/"+studentA.getId()+"/internship/location").cookie(login(mentorA,"MentorPassword!23"))).andExpect(status().isOk()).andExpect(jsonPath("$.workplaceName").value("Branch A"));
+ }
+ @Test void dailyLivenessIsIndependentOfDifferentWorkplacesApprovalsAndPhotoGps() throws Exception {
+  register(studentA,"21.125","79.0875","Approved branch");approve(studentA);
+  register(studentB,"19.076","72.8777","Unapproved different branch");
+  for(var student:new User[]{studentA,studentB}) {
+   var cookie=login(student,student==studentA?"StudentPassword!23":"StudentPassword!24");
+   var issued=json.readTree(mvc.perform(post("/api/v1/student/attendance/verification-session").cookie(cookie))
+    .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+   var ai=new MockMultipartFile("aiEvidence","ai-evidence.json","application/json",json.writeValueAsBytes(java.util.Map.of(
+    "sessionId",issued.get("sessionId").asText(),"challenge",issued.get("challenge").asText(),"faceCount",1,
+    "qualityPassed",true,"livenessPassed",true,"modelVersion","mediapipe-face-landmarker@1.0.1/test")));
+   mvc.perform(multipart("/api/v1/student/attendance/today/physical")
+    .file(new MockMultipartFile("photo","capture.jpg","image/jpeg",ProgressPhotoValidatorTest.fixture(true,true,21)))
+    .file(ai).cookie(cookie))
+    .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+    .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
+    .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
+    .andExpect(jsonPath("$.evidence.verificationReason").value("EDGE_AI_VERIFIED"))
+    .andExpect(jsonPath("$.evidence.latitude").value(org.hamcrest.Matchers.nullValue()))
+    .andExpect(jsonPath("$.evidence.expectedLatitude").value(org.hamcrest.Matchers.nullValue()))
+    .andExpect(jsonPath("$.evidence.exifLatitude").value(org.hamcrest.Matchers.nullValue()));
+  }
+  long approvedPhoto=submitPhoto(studentA,"StudentPassword!23"),pendingPhoto=submitPhoto(studentB,"StudentPassword!24");
+  assertThat(reports.findById(approvedPhoto).orElseThrow().getWorkplaceVerificationStatus()).isNull();
+  assertThat(reports.findById(pendingPhoto).orElseThrow().getWorkplaceVerificationStatus()).isNull();
+  assertThat(jdbc.queryForObject("select count(*) from attendance_records where verification_status='VERIFIED'",Integer.class)).isEqualTo(2);
  }
  @Test void correctionsRequireAdminScopeAndKeepHistoricalPhotoSnapshot() throws Exception {
   register(studentA,"21.125","79.0875","Original branch");approve(studentA);long id=submitPhoto(studentA,"StudentPassword!23");
+  jdbc.update("update monthly_progress_reports set workplace_latitude=21.125,workplace_longitude=79.0875,workplace_verification_status='WITHIN_RADIUS' where id=?",id);
   var correction=new WorkplaceCorrection(new RegisteredWorkplaceRequest("test-corrected","Corrected test address",new BigDecimal("19.076"),new BigDecimal("72.8777"),"Corrected branch"),new BigDecimal("150"),"Incorrect branch selected");
   for(var user:new User[]{mentorA,studentA}) mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/correction").cookie(login(user,user==mentorA?"MentorPassword!23":"StudentPassword!23")).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(correction))).andExpect(status().isForbidden());
   mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content("{\"latitude\":19.076,\"longitude\":72.8777,\"geofenceRadiusMeters\":150}")).andExpect(status().isConflict());
@@ -57,7 +84,7 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
   assertThat(jdbc.queryForObject("select count(*) from workplace_correction_audit",Integer.class)).isEqualTo(1);
  }
  @Test void missingGpsMissingWorkplaceAndLegacyReferencesRemainExplicit() throws Exception {
-  long id=submitPhoto(studentA,"StudentPassword!23");assertThat(reports.findById(id).orElseThrow().getWorkplaceVerificationStatus()).isEqualTo("WORKPLACE_UNAVAILABLE");
+  long id=submitPhoto(studentA,"StudentPassword!23");assertThat(reports.findById(id).orElseThrow().getWorkplaceVerificationStatus()).isNull();
   var missing=new PhysicalEvidenceInput(null,null,null,new ValidatedCameraImage("image/jpeg",100,null,null,null));
   assertThat(policy.evaluate(InternshipMode.OFFICE_REPORTING,null,missing,NOW).status()).isEqualTo(VerificationStatus.UNVERIFIED);
   var internship=internships.findByOnboardingStudentId(studentA.getId()).orElseThrow();var legacy=locations.saveAndFlush(new InternshipLocation(internship,new BigDecimal("21.125"),new BigDecimal("79.0875"),new BigDecimal("200"),NOW));
@@ -66,9 +93,9 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
  @Test void pendingPlaceCannotBeOverwrittenByLegacyCoordinateRouteAndPhotoGpsStaysIndependent() throws Exception {
   register(studentA,"21.125","79.0875","Branch A");
   mvc.perform(put("/api/v1/student/internship/location").cookie(login(studentA,"StudentPassword!23")).contentType(MediaType.APPLICATION_JSON).content("{\"latitude\":19,\"longitude\":72,\"geofenceRadiusMeters\":200}")).andExpect(status().isConflict());
-  long id=submitPhoto(studentA,"StudentPassword!23"); assertThat(reports.findById(id).orElseThrow().getWorkplaceVerificationStatus()).isEqualTo("WORKPLACE_NOT_CONFIRMED");
+  long id=submitPhoto(studentA,"StudentPassword!23"); assertThat(reports.findById(id).orElseThrow().getWorkplaceVerificationStatus()).isNull();
   var missingGps=mvc.perform(multipart("/api/v1/student/monthly-progress/2").file(new MockMultipartFile("photo","without-gps.jpg","image/jpeg",ProgressPhotoValidatorTest.fixture(false,true,21))).file(new MockMultipartFile("workDescription","","text/plain","Missing photo GPS test".getBytes())).cookie(login(studentA,"StudentPassword!23"))).andExpect(status().isCreated()).andReturn();
-  long mid=json.readTree(missingGps.getResponse().getContentAsString()).get("id").asLong();assertThat(reports.findById(mid).orElseThrow().getWorkplaceVerificationStatus()).isEqualTo("PHOTO_MISSING_GPS");
+  long mid=json.readTree(missingGps.getResponse().getContentAsString()).get("id").asLong();assertThat(reports.findById(mid).orElseThrow().getWorkplaceVerificationStatus()).isNull();
  }
  @Test void attendanceSnapshotIsNotRecomputedByWorkplaceCorrection() {
   register(studentA,"21.125","79.0875","Original branch");var internship=internships.findByOnboardingStudentId(studentA.getId()).orElseThrow();

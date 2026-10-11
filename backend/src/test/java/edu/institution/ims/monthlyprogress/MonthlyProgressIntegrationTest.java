@@ -48,6 +48,9 @@ class MonthlyProgressIntegrationTest {
     @Autowired InternshipDetailsRepository internships;
     @Autowired MonthlyProgressReportRepository reports;
     @Autowired PasswordEncoder encoder;
+    @Autowired MonthlyProgressReviewEventRepository reviewEvents;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate reviewJdbc;
+    @Autowired edu.institution.ims.internship.storage.FileStorageService reviewStorage;
 
     User admin;
     User mentorA;
@@ -69,176 +72,136 @@ class MonthlyProgressIntegrationTest {
     }
     @AfterEach void cleanup() { clearData(); }
 
-    @Test void studentPeriodsSubmissionDuplicatePrivateFilesAndReadOnlyPolicy() throws Exception {
-        Cookie student = loginCookie(studentA.getEmail(), "StudentPassword!23");
-        mvc.perform(get("/api/v1/student/monthly-progress").cookie(student))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.periods.length()").value(4))
-                .andExpect(jsonPath("$.periods[0].periodStart").value("2026-09-17"))
-                .andExpect(jsonPath("$.periods[0].periodEnd").value("2026-10-16"))
-                .andExpect(jsonPath("$.periods[1].periodStart").value("2026-10-17"))
-                .andExpect(jsonPath("$.periods[1].periodEnd").value("2026-11-16"))
-                .andExpect(jsonPath("$.periods[2].status").value("UPCOMING"))
-                .andExpect(jsonPath("$.periods[3].periodEnd").value("2027-01-16"));
-
-        MvcResult created = submit(student, 2, png("progress.png"), "  Completed API integration and testing.  ")
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.reportMonthNumber").value(2))
-                .andExpect(jsonPath("$.periodStart").value("2026-10-17"))
-                .andExpect(jsonPath("$.periodEnd").value("2026-11-16"))
-                .andExpect(jsonPath("$.workDescription").value("Completed API integration and testing."))
-                .andExpect(jsonPath("$.geoVerificationStatus").value("MISSING_GPS"))
-                .andExpect(jsonPath("$.exifPresent").value(false))
-                .andExpect(jsonPath("$.imageWidth").value(4))
-                .andExpect(jsonPath("$.exifLatitude").value(org.hamcrest.Matchers.nullValue()))
-                .andReturn();
-        long id = json.readTree(created.getResponse().getContentAsString()).get("id").asLong();
-
-        submit(student, 2, png("duplicate.png"), "Duplicate")
-                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("MONTHLY_REPORT_ALREADY_SUBMITTED"));
-        submit(student, 3, png("future.png"), "Future")
-                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("REPORT_MONTH_UPCOMING"));
-        mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(new MockMultipartFile("photo", "bad.txt", "text/plain", "bad".getBytes()))
-                        .file(new MockMultipartFile("workDescription", "", "text/plain", "Work".getBytes(StandardCharsets.UTF_8))).cookie(student))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PHOTO"));
-
-        mvc.perform(get("/api/v1/student/monthly-progress/{id}/photo", id).cookie(student))
-                .andExpect(status().isOk()).andExpect(header().string("Content-Type", "image/png"));
-        MvcResult pdf = mvc.perform(get("/api/v1/student/monthly-progress/{id}/pdf", id).cookie(student))
-                .andExpect(status().isOk()).andExpect(header().string("Content-Type", "application/pdf")).andReturn();
-        assertThat(pdf.getResponse().getContentAsByteArray()).startsWith("%PDF".getBytes(StandardCharsets.US_ASCII));
-        mvc.perform(put("/api/v1/student/monthly-progress/{id}", id).cookie(student).contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isMethodNotAllowed());
-        mvc.perform(get("/api/v1/student/monthly-progress/{id}", id).cookie(loginCookie(studentB.getEmail(), "StudentPassword!24")))
-                .andExpect(status().isNotFound());
+    @Test void uploadIsPendingDuplicatePeriodIsBlockedAndPrivateFilesRemainAccessible() throws Exception {
+        Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23");
+        mvc.perform(get("/api/v1/student/monthly-progress").cookie(student)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.periods[0].periodStart").value("2026-09-17")).andExpect(jsonPath("$.periods[2].status").value("UPCOMING"));
+        MockMultipartFile source=png("progress.png");
+        long id=create(student,source);
+        mvc.perform(get("/api/v1/student/monthly-progress").cookie(student)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.periods[0].status").value("PENDING_MENTOR_REVIEW"));
+        submit(student,1,png("duplicate.png"),"Duplicate").andExpect(status().isConflict());
+        submit(student,3,png("future.png"),"Future").andExpect(status().isConflict());
+        var downloaded=mvc.perform(get("/api/v1/student/monthly-progress/{id}/photo",id).cookie(student)).andExpect(status().isOk())
+            .andExpect(header().string("Content-Type","image/png")).andReturn();
+        assertThat(downloaded.getResponse().getContentAsByteArray()).isEqualTo(source.getBytes());
+        assertThat(pdfText(student,id)).contains("PENDING_MENTOR_REVIEW","not yet approved").doesNotContain("GPS","EXIF","Geo-tag","Latitude","Longitude","workplace");
+        mvc.perform(put("/api/v1/student/monthly-progress/{id}",id).cookie(student).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isMethodNotAllowed());
+        assertThat(reviewJdbc.queryForObject("select count(*) from monthly_progress_review_events where report_id=? and event_type='SUBMITTED'",Integer.class,id)).isEqualTo(1);
     }
-
-    @Test void gpsExifIsExtractedAndMentorAdminAuthorizationIsEnforced() throws Exception {
-        Cookie student = loginCookie(studentA.getEmail(), "StudentPassword!23");
-        MvcResult created = submit(student, 1, exifJpeg("geo.jpg", 21, 7, 30, 79, 5, 15), "On-site development work")
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.geoVerificationStatus").value("VERIFIED"))
-                .andExpect(jsonPath("$.captureTimeStatus").value("MISSING_CAPTURE_TIME"))
-                .andExpect(jsonPath("$.exifLatitude").value(org.hamcrest.Matchers.closeTo(21.125, 0.0001)))
-                .andExpect(jsonPath("$.exifLongitude").value(org.hamcrest.Matchers.closeTo(79.0875, 0.0001)))
-                .andReturn();
-        long id = json.readTree(created.getResponse().getContentAsString()).get("id").asLong();
-        Cookie assignedMentor = loginCookie(mentorA.getEmail(), "MentorPassword!23");
-        Cookie unassignedMentor = loginCookie(mentorB.getEmail(), "MentorPassword!24");
-        Cookie adminSession = loginCookie(admin.getEmail(), "AdminPassword!23");
-
-        mvc.perform(get("/api/v1/mentor/monthly-progress").cookie(assignedMentor)).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(id))
-                .andExpect(jsonPath("$[0].geoVerificationStatus").value("VERIFIED"))
-                .andExpect(jsonPath("$[0].exifLatitude").value(org.hamcrest.Matchers.closeTo(21.125, 0.0001)))
-                .andExpect(jsonPath("$[0].exifLongitude").value(org.hamcrest.Matchers.closeTo(79.0875, 0.0001)));
-        mvc.perform(get("/api/v1/mentor/monthly-progress/{id}/photo", id).cookie(assignedMentor)).andExpect(status().isOk());
-        mvc.perform(get("/api/v1/mentor/monthly-progress/{id}/pdf", id).cookie(assignedMentor)).andExpect(status().isOk());
-        mvc.perform(get("/api/v1/mentor/monthly-progress/{id}", id).cookie(unassignedMentor)).andExpect(status().isNotFound());
-        mvc.perform(get("/api/v1/admin/monthly-progress").cookie(adminSession)).andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(id))
-                .andExpect(jsonPath("$[0].geoVerificationStatus").value("VERIFIED"))
-                .andExpect(jsonPath("$[0].exifLatitude").value(org.hamcrest.Matchers.closeTo(21.125, 0.0001)))
-                .andExpect(jsonPath("$[0].exifLongitude").value(org.hamcrest.Matchers.closeTo(79.0875, 0.0001)));
-        mvc.perform(get("/api/v1/admin/monthly-progress/{id}/photo", id).cookie(adminSession)).andExpect(status().isOk());
-        mvc.perform(get("/api/v1/admin/monthly-progress/{id}/pdf", id).cookie(adminSession)).andExpect(status().isOk());
-        mvc.perform(get("/api/v1/student/monthly-progress")).andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/v1/mentor/monthly-progress").cookie(student)).andExpect(status().isForbidden());
-        mvc.perform(get("/api/v1/admin/monthly-progress").cookie(assignedMentor)).andExpect(status().isForbidden());
-    }
-
-    @Test void validationUsesRealImageBytesAndPreservesOriginal() throws Exception {
-        ProgressPhotoValidator validator = new ProgressPhotoValidator(20971520);
-        MockMultipartFile source = exifJpeg("original.jpg", 21, 7, 30, 79, 5, 15);
-        ValidatedProgressPhoto verified = validator.validate(source);
-        assertThat(verified.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
-        assertThat(verified.bytes()).isEqualTo(source.getBytes());
-        assertThat(verified.imageSha256()).isEqualTo(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(source.getBytes())));
-        assertThat(verified.cameraMake()).isNull();
-        assertThat(verified.capturedAt()).isNull();
-        assertThat(validator.validate(exifJpeg("zero.jpg", 0, 0, 0, 0, 0, 0)).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
-        assertThat(validator.validate(exifJpeg("invalid.jpg", 91, 0, 0, 79, 0, 0)).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.INVALID_GPS);
-        assertThat(validator.validate(exifJpeg("invalid.jpg", 21, 60, 0, 79, 0, 0)).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.INVALID_GPS);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> validator.validate(new MockMultipartFile("photo", "corrupt.jpg", "image/jpeg", new byte[]{1,2,3}))).isInstanceOf(MonthlyProgressException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> validator.validate(new MockMultipartFile("photo", "large.png", "image/png", new byte[5242881]))).isInstanceOf(MonthlyProgressException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> validator.validate(new MockMultipartFile("photo", "fake.jpg", "image/jpeg", png("real.png").getBytes()))).isInstanceOf(MonthlyProgressException.class);
-        Cookie session = loginCookie(studentA.getEmail(), "StudentPassword!23");
-        MvcResult created = submit(session,1,source,"Work").andExpect(status().isCreated()).andReturn();
-        long id = json.readTree(created.getResponse().getContentAsString()).get("id").asLong();
-        MonthlyProgressReport stored = reports.findById(id).orElseThrow();
-        assertThat(stored.getImageSha256()).isEqualTo(verified.imageSha256());
-        assertThat(stored.getGeoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
-        mvc.perform(get("/api/v1/student/monthly-progress/{id}",id).cookie(session)).andExpect(status().isOk()).andExpect(jsonPath("$.imageSha256").value(verified.imageSha256()));
-        byte[] downloaded = mvc.perform(get("/api/v1/student/monthly-progress/{id}/photo",id).cookie(session)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
-        assertThat(downloaded).isEqualTo(source.getBytes());
-    }
-
-    @Test void separatelySubmittedCoordinatesCannotVerifyImage() throws Exception {
-        mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(png("no-gps.png"))
-                .file(new MockMultipartFile("workDescription","","text/plain","Work".getBytes(StandardCharsets.UTF_8)))
-                .param("gpsLatitude","21.1458").param("gpsLongitude","79.0882").param("geoVerificationStatus","VERIFIED")
-                .cookie(loginCookie(studentA.getEmail(),"StudentPassword!23")))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.geoVerificationStatus").value("MISSING_GPS"))
-                .andExpect(jsonPath("$.exifLatitude").value(org.hamcrest.Matchers.nullValue()));
-    }
-
-    @Test void monthlyMetadataExportsUseSelectedFieldsAndAuthorizedScope() throws Exception {
-        Cookie student = loginCookie(studentA.getEmail(),"StudentPassword!23");
-        submit(student,1,exifJpeg("export.jpg",21,7,30,79,5,15),"Work").andExpect(status().isCreated());
-        Cookie adminSession = loginCookie(admin.getEmail(),"AdminPassword!23");
-        List<String> fields = List.of("uid","geoVerificationStatus","gpsLatitude","imageSha256","exifPresent");
-        for (String format : List.of("CSV","XLSX")) {
-            String body = json.writeValueAsString(Map.of("reportType","MONTHLY_PROGRESS","fields",fields,"filters",Map.of("geoVerificationStatus","VERIFIED","gpsPresent","true","exifPresent","true"),"studentIds",List.of(studentA.getId()),"page",0,"format",format));
-            MvcResult result = mvc.perform(post("/api/v1/admin/reports/generate").cookie(adminSession).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk()).andReturn();
-            if (format.equals("CSV")) assertThat(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("Geo Tag Status","GPS Latitude","Image SHA-256","VERIFIED","21.125");
-            else try (var workbook = org.apache.poi.ss.usermodel.WorkbookFactory.create(new ByteArrayInputStream(result.getResponse().getContentAsByteArray()))) {
-                var sheet = workbook.getSheet("Students");
-                assertThat(sheet.getRow(3).getCell(1).getStringCellValue()).isEqualTo("Geo Tag Status");
-                assertThat(sheet.getRow(4).getCell(1).getStringCellValue()).isEqualTo("VERIFIED");
-                assertThat(sheet.getRow(4).getCell(2).getNumericCellValue()).isEqualTo(21.125);
-                assertThat(sheet.getRow(4).getCell(3).getStringCellValue()).hasSize(64);
-            }
+    @Test void onlyAssignedMentorCanReviewAndEveryReportAccessRemainsScoped() throws Exception {
+        Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23"); long id=create(student,png("photo.png"));
+        for(Cookie denied:List.of(student,loginCookie(admin.getEmail(),"AdminPassword!23"))) {
+            decision(denied,id,true,1,null).andExpect(status().isForbidden());
+            decision(denied,id,false,1,"Incorrect report").andExpect(status().isForbidden());
         }
-        String body = json.writeValueAsString(Map.of("reportType","MONTHLY_PROGRESS","fields",fields,"filters",Map.of(),"studentIds",List.of(studentA.getId()),"page",0,"format","CSV"));
-        mvc.perform(post("/api/v1/mentor/reports/generate").cookie(loginCookie(mentorB.getEmail(),"MentorPassword!24")).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden());
-        mvc.perform(post("/api/v1/mentor/reports/table").cookie(loginCookie(mentorA.getEmail(),"MentorPassword!23")).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].geoVerificationStatus").value("VERIFIED"));
+        Cookie other=loginCookie(mentorB.getEmail(),"MentorPassword!24");
+        decision(other,id,true,1,null).andExpect(status().isNotFound());
+        decision(other,id,false,1,"Incorrect report").andExpect(status().isNotFound());
+        for(String suffix:List.of("","/photo","/pdf")) mvc.perform(get("/api/v1/mentor/monthly-progress/"+id+suffix).cookie(other)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/student/monthly-progress/{id}",id).cookie(loginCookie(studentB.getEmail(),"StudentPassword!24"))).andExpect(status().isNotFound());
+        mvc.perform(post("/api/v1/mentor/monthly-progress/{id}/approve",id).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":1}")).andExpect(status().isUnauthorized());
+        Cookie mentor=loginCookie(mentorA.getEmail(),"MentorPassword!23");
+        decision(mentor,99999999,true,1,null).andExpect(status().isNotFound());
+        decision(mentor,id,true,1,null).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("APPROVED"))
+            .andExpect(jsonPath("$.reviewerId").value(mentorA.getId())).andExpect(jsonPath("$.reviewedAt").value(NOW.toString()));
+        decision(mentor,id,false,1,"Too late").andExpect(status().isConflict());
+        mvc.perform(get("/api/v1/student/monthly-progress").cookie(student)).andExpect(status().isOk()).andExpect(jsonPath("$.periods[0].status").value("APPROVED"));
+        assertThat(pdfText(student,id)).contains("APPROVED",mentorA.getEmail()).doesNotContain("not yet approved","GPS");
+        mvc.perform(get("/api/v1/admin/monthly-progress").cookie(loginCookie(admin.getEmail(),"AdminPassword!23"))).andExpect(status().isOk()).andExpect(jsonPath("$[0].status").value("APPROVED"));
     }
-
-    @Test void captureTimestampIsPersistedIndependentlyAndInvalidDatesRemainNull() throws Exception {
-        MockMultipartFile valid = jpegWithCapture("2026:10:06 16:02:00");
-        var metadata = new ProgressPhotoValidator(20971520).validate(valid);
-        assertThat(metadata.capturedAt()).isEqualTo(Instant.parse("2026-10-06T16:02:00Z"));
-        assertThat(metadata.captureTimeStatus()).isEqualTo("PRESENT");
-        var invalid = new ProgressPhotoValidator(20971520).validate(jpegWithCapture("2026:02:30 16:02:00"));
-        assertThat(invalid.capturedAt()).isNull();
-        assertThat(invalid.captureTimeStatus()).isEqualTo("INVALID_METADATA");
-        Cookie session = loginCookie(studentA.getEmail(),"StudentPassword!23");
-        var result = submit(session,1,valid,"Work").andExpect(status().isCreated())
-                .andExpect(jsonPath("$.exifCapturedAt").value("2026-10-06T16:02:00Z")).andReturn();
-        var report = reports.findById(json.readTree(result.getResponse().getContentAsString()).get("id").asLong()).orElseThrow();
-        assertThat(report.getExifCapturedAt()).isEqualTo(metadata.capturedAt());
-        assertThat(report.getExifCapturedAt()).isNotEqualTo(report.getSubmittedAt());
+    @Test void rejectionRequiresReasonAndResubmissionRetainsAllRevisionsAndEvidence() throws Exception {
+        Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23"),mentor=loginCookie(mentorA.getEmail(),"MentorPassword!23");
+        long id=create(student,png("original.png")); String originalKey=reports.findById(id).orElseThrow().getPhotoStorageKey();
+        byte[] original=reviewStorage.load(originalKey).resource().getInputStream().readAllBytes();
+        for(String reason:List.of(""," ","x".repeat(1001))) decision(mentor,id,false,1,reason).andExpect(status().isBadRequest());
+        decision(mentor,id,false,1,null).andExpect(status().isBadRequest());
+        decision(mentor,id,false,1,"  Explain your contribution  ").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("REJECTED"))
+            .andExpect(jsonPath("$.rejectionReason").value("Explain your contribution"));
+        assertThat(pdfText(student,id)).contains("REJECTED","Explain your contribution").doesNotContain("GPS","EXIF");
+        mvc.perform(get("/api/v1/student/monthly-progress").cookie(student)).andExpect(status().isOk()).andExpect(jsonPath("$.periods[0].report.rejectionReason").value("Explain your contribution"));
+        resubmit(loginCookie(studentB.getEmail(),"StudentPassword!24"),id,1).andExpect(status().isNotFound());
+        resubmit(student,id,2).andExpect(status().isConflict());
+        resubmit(student,id,1).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING_MENTOR_REVIEW"))
+            .andExpect(jsonPath("$.revision").value(2)).andExpect(jsonPath("$.reviewerId").isEmpty()).andExpect(jsonPath("$.rejectionReason").isEmpty());
+        decision(mentor,id,true,1,null).andExpect(status().isConflict()); decision(mentor,id,true,2,null).andExpect(status().isOk());
+        assertThat(reviewJdbc.queryForList("select event_type from monthly_progress_review_events where report_id=? order by id",String.class,id))
+            .containsExactly("SUBMITTED","REJECTED","SUBMITTED","APPROVED");
+        assertThat(reviewJdbc.queryForObject("select photo_storage_key from monthly_progress_review_events where report_id=? and revision=1 and event_type='SUBMITTED'",String.class,id)).isEqualTo(originalKey);
+        assertThat(reviewStorage.load(originalKey).resource().getInputStream().readAllBytes()).isEqualTo(original);
     }
-
-    private MockMultipartFile jpegWithCapture(String timestamp) throws IOException {
-        ByteArrayOutputStream exif = new ByteArrayOutputStream();
-        exif.write("Exif\0\0".getBytes(StandardCharsets.US_ASCII));
-        exif.write('I'); exif.write('I'); le16(exif,42); le32(exif,8); le16(exif,1);
-        le16(exif,0x8769); le16(exif,4); le32(exif,1); le32(exif,26); le32(exif,0);
-        le16(exif,1); le16(exif,0x9003); le16(exif,2); le32(exif,20); le32(exif,44); le32(exif,0);
-        exif.write(timestamp.getBytes(StandardCharsets.US_ASCII)); exif.write(0);
-        ByteArrayOutputStream image = new ByteArrayOutputStream(); ImageIO.write(new BufferedImage(4,4,BufferedImage.TYPE_INT_RGB),"jpeg",image);
-        byte[] source=image.toByteArray(), block=exif.toByteArray();
-        ByteArrayOutputStream output=new ByteArrayOutputStream();output.write(source,0,2);output.write(0xff);output.write(0xe1);
-        output.write((block.length+2) >>> 8);output.write((block.length+2)&255);output.write(block);output.write(source,2,source.length-2);
-        return new MockMultipartFile("photo","capture.jpg","image/jpeg",output.toByteArray());
+    @Test void pendingAndApprovedCannotBeModifiedAndForgedApprovalIsIgnored() throws Exception {
+        Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23");
+        var created=mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(png("photo.png"))
+            .file(new MockMultipartFile("workDescription","","text/plain","Work".getBytes(StandardCharsets.UTF_8)))
+            .param("status","APPROVED").param("geoVerificationStatus","VERIFIED").cookie(student))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("PENDING_MENTOR_REVIEW")).andExpect(jsonPath("$.geoVerificationStatus").doesNotExist()).andReturn();
+        long id=json.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+        String key=reports.findById(id).orElseThrow().getPhotoStorageKey();
+        resubmit(student,id,1).andExpect(status().isConflict());
+        decision(loginCookie(mentorA.getEmail(),"MentorPassword!23"),id,true,1,null).andExpect(status().isOk());
+        resubmit(student,id,1).andExpect(status().isConflict());submit(student,1,png("replacement.png"),"Changed").andExpect(status().isConflict());
+        assertThat(reports.findById(id).orElseThrow().getPhotoStorageKey()).isEqualTo(key);
+        assertThat(reports.findById(id).orElseThrow().getWorkDescription()).isEqualTo("Work");
     }
-
-    @Test void mentorRetrievalPreservesMissingGpsInsteadOfInventingLocation() throws Exception {
-        var result = submit(loginCookie(studentA.getEmail(),"StudentPassword!23"),1,png("no-gps.png"),"Work").andExpect(status().isCreated()).andReturn();
-        long id = json.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+    @Test void genuineJpgJpegAndPngWithoutGpsAreAcceptedButCorruptImagesFail() throws Exception {
+        var validator=new ProgressPhotoValidator(20971520);
+        for(String name:List.of("photo.jpg","photo.jpeg","photo.png")) {
+            byte[] bytes=ProgressPhotoValidatorTest.plain(name.endsWith("png")?"png":"jpeg");
+            var photo=new MockMultipartFile("photo",name,name.endsWith("png")?"image/png":"image/jpeg",bytes);
+            var validated=validator.validate(photo);assertThat(validated.bytes()).isEqualTo(bytes);assertThat(validated.geoVerificationStatus()).isNull();
+        }
+        Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23");
+        submit(student,1,new MockMultipartFile("photo","corrupt.jpg","image/jpeg",new byte[]{1,2,3}),"Work").andExpect(status().isBadRequest());
+        long id=create(student,exifJpeg("gps.jpeg",91,0,0,79,0,0));
         mvc.perform(get("/api/v1/mentor/monthly-progress/{id}",id).cookie(loginCookie(mentorA.getEmail(),"MentorPassword!23")))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.geoVerificationStatus").value("MISSING_GPS"))
-                .andExpect(jsonPath("$.exifLatitude").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.exifLongitude").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.exifCapturedAt").value(org.hamcrest.Matchers.nullValue()));
-        mvc.perform(get("/api/v1/mentor/monthly-progress/{id}",id).cookie(loginCookie(mentorB.getEmail(),"MentorPassword!24"))).andExpect(status().isNotFound());
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING_MENTOR_REVIEW")).andExpect(jsonPath("$.exifLatitude").doesNotExist());
+        assertThat(reports.findById(id).orElseThrow().getWorkplaceVerificationStatus()).isNull();
+    }
+    @Test void auditFailureRollsBackDecisionAndResubmission() throws Exception {
+        Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23"),mentor=loginCookie(mentorA.getEmail(),"MentorPassword!23");
+        long id=create(student,png("original.png"));
+        String original=reports.findById(id).orElseThrow().getPhotoStorageKey();
+        reviewJdbc.update("insert into monthly_progress_review_events(report_id,revision,event_type,actor_id,performed_at) values (?,1,'APPROVED',?,?)",id,mentorA.getId(),java.sql.Timestamp.from(NOW));
+        decision(mentor,id,true,1,null).andExpect(status().isConflict());
+        assertThat(reports.findById(id).orElseThrow().getStatus()).isEqualTo(MonthlyProgressStatus.PENDING_MENTOR_REVIEW);
+        reviewJdbc.update("delete from monthly_progress_review_events where report_id=? and event_type='APPROVED'",id);
+        decision(mentor,id,false,1,"Correct this").andExpect(status().isOk());
+        reviewJdbc.update("insert into monthly_progress_review_events(report_id,revision,event_type,actor_id,performed_at) values (?,2,'SUBMITTED',?,?)",id,studentA.getId(),java.sql.Timestamp.from(NOW));
+        java.nio.file.Path storageRoot=reviewStorage.load(original).resource().getFile().toPath().getParent();
+        java.util.Set<String> filesBefore;
+        try(var files=java.nio.file.Files.list(storageRoot)) { filesBefore=files.map(path->path.getFileName().toString()).collect(java.util.stream.Collectors.toSet()); }
+        resubmit(student,id,1).andExpect(status().isConflict());
+        var retained=reports.findById(id).orElseThrow(); assertThat(retained.getRevision()).isEqualTo(1);assertThat(retained.getStatus()).isEqualTo(MonthlyProgressStatus.REJECTED);
+        assertThat(retained.getPhotoStorageKey()).isEqualTo(original);assertThat(reviewStorage.load(original)).isNotNull();
+        try(var files=java.nio.file.Files.list(storageRoot)) { assertThat(files.map(path->path.getFileName().toString()).collect(java.util.stream.Collectors.toSet())).isEqualTo(filesBefore); }
+    }
+    @Test void monthlyExportsUseReviewStatusAndMentorScope() throws Exception {
+        Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23"),mentor=loginCookie(mentorA.getEmail(),"MentorPassword!23");long id=create(student,png("export.png"));
+        decision(mentor,id,true,1,null).andExpect(status().isOk());
+        List<String> fields=List.of("uid","reviewStatus","imageSha256");
+        String body=json.writeValueAsString(Map.of("reportType","MONTHLY_PROGRESS","fields",fields,"filters",Map.of("monthlyStatus","APPROVED"),"studentIds",List.of(studentA.getId()),"page",0,"format","CSV"));
+        var csv=mvc.perform(post("/api/v1/admin/reports/generate").cookie(loginCookie(admin.getEmail(),"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk()).andReturn();
+        assertThat(csv.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("APPROVED","Image SHA-256").doesNotContain("GPS","EXIF","Geo Tag");
+        mvc.perform(post("/api/v1/mentor/reports/table").cookie(mentor).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].reviewStatus").value("APPROVED"));
+        mvc.perform(post("/api/v1/mentor/reports/generate").cookie(loginCookie(mentorB.getEmail(),"MentorPassword!24")).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden());
+    }
+    private long create(Cookie student,MockMultipartFile photo) throws Exception {
+        var result=submit(student,1,photo,"Work").andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("PENDING_MENTOR_REVIEW"))
+            .andExpect(jsonPath("$.revision").value(1)).andExpect(jsonPath("$.reviewerId").isEmpty()).andReturn();
+        return json.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+    }
+    private ResultActions decision(Cookie mentor,long id,boolean approve,int revision,String reason) throws Exception {
+        var body=new HashMap<String,Object>();body.put("revision",revision);if(reason!=null)body.put("reason",reason);
+        return mvc.perform(post("/api/v1/mentor/monthly-progress/{id}/{decision}",id,approve?"approve":"reject").cookie(mentor).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)));
+    }
+    private ResultActions resubmit(Cookie student,long id,int revision) throws Exception {
+        return mvc.perform(multipart("/api/v1/student/monthly-progress/{id}/resubmit",id).file(png("corrected.png"))
+            .file(new MockMultipartFile("workDescription","","text/plain","Corrected work".getBytes(StandardCharsets.UTF_8))).param("revision",Integer.toString(revision)).cookie(student));
+    }
+    private String pdfText(Cookie student,long id) throws Exception {
+        byte[] pdf=mvc.perform(get("/api/v1/student/monthly-progress/{id}/pdf",id).cookie(student)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        try(var document=org.apache.pdfbox.pdmodel.PDDocument.load(pdf)) { return new org.apache.pdfbox.text.PDFTextStripper().getText(document); }
     }
 
     private ResultActions submit(Cookie session, int month, MockMultipartFile photo, String work) throws Exception {
@@ -291,7 +254,7 @@ class MonthlyProgressIntegrationTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getCookie("ims_auth");
     }
     private void clearData() {
-        reports.deleteAll(); assignments.deleteAll(); internships.deleteAll(); onboardings.deleteAll(); studentProfiles.deleteAll(); mentorProfiles.deleteAll(); studentAccounts.deleteAll(); users.deleteAll();
+        reviewEvents.deleteAll(); reports.deleteAll(); assignments.deleteAll(); internships.deleteAll(); onboardings.deleteAll(); studentProfiles.deleteAll(); mentorProfiles.deleteAll(); studentAccounts.deleteAll(); users.deleteAll();
     }
     @TestConfiguration static class FixedClockConfiguration { @Bean @Primary Clock fixedMonthlyProgressClock() { return Clock.fixed(NOW, ZONE); } }
 }

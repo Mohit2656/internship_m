@@ -16,28 +16,21 @@ public class PhysicalAttendanceService {
     private final AttendanceRepository attendance;
     private final AttendanceEvidenceRepository evidence;
     private final InternshipDetailsRepository internships;
-    private final InternshipLocationRepository locations;
-    private final InternshipLocationService locationService;
     private final UserRepository users;
     private final CameraImageValidator imageValidator;
-    private final PhysicalVerificationPolicy verificationPolicy;
     private final AttendancePolicyService policies;
     private final AiVerificationService aiVerification;
     private final Clock clock;
 
     public PhysicalAttendanceService(AttendanceRepository attendance, AttendanceEvidenceRepository evidence,
-            InternshipDetailsRepository internships, InternshipLocationRepository locations,
-            InternshipLocationService locationService, UserRepository users, CameraImageValidator imageValidator,
-            PhysicalVerificationPolicy verificationPolicy, AttendancePolicyService policies,
+            InternshipDetailsRepository internships, UserRepository users, CameraImageValidator imageValidator,
+            AttendancePolicyService policies,
             AiVerificationService aiVerification, Clock clock) {
         this.attendance = attendance;
         this.evidence = evidence;
         this.internships = internships;
-        this.locations = locations;
-        this.locationService = locationService;
         this.users = users;
         this.imageValidator = imageValidator;
-        this.verificationPolicy = verificationPolicy;
         this.policies = policies;
         this.aiVerification = aiVerification;
         this.clock = clock;
@@ -47,9 +40,8 @@ public class PhysicalAttendanceService {
     public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
             AiVerificationEvidenceRequest aiEvidence,
             BigDecimal latitude, BigDecimal longitude, BigDecimal accuracyMeters) {
-        boolean invalidGps=false;
-        try { validateCoordinates(latitude,longitude,accuracyMeters); }
-        catch (AttendanceException invalid) { invalidGps=true;latitude=null;longitude=null;accuracyMeters=null; }
+        // Optional legacy GPS parameters are ignored. New attendance does not
+        // collect or compare browser coordinates or registered workplaces.
         ValidatedCameraImage image = imageValidator.validate(photo);
         User student = users.findById(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
@@ -66,29 +58,21 @@ public class PhysicalAttendanceService {
         AiVerificationDecision aiDecision = aiVerification.evaluate(principal, internship, today, aiEvidence);
         if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today).isPresent()) throw duplicate();
 
-        InternshipLocation location = locations.findForVerification(internship.getId()).orElse(null);
         Instant serverTime = clock.instant();
-        PhysicalEvidenceInput input = new PhysicalEvidenceInput(latitude, longitude, accuracyMeters, image);
-        VerificationDecision physicalDecision = verificationPolicy.evaluate(
-                InternshipMode.OFFICE_REPORTING, location, input, serverTime, locationService.fullyApproved(location));
-        if(invalidGps) physicalDecision=new VerificationDecision(VerificationStatus.UNVERIFIED,VerificationReason.INVALID_LIVE_LOCATION,null,false,null);
-        VerificationDecision decision = combine(physicalDecision, aiDecision);
+        PhysicalEvidenceInput input = new PhysicalEvidenceInput(null, null, null, image);
+        VerificationDecision decision = new VerificationDecision(
+                aiDecision.accepted() ? VerificationStatus.VERIFIED : VerificationStatus.UNVERIFIED,
+                aiDecision.reason(), null, null, null);
         AttendanceRecord record = new AttendanceRecord(student, internship, today, AttendanceResult.PRESENT,
                 decision.status(), AttendanceSubmissionType.PHYSICAL_CAPTURE, serverTime);
+        record.useLivenessVerification();
         try {
             attendance.saveAndFlush(record);
         } catch (DataIntegrityViolationException exception) {
             throw duplicate();
         }
-        evidence.saveAndFlush(new AttendanceEvidence(record, input, location, decision, aiDecision, serverTime));
+        evidence.saveAndFlush(new AttendanceEvidence(record, input, null, decision, aiDecision, serverTime));
         return AttendanceService.response(record);
-    }
-
-    private static VerificationDecision combine(VerificationDecision physical, AiVerificationDecision ai) {
-        if (physical.status() == VerificationStatus.UNVERIFIED) return physical;
-        if (ai.accepted()) return physical;
-        return new VerificationDecision(VerificationStatus.UNVERIFIED, ai.reason(), physical.distanceMeters(),
-                physical.locationCheckPassed(), physical.metadataConsistent());
     }
 
     private InternshipDetails eligibleInternship(Long studentId) {
@@ -106,25 +90,6 @@ public class PhysicalAttendanceService {
         if (date.isBefore(internship.getStartDate()) || date.isAfter(internship.getEndDate())) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_OUTSIDE_INTERNSHIP_PERIOD",
                     "Attendance is available only during the registered internship period");
-        }
-    }
-
-    private static void validateCoordinates(BigDecimal latitude, BigDecimal longitude, BigDecimal accuracy) {
-        boolean none = latitude == null && longitude == null && accuracy == null;
-        boolean all = latitude != null && longitude != null && accuracy != null;
-        if (!none && !all) {
-            throw error(HttpStatus.BAD_REQUEST, "INCOMPLETE_LIVE_LOCATION",
-                    "Latitude, longitude and GPS accuracy must be provided together");
-        }
-        if (none) return;
-        if (latitude.compareTo(BigDecimal.valueOf(-90)) < 0 || latitude.compareTo(BigDecimal.valueOf(90)) > 0) {
-            throw error(HttpStatus.BAD_REQUEST, "INVALID_LATITUDE", "Latitude must be between -90 and 90");
-        }
-        if (longitude.compareTo(BigDecimal.valueOf(-180)) < 0 || longitude.compareTo(BigDecimal.valueOf(180)) > 0) {
-            throw error(HttpStatus.BAD_REQUEST, "INVALID_LONGITUDE", "Longitude must be between -180 and 180");
-        }
-        if (accuracy.compareTo(BigDecimal.ZERO) <= 0 || accuracy.compareTo(BigDecimal.valueOf(100_000)) > 0) {
-            throw error(HttpStatus.BAD_REQUEST, "INVALID_GPS_ACCURACY", "GPS accuracy must be a positive distance");
         }
     }
 

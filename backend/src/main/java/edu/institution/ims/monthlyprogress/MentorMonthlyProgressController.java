@@ -12,6 +12,18 @@ public class MentorMonthlyProgressController {
     private final MonthlyProgressService service;
     public MentorMonthlyProgressController(MonthlyProgressService service) { this.service = service; }
 
+    public record ApproveRequest(@jakarta.validation.constraints.Min(1) int revision) {}
+    public record RejectRequest(@jakarta.validation.constraints.Min(1) int revision,
+            @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max=1000) String reason) {}
+    @PostMapping("/{reportId}/approve") public MonthlyProgressReportResponse approve(@AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long reportId,@jakarta.validation.Valid @RequestBody ApproveRequest request) {
+        return service.review(principal,reportId,request.revision(),true,null);
+    }
+    @PostMapping("/{reportId}/reject") public MonthlyProgressReportResponse reject(@AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long reportId,@jakarta.validation.Valid @RequestBody RejectRequest request) {
+        return service.review(principal,reportId,request.revision(),false,request.reason());
+    }
+
     @GetMapping public List<MonthlyProgressReportResponse> reports(@AuthenticationPrincipal UserPrincipal principal) { return service.mentorReports(principal); }
     @GetMapping("/{reportId}") public MonthlyProgressReportResponse report(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long reportId) { return service.mentorReport(principal, reportId); }
     @GetMapping("/{reportId}/photo") public ResponseEntity<?> photo(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long reportId) { return MonthlyProgressDownloads.response(service.mentorPhoto(principal, reportId), true); }

@@ -45,6 +45,7 @@ public class AttendanceService {
         AttendanceRecord record = new AttendanceRecord(student, internship, today,
                 AttendanceResult.PRESENT, VerificationStatus.UNVERIFIED,
                 AttendanceSubmissionType.BASIC, clock.instant());
+        record.useLivenessVerification();
         try {
             return response(attendance.saveAndFlush(record));
         } catch (DataIntegrityViolationException exception) {
@@ -87,7 +88,8 @@ public class AttendanceService {
     public static AttendanceResponse response(AttendanceRecord record) {
         return new AttendanceResponse(record.getId(), record.getInternship().getId(), record.getAttendanceDate(),
                 record.getAttendanceResult(), record.getVerificationStatus(), record.getSubmissionType(),
-                record.getServerSubmittedAt(), AttendanceEvidenceResponse.from(record.getEvidence()));
+                record.getServerSubmittedAt(), AttendanceEvidenceResponse.from(record.getEvidence()),
+                record.getVerificationBasis(), record.getLivenessStatus());
     }
 
     private static AttendanceException duplicate() {

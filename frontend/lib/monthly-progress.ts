@@ -1,5 +1,13 @@
 import { api } from "@/lib/api";
 
+export type MonthlyProgressStatus = "PENDING_MENTOR_REVIEW" | "APPROVED" | "REJECTED";
+export function monthlyStatusLabel(status: MonthlyProgressStatus | undefined) {
+  return status === "APPROVED" ? "Approved" : status === "REJECTED" ? "Rejected" : "Pending faculty mentor review";
+}
+export function monthlyStatusClass(status: MonthlyProgressStatus | undefined) {
+  return status === "APPROVED" ? "bg-emerald-50 text-emerald-700" : status === "REJECTED" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-800";
+}
+
 export type MonthlyProgressReport = {
   id: number;
   studentUserId: number;
@@ -17,30 +25,15 @@ export type MonthlyProgressReport = {
   photoOriginalName: string;
   photoMimeType: string;
   photoSize: number;
-  geoVerificationStatus: "VERIFIED" | "MISSING_GPS" | "INVALID_GPS" | "METADATA_READ_FAILED" | null;
-  geoVerificationMessage: string | null;
-  captureTimeStatus: "PRESENT" | "MISSING_CAPTURE_TIME" | "INVALID_METADATA" | null;
-  gpsAltitude: number | null;
-  gpsTimestamp: string | null;
-  cameraMake: string | null;
-  cameraModel: string | null;
+  status: MonthlyProgressStatus;
+  revision: number;
+  reviewerId: number | null;
+  reviewerEmail: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
   imageWidth: number | null;
   imageHeight: number | null;
-  exifPresent: boolean | null;
-  gpsPresent: boolean | null;
   imageSha256: string | null;
-  exifCapturedAt: string | null;
-  exifLatitude: number | null;
-  exifLongitude: number | null;
-  locationName: string | null;
-  workplaceLatitude: number | null;
-  workplaceLongitude: number | null;
-  workplaceRadiusMeters: number | null;
-  workplaceDistanceMeters: number | null;
-  workplaceAddress: string | null;
-  workplacePlaceId: string | null;
-  workplaceVerificationStatus: string | null;
-  workplaceVerificationReason: string | null;
   submittedAt: string;
 };
 
@@ -48,7 +41,7 @@ export type MonthlyProgressPeriod = {
   monthNumber: number;
   periodStart: string;
   periodEnd: string;
-  status: "AVAILABLE" | "UPCOMING" | "SUBMITTED";
+  status: "AVAILABLE" | "UPCOMING" | MonthlyProgressStatus;
   report: MonthlyProgressReport | null;
 };
 

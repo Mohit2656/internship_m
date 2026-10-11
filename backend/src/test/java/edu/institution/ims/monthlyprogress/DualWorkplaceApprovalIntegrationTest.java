@@ -12,6 +12,8 @@ class DualWorkplaceApprovalIntegrationTest extends SharedWorkplaceIntegrationTes
  @Test void savingUnchangedRadiusPreservesApprovalsButARealChangeRevokesThem() throws Exception {
   register(studentA,"21.125","79.0875","Branch A");approve(studentA);
   long reportId=submitPhoto(studentA,"StudentPassword!23");
+  // Seed a retained legacy snapshot; current uploads never perform workplace verification.
+  jdbc.update("update monthly_progress_reports set workplace_radius_meters=200,workplace_verification_status='WITHIN_RADIUS' where id=?",reportId);
   var before=locationService.getForAdmin(studentA.getId());
   var same=locationService.radiusForAdmin(studentA.getId(),UserPrincipal.from(admin),new BigDecimal("200.00"));
   assertThat(same.status()).isEqualTo(InternshipLocationStatus.APPROVED);
@@ -27,11 +29,14 @@ class DualWorkplaceApprovalIntegrationTest extends SharedWorkplaceIntegrationTes
  @Test void mentorReassignmentInvalidatesEligibilityWithoutChangingHistoricalReport() throws Exception {
   register(studentA,"21.125","79.0875","Branch A");approve(studentA);
   long reportId=submitPhoto(studentA,"StudentPassword!23");
+  jdbc.update("update monthly_progress_reports set workplace_radius_meters=200,workplace_verification_status='WITHIN_RADIUS' where id=?",reportId);
   var previous=assignments.findByStudentIdAndActiveTrue(studentA.getId()).orElseThrow();previous.end(NOW);assignments.saveAndFlush(previous);
   assignments.saveAndFlush(new edu.institution.ims.mentor.MentorStudentAssignment(mentorB,studentA,admin,NOW));
   assertThat(locationService.getForAdmin(studentA.getId()).status()).isEqualTo(InternshipLocationStatus.PENDING);
   assertThat(reports.findById(reportId).orElseThrow().getWorkplaceVerificationStatus()).isEqualTo("WITHIN_RADIUS");
   mvc.perform(get("/api/v1/mentor/students/"+studentA.getId()+"/internship/location").cookie(login(mentorA,"MentorPassword!23"))).andExpect(status().isNotFound());
+  mvc.perform(post("/api/v1/mentor/monthly-progress/"+reportId+"/approve").cookie(login(mentorA,"MentorPassword!23")).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":1}")).andExpect(status().isNotFound());
+  mvc.perform(post("/api/v1/mentor/monthly-progress/"+reportId+"/approve").cookie(login(mentorB,"MentorPassword!24")).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":1}")).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("APPROVED"));
   var current=locationService.getForAdmin(studentA.getId());
   locationService.review(studentA.getId(),UserPrincipal.from(mentorB),new WorkplaceReview(current.revision(),WorkplaceReview.Decision.APPROVE,"New assigned mentor reviewed"));
   assertThat(locationService.getForAdmin(studentA.getId()).status()).isEqualTo(InternshipLocationStatus.APPROVED);

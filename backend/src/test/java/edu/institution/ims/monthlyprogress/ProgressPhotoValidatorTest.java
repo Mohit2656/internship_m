@@ -40,25 +40,12 @@ class ProgressPhotoValidatorTest {
     }
     static byte[] plain(String format) throws Exception {ByteArrayOutputStream out=new ByteArrayOutputStream();ImageIO.write(new BufferedImage(16,12,BufferedImage.TYPE_INT_RGB),format,out);return out.toByteArray();}
     private ValidatedProgressPhoto read(String name,byte[] bytes) {return validator.validate(new MockMultipartFile("photo",name,name.endsWith("png")?"image/png":"image/jpeg",bytes));}
-    @Test void completeExifGpsAndOffsetTimeAreReadFromRealJpeg() throws Exception {
-        var photo=read("complete.jpg",fixture(true,true,21));
-        assertThat(photo.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
-        assertThat(photo.latitude()).isEqualByComparingTo("21.125");assertThat(photo.longitude()).isEqualByComparingTo("79.0875");
-        assertThat(photo.gpsAltitude()).isEqualByComparingTo("317");assertThat(photo.gpsTimestamp()).isEqualTo(Instant.parse("2026-10-06T10:32:00Z"));
-        assertThat(photo.capturedAt()).isEqualTo(Instant.parse("2026-10-06T10:32:00Z"));assertThat(photo.captureTimeStatus()).isEqualTo("PRESENT");
-        assertThat(photo.cameraMake()).isEqualTo("Test Camera");assertThat(photo.cameraModel()).isEqualTo("Model, \"One\"");
-        assertThat(photo.exifPresent()).isTrue();assertThat(photo.gpsPresent()).isTrue();assertThat(photo.imageWidth()).isEqualTo(16);assertThat(photo.imageHeight()).isEqualTo(12);
-    }
-    @Test void absentGpsAndPngRemainValid() throws Exception {
-        for(var photo:List.of(read("plain.jpg",plain("jpeg")),read("plain.jpeg",plain("jpeg")),read("plain.png",plain("png")))) {
-            assertThat(photo.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.MISSING_GPS);assertThat(photo.latitude()).isNull();assertThat(photo.longitude()).isNull();
-            assertThat(photo.capturedAt()).isNull();assertThat(photo.gpsPresent()).isFalse();assertThat(photo.exifPresent()).isFalse();
-            assertThat(photo.geoVerificationMessage()).isEqualTo("No GPS coordinates were found in the image EXIF metadata.");
+    @Test void gpsMetadataIsOptionalAndNeverDeterminesReviewStatus() throws Exception {
+        for(var photo:List.of(read("gps.jpg",fixture(true,true,21)),read("invalid-gps.jpeg",fixture(true,false,91)),read("plain.jpg",plain("jpeg")),read("plain.jpeg",plain("jpeg")),read("plain.png",plain("png")))) {
+            assertThat(photo.geoVerificationStatus()).isNull(); assertThat(photo.geoVerificationMessage()).isNull();
+            assertThat(photo.latitude()).isNull(); assertThat(photo.longitude()).isNull(); assertThat(photo.capturedAt()).isNull();
+            assertThat(photo.imageWidth()).isEqualTo(16); assertThat(photo.imageHeight()).isEqualTo(12);
         }
-    }
-    @Test void invalidGpsAndMissingCaptureAreIndependent() throws Exception {
-        assertThat(read("invalid.jpg",fixture(true,true,91)).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.INVALID_GPS);
-        var missing=read("missing-time.jpg",fixture(true,false,21));assertThat(missing.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);assertThat(missing.capturedAt()).isNull();assertThat(missing.captureTimeStatus()).isEqualTo("MISSING_CAPTURE_TIME");
     }
     @Test void hashTracksExactBytesAndChangesWithImageMetadata() throws Exception {
         byte[] source=fixture(true,true,21);var original=read("one.jpg",source);assertThat(original.bytes()).isEqualTo(source);
@@ -72,7 +59,7 @@ class ProgressPhotoValidatorTest {
     @Test void validCameraPaddingDoesNotMakeJpegMalformed() throws Exception {
         byte[] jpeg = fixture(true, true, 21);
         byte[] padded = Arrays.copyOf(jpeg, jpeg.length + 128);
-        assertThat(read("camera.jpeg", padded).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
+        assertThat(read("camera.jpeg", padded).geoVerificationStatus()).isNull();
         assertThat(read("camera.jpeg", padded).bytes()).isEqualTo(padded);
     }
     @Test void truncatedAndDisguisedFilesAreRejected() throws Exception {
@@ -93,7 +80,7 @@ class ProgressPhotoValidatorTest {
         out.write(jpeg, 2, jpeg.length - 2);
         var photo = validator.validate(new MockMultipartFile("photo", "large.JPEG", "application/octet-stream", out.toByteArray()));
         assertThat(photo.size()).isGreaterThan(5L * 1024 * 1024);
-        assertThat(photo.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.MISSING_GPS);
+        assertThat(photo.geoVerificationStatus()).isNull();
         assertThat(validator.validate(new MockMultipartFile("photo", "empty-mime.jpg", null, jpeg)).mimeType()).isEqualTo("image/jpeg");
     }
     @Test void writeDeterministicLocalBrowserFixtures() throws Exception {

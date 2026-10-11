@@ -32,12 +32,11 @@ public class DashboardReportRepository {
             left join mentor_profiles mp on mp.user_id = a.mentor_user_id
             left join internship_onboarding o on o.student_user_id = u.id
             left join internship_details i on i.onboarding_id = o.id
-            left join internship_locations loc on loc.internship_id = i.id
-            left join users cu on cu.id = loc.confirmed_by
             left join student_professional_profiles pp on pp.student_user_id = u.id
             left join student_resumes r on r.professional_profile_id = pp.id and r.is_active = true
             left join resume_analyses ra on ra.resume_id = r.id
             left join attendance_records t on t.student_user_id = u.id and t.attendance_date = :attendanceDate and t.deleted_at is null
+            left join attendance_evidence te on te.attendance_id = t.id
             left join hybrid_work_schedule hs on hs.internship_id = i.id and hs.day_of_week = :dayOfWeek
             """;
     public record Scope(String where, MapSqlParameterSource params, Map<String, String> filters, LocalDate attendanceDate) {}
@@ -84,13 +83,12 @@ public class DashboardReportRepository {
                 case "internshipMode" -> "i.internship_mode = :internshipMode";
                 case "internshipSource" -> "o.source = :internshipSource";
                 case "companyType" -> "i.company_type = :companyType";
-                case "locationStatus" -> "coalesce(loc.status, 'NOT_CONFIGURED') = :locationStatus";
                 case "mentorAssignment" -> value.equals("ASSIGNED") ? "a.id is not null" : "a.id is null";
                 case "paid" -> value.equals("PAID") ? "i.stipend_per_month > 0" : "i.stipend_per_month = 0";
                 case "fullTimeOffered" -> "i.full_time_employment_offered = :fullTimeOffered";
                 case "accountActive" -> "u.active = :accountActive";
                 case "attendanceStatus" -> "coalesce(t.attendance_result, 'NOT_SUBMITTED') = :attendanceStatus";
-                case "verificationStatus" -> "coalesce(t.verification_status, 'NOT_SUBMITTED') = :verificationStatus";
+                case "verificationStatus" -> "(" + AttendanceLivenessSql.status("t", "te") + ") = :verificationStatus";
                 case "company" -> "lower(i.company_name) like :company escape '!'";
                 case "search" -> "(lower(coalesce(p.student_name, sa.student_name, '')) like :search escape '!' or lower(coalesce(p.uid, sa.uid, '')) like :search escape '!' or lower(u.email) like :search escape '!')";
                 default -> null; // Date parameters configure the reference date or related history, not student membership.
@@ -181,26 +179,29 @@ public class DashboardReportRepository {
                 rs -> append(byId.get(rs.getLong("sid")), selected, "education", describe(rs, "degree", "field", "institution")));
         if (selected.contains("experience")) batch("select pp.student_user_id as sid, x.title, x.company, x.start_date, x.end_date from resume_extracted_experiences x" + analysisJoin, params,
                 rs -> append(byId.get(rs.getLong("sid")), selected, "experience", describe(rs, "title", "company", "start_date", "end_date")));
-        if (has(selected, "attendanceCount", "presentCount", "absentCount", "verifiedCount", "unverifiedCount")) {
-            for (var row : rows) for (String key : List.of("attendanceCount", "presentCount", "absentCount", "verifiedCount", "unverifiedCount")) if (selected.contains(key)) row.put(key, 0L);
-            batch("""
-                    select ar.student_user_id as sid, count(*) as attendance_count,
-                    sum(case when ar.attendance_result='PRESENT' then 1 else 0 end) as present_count,
-                    sum(case when ar.attendance_result='ABSENT' then 1 else 0 end) as absent_count,
-                    sum(case when ar.verification_status='VERIFIED' then 1 else 0 end) as verified_count,
-                    sum(case when ar.verification_status='UNVERIFIED' then 1 else 0 end) as unverified_count
-                    from attendance_records ar where ar.deleted_at is null and ar.student_user_id in (:ids)
-                    """ + attendanceWindow + " group by ar.student_user_id", params, rs -> {
+        if (has(selected, "attendanceCount", "presentCount", "absentCount", "verifiedCount", "unverifiedCount", "notPerformedCount", "historicalCount")) {
+            for (var row : rows) for (String key : List.of("attendanceCount", "presentCount", "absentCount", "verifiedCount", "unverifiedCount", "notPerformedCount", "historicalCount")) if (selected.contains(key)) row.put(key, 0L);
+            String liveness = AttendanceLivenessSql.status("ar", "e");
+            batch("select ar.student_user_id as sid, count(*) as attendance_count,"
+                    + "sum(case when ar.attendance_result='PRESENT' then 1 else 0 end) as present_count,"
+                    + "sum(case when ar.attendance_result='ABSENT' then 1 else 0 end) as absent_count,"
+                    + "sum(case when (" + liveness + ")='VERIFIED' then 1 else 0 end) as verified_count,"
+                    + "sum(case when (" + liveness + ")='FAILED' then 1 else 0 end) as unverified_count,"
+                    + "sum(case when (" + liveness + ")='NOT_PERFORMED' then 1 else 0 end) as not_performed_count,"
+                    + "sum(case when (" + liveness + ")='HISTORICAL' then 1 else 0 end) as historical_count "
+                    + "from attendance_records ar left join attendance_evidence e on e.attendance_id=ar.id "
+                    + "where ar.deleted_at is null and ar.student_user_id in (:ids)"
+                    + attendanceWindow + " group by ar.student_user_id", params, rs -> {
                 var row = byId.get(rs.getLong("sid"));
-                for (String[] pair : new String[][]{{"attendanceCount","attendance_count"},{"presentCount","present_count"},{"absentCount","absent_count"},{"verifiedCount","verified_count"},{"unverifiedCount","unverified_count"}})
+                for (String[] pair : new String[][]{{"attendanceCount","attendance_count"},{"presentCount","present_count"},{"absentCount","absent_count"},{"verifiedCount","verified_count"},{"unverifiedCount","unverified_count"},{"notPerformedCount","not_performed_count"},{"historicalCount","historical_count"}})
                     if (selected.contains(pair[0])) row.put(pair[0], rs.getLong(pair[1]));
             });
         }
-        if (selected.contains("attendanceHistory")) batch("select ar.student_user_id as sid, ar.attendance_date, ar.attendance_result, ar.verification_status, ar.submission_type, ar.server_submitted_at from attendance_records ar where ar.deleted_at is null and ar.student_user_id in (:ids)" + attendanceWindow + " order by ar.attendance_date", params,
-                rs -> append(byId.get(rs.getLong("sid")), selected, "attendanceHistory", describe(rs, "attendance_date", "attendance_result", "verification_status", "submission_type", "server_submitted_at")));
-        if (selected.contains("attendanceEvidence")) batch("select ar.student_user_id as sid, ar.attendance_date, e.* from attendance_evidence e join attendance_records ar on ar.id=e.attendance_id where ar.deleted_at is null and ar.student_user_id in (:ids)" + attendanceWindow + " order by ar.attendance_date", params, rs -> {
+        if (selected.contains("attendanceHistory")) batch("select ar.student_user_id as sid, ar.attendance_date, ar.attendance_result, " + AttendanceLivenessSql.status("ar", "e") + " as liveness_status, ar.submission_type, ar.server_submitted_at from attendance_records ar left join attendance_evidence e on e.attendance_id=ar.id where ar.deleted_at is null and ar.student_user_id in (:ids)" + attendanceWindow + " order by ar.attendance_date", params,
+                rs -> append(byId.get(rs.getLong("sid")), selected, "attendanceHistory", describe(rs, "attendance_date", "attendance_result", "liveness_status", "submission_type", "server_submitted_at")));
+        if (selected.contains("attendanceEvidence")) batch("select ar.student_user_id as sid, ar.attendance_date, " + AttendanceLivenessSql.status("ar", "e") + " as liveness_status, " + AttendanceLivenessSql.reason("ar", "e") + " as liveness_reason, e.* from attendance_evidence e join attendance_records ar on ar.id=e.attendance_id where ar.deleted_at is null and ar.student_user_id in (:ids)" + attendanceWindow + " order by ar.attendance_date", params, rs -> {
             List<String> parts = new ArrayList<>(); parts.add(text(rs.getObject("attendance_date")));
-            for (String column : List.of("verification_reason", "expected_work_mode", "daily_work_summary", "latitude", "longitude", "gps_accuracy_meters", "expected_latitude", "expected_longitude", "geofence_radius_meters", "workplace_address", "workplace_place_id", "distance_meters", "location_check_passed", "metadata_consistent", "camera_capture_used", "exif_timestamp", "exif_latitude", "exif_longitude", "ai_challenge_type", "ai_face_detected", "ai_single_face", "ai_quality_passed", "ai_liveness_passed", "ai_model_version", "ai_processed_at", "ai_failure_reason")) {
+            for (String column : List.of("liveness_status", "liveness_reason", "expected_work_mode", "daily_work_summary", "metadata_consistent", "camera_capture_used", "image_media_type", "image_size_bytes", "ai_challenge_type", "ai_face_detected", "ai_single_face", "ai_quality_passed", "ai_liveness_passed", "ai_model_version", "ai_processed_at", "ai_failure_reason")) {
                 Object value = rs.getObject(column); if (value != null) parts.add(column.replace('_', ' ') + ": " + text(value));
             }
             append(byId.get(rs.getLong("sid")), selected, "attendanceEvidence", String.join(" | ", parts));
@@ -215,8 +216,8 @@ public class DashboardReportRepository {
             batch("select o.student_user_id as sid, m.* from monthly_progress_reports m join internship_details i on i.id=m.student_internship_id join internship_onboarding o on o.id=i.onboarding_id where m.deleted_at is null and o.student_user_id in (:ids)" + monthlyWindow + " order by m.report_month_number", params, rs -> {
                 var row = byId.get(rs.getLong("sid")); row.put("monthlyReportCount", ((Number) row.get("monthlyReportCount")).longValue() + 1);
                 String month = "Month " + rs.getInt("report_month_number") + ": ";
-                append(row, selected, "monthlyReports", month + describe(rs, "period_start", "period_end", "work_description", "submitted_at"));
-                append(row, selected, "monthlyPhotos", month + describe(rs, "photo_original_name", "photo_mime_type", "photo_size", "exif_captured_at", "exif_latitude", "exif_longitude", "location_name", "geo_verification_status", "geo_verification_message", "capture_time_status", "gps_altitude", "gps_timestamp", "camera_make", "camera_model", "image_width", "image_height", "exif_present", "gps_present", "image_sha256"));
+                append(row, selected, "monthlyReports", month + describe(rs, "period_start", "period_end", "work_description", "submitted_at", "review_status", "revision", "reviewed_at", "rejection_reason"));
+                append(row, selected, "monthlyPhotos", month + describe(rs, "photo_original_name", "photo_mime_type", "photo_size", "image_width", "image_height", "image_sha256"));
             });
         }
         if (selected.contains("assignmentHistory")) batch("select a.student_user_id as sid, mp.name, mu.email, au.email as assigned_by_email, a.assigned_at, a.ended_at, a.active from mentor_student_assignments a join users mu on mu.id=a.mentor_user_id left join mentor_profiles mp on mp.user_id=mu.id join users au on au.id=a.assigned_by where a.student_user_id in (:ids) order by a.assigned_at", params,

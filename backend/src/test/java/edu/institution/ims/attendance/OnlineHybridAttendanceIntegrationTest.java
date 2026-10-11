@@ -50,7 +50,6 @@ class OnlineHybridAttendanceIntegrationTest {
     @Autowired InternshipOnboardingRepository onboardings;
     @Autowired InternshipDetailsRepository internships;
     @Autowired InternshipLocationRepository locations;
-    @Autowired InternshipLocationService locationService;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired HybridWorkScheduleRepository schedules;
     @Autowired AttendanceRepository attendance;
@@ -107,6 +106,7 @@ class OnlineHybridAttendanceIntegrationTest {
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceDate").value(TODAY.toString()))
                 .andExpect(jsonPath("$.serverSubmittedAt").value(NOW.toString()))
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.submissionType").value("REMOTE_CAPTURE"));
 
         AttendanceRecord record = attendance.findByStudentIdAndAttendanceDate(online.getId(), TODAY).orElseThrow();
@@ -115,14 +115,15 @@ class OnlineHybridAttendanceIntegrationTest {
         assertThat(stored.getExpectedWorkMode()).isEqualTo(HybridWorkMode.REMOTE);
         assertThat(stored.getLatitude()).isNull();
         assertThat(stored.getGpsAccuracyMeters()).isNull();
-        assertThat(stored.getVerificationReason()).isEqualTo(VerificationReason.REMOTE_EVIDENCE_COMPLETE);
+        assertThat(stored.getVerificationReason()).isEqualTo(VerificationReason.EDGE_AI_VERIFIED);
         assertThat(locations.findAll()).isEmpty();
 
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
                         .param("dailyWorkSummary", SUMMARY).cookie(session))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_ALREADY_SUBMITTED"));
         mvc.perform(get("/api/v1/student/attendance").cookie(session)).andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].verificationStatus").value("VERIFIED"));
+                .andExpect(jsonPath("$[0].verificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$[0].livenessStatus").value("VERIFIED"));
     }
 
     @Test
@@ -181,23 +182,25 @@ class OnlineHybridAttendanceIntegrationTest {
                         .param("dailyWorkSummary", SUMMARY).param("todayWorkMode", "REMOTE").cookie(officeSession))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PHYSICAL_ATTENDANCE_REQUIRED"));
 
-        saveAndConfirmLocation(hybridOffice);
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
                         .file(aiEvidence(remoteSession, 1, true, true))
                         .param("dailyWorkSummary", SUMMARY).cookie(remoteSession))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.verificationStatus").value("VERIFIED"));
         mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo())
                         .file(aiEvidence(officeSession, 1, true, true))
-                        .param("latitude", "18.5204").param("longitude", "73.8567").param("accuracy", "10")
                         .cookie(officeSession)).andExpect(status().isCreated())
-                .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"));
+                .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
+        assertThat(locations.findAll()).isEmpty();
 
         mvc.perform(get("/api/v1/mentor/attendance/today").cookie(mentorSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[?(@.uid == 'R300')].todayWorkMode").value("REMOTE"))
                 .andExpect(jsonPath("$[?(@.uid == 'R300')].todayAttendance.verificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$[?(@.uid == 'R300')].todayAttendance.livenessStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$[?(@.uid == 'R400')].todayWorkMode").value("OFFICE"))
-                .andExpect(jsonPath("$[?(@.uid == 'R400')].todayAttendance.verificationStatus").value("VERIFIED"));
+                .andExpect(jsonPath("$[?(@.uid == 'R400')].todayAttendance.verificationStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$[?(@.uid == 'R400')].todayAttendance.livenessStatus").value("VERIFIED"));
         mvc.perform(get("/api/v1/mentor/attendance/today")
                         .cookie(loginCookie(mentorB.getEmail(), "MentorPassword!24")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
@@ -216,7 +219,8 @@ class OnlineHybridAttendanceIntegrationTest {
                         .queryParam("attendanceDate", "1999-01-01").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"verificationStatus\":\"VERIFIED\",\"todayWorkMode\":\"REMOTE\"}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceDate").value(TODAY.toString()))
-                .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"));
+                .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
+                .andExpect(jsonPath("$.livenessStatus").value("NOT_PERFORMED"));
     }
 
     private void saveSchedule(User student, String mode) throws Exception {
@@ -228,15 +232,6 @@ class OnlineHybridAttendanceIntegrationTest {
 
     private String scheduleJson(String mode) throws Exception {
         return json.writeValueAsString(Map.of("entries", List.of(Map.of("dayOfWeek", "FRIDAY", "workMode", mode))));
-    }
-
-    private void saveAndConfirmLocation(User student) throws Exception {
-        var mentor=mentorA;
-        if(assignments.findByStudentIdAndActiveTrue(student.getId()).isEmpty()) assignments.saveAndFlush(new MentorStudentAssignment(mentor,student,admin,NOW));
-        locationService.registerSelectedPlace(internships.findByOnboardingStudentId(student.getId()).orElseThrow(),new edu.institution.ims.internship.dto.RegisteredWorkplaceRequest("test-branch-"+student.getId(),"Actual test workplace address",new BigDecimal("18.520400"),new BigDecimal("73.856700")));
-        var current=locationService.getForAdmin(student.getId());
-        locationService.review(student.getId(),edu.institution.ims.security.UserPrincipal.from(mentor),new WorkplaceReview(current.revision(),WorkplaceReview.Decision.APPROVE,null));
-        locationService.review(student.getId(),edu.institution.ims.security.UserPrincipal.from(admin),new WorkplaceReview(current.revision(),WorkplaceReview.Decision.APPROVE,null));
     }
 
     private MockMultipartFile photo() throws Exception {

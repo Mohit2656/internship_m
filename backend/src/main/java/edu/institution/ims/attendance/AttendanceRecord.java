@@ -44,6 +44,10 @@ public class AttendanceRecord {
     private VerificationStatus verificationStatus;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "verification_basis", nullable = false, length = 20)
+    private AttendanceVerificationBasis verificationBasis = AttendanceVerificationBasis.LEGACY;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "submission_type", nullable = false, length = 30)
     private AttendanceSubmissionType submissionType;
 
@@ -88,6 +92,18 @@ public class AttendanceRecord {
     public LocalDate getAttendanceDate() { return attendanceDate; }
     public AttendanceResult getAttendanceResult() { return attendanceResult; }
     public VerificationStatus getVerificationStatus() { return verificationStatus; }
+    public AttendanceVerificationBasis getVerificationBasis() { return verificationBasis; }
+    public void useLivenessVerification() { verificationBasis = AttendanceVerificationBasis.LIVENESS; }
+    public LivenessStatus getLivenessStatus() {
+        if (verificationBasis != AttendanceVerificationBasis.LIVENESS) return LivenessStatus.HISTORICAL;
+        if (evidence == null || evidence.getAiVerificationSession() == null || evidence.getAiProcessedAt() == null)
+            return LivenessStatus.NOT_PERFORMED;
+        boolean accepted = verificationStatus == VerificationStatus.VERIFIED
+                && evidence.isAiFaceDetected() && evidence.isAiSingleFace()
+                && evidence.isAiQualityPassed() && evidence.isAiLivenessPassed()
+                && evidence.getAiFailureReason() == null;
+        return accepted ? LivenessStatus.VERIFIED : LivenessStatus.FAILED;
+    }
     public AttendanceSubmissionType getSubmissionType() { return submissionType; }
     public Instant getServerSubmittedAt() { return serverSubmittedAt; }
     public Instant getCreatedAt() { return createdAt; }

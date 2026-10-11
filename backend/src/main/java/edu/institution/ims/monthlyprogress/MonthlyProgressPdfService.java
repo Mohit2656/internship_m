@@ -48,12 +48,17 @@ public class MonthlyProgressPdfService {
 
             writer.heading("WORK PERFORMED DURING THE MONTH");
             writer.paragraph(report.getWorkDescription(), 10);
-            writer.heading("GEO-TAGGED PHOTOGRAPH");
+            writer.label("Review Status", report.getStatus().name());
+            writer.label("Revision", String.valueOf(report.getRevision()));
+            if (report.getReviewedAt()!=null) {
+                writer.label("Reviewed At", DATE_TIME.format(report.getReviewedAt()));
+                writer.label("Faculty Mentor", report.getReviewer().getEmail());
+            }
+            if (report.getRejectionReason()!=null) writer.paragraph("Rejection reason: " + report.getRejectionReason(),10);
+            if (report.getStatus()==MonthlyProgressStatus.PENDING_MENTOR_REVIEW)
+                writer.paragraph("Sent to faculty mentor for review. This report is not yet approved.",10);
+            writer.heading("PHOTOGRAPH");
             writer.image(photo);
-            writer.label("Capture Date/Time", report.getExifCapturedAt() == null ? "Not available" : DATE_TIME.format(report.getExifCapturedAt()));
-            writer.label("Latitude", report.getExifLatitude() == null ? "Not available" : report.getExifLatitude().toPlainString());
-            writer.label("Longitude", report.getExifLongitude() == null ? "Not available" : report.getExifLongitude().toPlainString());
-            writer.label("Location", report.getLocationName() == null ? "Not available" : report.getLocationName());
             writer.space(24);
             writer.paragraph("Student Signature: ______________________", 10);
             writer.paragraph("Faculty Mentor Signature: _______________", 10);
