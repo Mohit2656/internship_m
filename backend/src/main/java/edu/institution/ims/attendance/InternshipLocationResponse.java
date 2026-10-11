@@ -13,5 +13,5 @@ public record InternshipLocationResponse(
         Instant createdAt,
         Instant updatedAt,
         Instant confirmedAt,
-        Long confirmedBy
+        Long confirmedBy, String placeId, String workplaceAddress, String workplaceName, String companyName, long revision, String mentorDecision, Long mentorReviewerId, Instant mentorReviewedAt, String mentorRemarks, String iiicDecision, String iiicRemarks
 ) {}

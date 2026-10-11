@@ -21,8 +21,10 @@ public class MonthlyProgressService {
     private final MonthlyProgressReportRepository reports;
     private final InternshipDetailsRepository internships;
     private final MentorStudentAssignmentRepository assignments;
+    @org.springframework.beans.factory.annotation.Autowired private edu.institution.ims.attendance.InternshipLocationService locationApprovals;
     private final FileStorageService storage;
     private final ProgressPhotoValidator photos;
+    @org.springframework.beans.factory.annotation.Autowired private edu.institution.ims.attendance.InternshipLocationRepository workplaceLocations;
     private final MonthlyProgressPdfService pdfs;
     private final Clock clock;
 
@@ -52,7 +54,7 @@ public class MonthlyProgressService {
                     report == null ? null : response(report));
         }).toList();
         return new MonthlyProgressOverviewResponse(internship.getId(), internship.getCompanyName(),
-                internship.getInternshipMode().getLabel(), internship.getStartDate(), internship.getEndDate(), periods);
+                internship.getInternshipMode().getLabel(), internship.getStartDate(), internship.getEndDate(), periods, photos.maxBytes());
     }
 
     @Transactional
@@ -78,6 +80,8 @@ public class MonthlyProgressService {
             MonthlyProgressReport report = new MonthlyProgressReport(internship, monthNumber, period.start(), period.end(), work,
                     storageKey, image.originalName(), image.mimeType(), image.size(), image.capturedAt(), image.latitude(), image.longitude(), clock.instant());
             report.applyMetadata(image);
+            var workplace=workplaceLocations.findForVerification(internship.getId()).orElse(null);
+            report.compareWorkplace(workplace,locationApprovals.fullyApproved(workplace));
             return response(reports.saveAndFlush(report));
         } catch (DataIntegrityViolationException exception) {
             storage.delete(storageKey);
@@ -201,7 +205,7 @@ public class MonthlyProgressService {
                 report.getImageHeight(),
                 report.getExifPresent(),
                 report.getGpsPresent(),
-                report.getImageSha256());
+                report.getImageSha256(), report.getWorkplaceLatitude(), report.getWorkplaceLongitude(), report.getWorkplaceRadiusMeters(), report.getWorkplaceDistanceMeters(), report.getWorkplaceAddress(), report.getWorkplacePlaceId(), report.getWorkplaceVerificationStatus(), report.getWorkplaceVerificationReason());
     }
     private static MonthlyProgressException duplicate() { return error(HttpStatus.CONFLICT, "MONTHLY_REPORT_ALREADY_SUBMITTED", "A report has already been submitted for this internship month"); }
     private static MonthlyProgressException invalidMonth() { return error(HttpStatus.BAD_REQUEST, "INVALID_REPORT_MONTH", "The report month is outside the registered internship period"); }

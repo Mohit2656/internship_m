@@ -6,13 +6,16 @@ import java.math.BigDecimal;
 import java.time.*;
 
 @Entity
+@org.hibernate.annotations.SQLRestriction("deleted_at IS NULL")
 @Table(name = "monthly_progress_reports",
-        uniqueConstraints = @UniqueConstraint(name = "uk_monthly_progress_reports_month", columnNames = {"student_internship_id", "report_month_number"}),
+        uniqueConstraints = @UniqueConstraint(name = "uk_monthly_progress_reports_month", columnNames = {"student_internship_id", "report_month_number", "active_slot"}),
         indexes = {
                 @Index(name = "idx_monthly_progress_reports_internship", columnList = "student_internship_id"),
                 @Index(name = "idx_monthly_progress_reports_submitted_at", columnList = "submitted_at")
         })
 public class MonthlyProgressReport {
+    @Column(name="deleted_at") private Instant deletedAt;
+    @Column(name="active_slot") private Integer activeSlot = 1;
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "student_internship_id", nullable = false, foreignKey = @ForeignKey(name = "fk_monthly_progress_reports_internship"))
@@ -46,6 +49,46 @@ public class MonthlyProgressReport {
     @Column(name = "gps_present") private Boolean gpsPresent;
     @Column(name = "image_sha256", length = 64) private String imageSha256;
 
+    @Column(name="workplace_latitude", precision=9, scale=6) private BigDecimal workplaceLatitude;
+    public BigDecimal getWorkplaceLatitude() { return workplaceLatitude; }
+    @Column(name="workplace_longitude", precision=10, scale=6) private BigDecimal workplaceLongitude;
+    public BigDecimal getWorkplaceLongitude() { return workplaceLongitude; }
+    @Column(name="workplace_radius_meters", precision=8, scale=2) private BigDecimal workplaceRadiusMeters;
+    public BigDecimal getWorkplaceRadiusMeters() { return workplaceRadiusMeters; }
+    @Column(name="workplace_distance_meters", precision=12, scale=2) private BigDecimal workplaceDistanceMeters;
+    public BigDecimal getWorkplaceDistanceMeters() { return workplaceDistanceMeters; }
+    @Column(name="workplace_address", length=1000) private String workplaceAddress;
+    public String getWorkplaceAddress() { return workplaceAddress; }
+    @Column(name="workplace_place_id", length=255) private String workplacePlaceId;
+    public String getWorkplacePlaceId() { return workplacePlaceId; }
+    @Column(name="workplace_verification_status", length=40) private String workplaceVerificationStatus;
+    public String getWorkplaceVerificationStatus() { return workplaceVerificationStatus; }
+    @Column(name="workplace_verification_reason", length=255) private String workplaceVerificationReason;
+    public String getWorkplaceVerificationReason() { return workplaceVerificationReason; }
+    public void compareWorkplace(edu.institution.ims.attendance.InternshipLocation workplace) {
+        compareWorkplace(workplace,workplace!=null && workplace.dualApproved());
+    }
+    public void compareWorkplace(edu.institution.ims.attendance.InternshipLocation workplace,boolean approved) {
+        workplaceLatitude = workplace == null ? null : workplace.getLatitude();
+        workplaceLongitude = workplace == null ? null : workplace.getLongitude();
+        workplaceRadiusMeters = workplace == null ? null : workplace.getGeofenceRadiusMeters();
+        workplaceAddress = workplace == null ? null : workplace.getWorkplaceAddress();
+        workplacePlaceId = workplace == null ? null : workplace.getPlaceId();
+        workplaceDistanceMeters = exifLatitude == null || exifLongitude == null || workplace == null ? null :
+            edu.institution.ims.attendance.PhysicalVerificationPolicy.haversineMeters(exifLatitude, exifLongitude, workplaceLatitude, workplaceLongitude);
+        if (geoVerificationStatus != GeoVerificationStatus.VERIFIED) {
+            workplaceVerificationStatus = geoVerificationStatus == null ? "UNASSESSED" : "PHOTO_" + geoVerificationStatus.name();
+            workplaceVerificationReason = "Photo GPS extraction: " + (geoVerificationStatus == null ? "unavailable" : geoVerificationMessage);
+        } else if (workplace == null) {
+            workplaceVerificationStatus = "WORKPLACE_UNAVAILABLE"; workplaceVerificationReason = "No registered workplace coordinates are available";
+        } else if (!approved) {
+            workplaceVerificationStatus = "WORKPLACE_NOT_CONFIRMED"; workplaceVerificationReason = "Both the assigned mentor and III Cell must approve this workplace";
+        } else {
+            boolean passed = workplaceDistanceMeters.compareTo(workplaceRadiusMeters) <= 0;
+            workplaceVerificationStatus = passed ? "WITHIN_RADIUS" : "OUTSIDE_RADIUS";
+            workplaceVerificationReason = passed ? "Photo EXIF coordinates are within the registered workplace radius" : "Photo EXIF coordinates are outside the registered workplace radius";
+        }
+    }
     protected MonthlyProgressReport() {}
 
     public MonthlyProgressReport(InternshipDetails internship, int monthNumber, LocalDate periodStart, LocalDate periodEnd,

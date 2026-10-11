@@ -20,5 +20,10 @@ public record InternshipDetailsRequest(
         @NotNull(message = "Total weeks is required") @Positive(message = "Total weeks must be greater than zero") Integer totalWeeks,
         @NotNull(message = "Internship mode is required") InternshipMode internshipMode,
         @NotNull(message = "Stipend per month is required") @DecimalMin(value = "0.00", message = "Stipend cannot be negative") @Digits(integer = 10, fraction = 2, message = "Stipend must have at most two decimal places") BigDecimal stipendPerMonth,
-        @NotNull(message = "Full-time employment opportunity selection is required") Boolean fullTimeEmploymentOffered
-) {}
+        @NotNull(message = "Full-time employment opportunity selection is required") Boolean fullTimeEmploymentOffered,
+        @jakarta.validation.Valid RegisteredWorkplaceRequest workplace
+) {
+    public InternshipDetailsRequest(String companyName, CompanyType companyType, String otherCompanyType, String companyAddress, String companyPhone, String industrySupervisorName, String industrySupervisorDesignation, String industrySupervisorContact, Integer durationMonths, LocalDate startDate, LocalDate endDate, Integer totalWeeks, InternshipMode internshipMode, BigDecimal stipendPerMonth, Boolean fullTimeEmploymentOffered) {
+        this(companyName,companyType,otherCompanyType,companyAddress,companyPhone,industrySupervisorName,industrySupervisorDesignation,industrySupervisorContact,durationMonths,startDate,endDate,totalWeeks,internshipMode,stipendPerMonth,fullTimeEmploymentOffered,null);
+    }
+}

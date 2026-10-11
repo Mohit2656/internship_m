@@ -32,6 +32,9 @@ public class InternshipDetails {
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
+    @OneToOne(mappedBy="internship", fetch=FetchType.LAZY) private edu.institution.ims.attendance.InternshipLocation workplace;
+    public edu.institution.ims.attendance.InternshipLocation getWorkplace() { return workplace; }
+    public void attachWorkplace(edu.institution.ims.attendance.InternshipLocation workplace) { this.workplace = workplace; }
     protected InternshipDetails() {}
     public InternshipDetails(InternshipOnboarding onboarding) { this.onboarding = onboarding; }
     public void apply(String companyName, CompanyType companyType, String otherCompanyType, String companyAddress, String companyPhone,

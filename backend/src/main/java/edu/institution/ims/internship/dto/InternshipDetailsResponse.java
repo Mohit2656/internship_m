@@ -8,4 +8,4 @@ public record InternshipDetailsResponse(Long id, Long onboardingId, String compa
         String industrySupervisorName, String industrySupervisorDesignation, String industrySupervisorContact,
         Integer durationMonths, LocalDate startDate, LocalDate endDate, Integer totalWeeks, String internshipMode,
         String internshipModeLabel, BigDecimal stipendPerMonth, boolean fullTimeEmploymentOffered,
-        Instant createdAt, Instant updatedAt) {}
+        Instant createdAt, Instant updatedAt, RegisteredWorkplaceRequest workplace) {}

@@ -10,7 +10,13 @@ export type Attendance = {
   verificationStatus: VerificationStatus;
   submissionType: AttendanceSubmissionType;
   serverSubmittedAt: string;
+  evidence?: { latitude: number | null; longitude: number | null; gpsAccuracyMeters?: number | null; locationCheckPassed?: boolean | null; expectedLatitude: number | null; expectedLongitude: number | null; distanceMeters: number | null; geofenceRadiusMeters: number | null; workplaceAddress: string | null; verificationReason: string | null } | null;
 };
+
+export function attendanceLabel(attendance: Attendance) {
+  if (attendance.attendanceResult !== "PRESENT") return "Absent";
+  return attendance.verificationStatus === "VERIFIED" ? "Present — Verified" : "Present — Unverified";
+}
 
 export type TodayAttendance = {
   attendanceDate: string;
@@ -60,7 +66,7 @@ export type AiVerificationEvidence = {
   modelVersion: string;
 };
 
-export type InternshipLocationStatus = "PENDING" | "CONFIRMED";
+export type InternshipLocationStatus = "PENDING" | "CONFIRMED" | "APPROVED" | "REJECTED";
 
 export type InternshipLocation = {
   id: number;
@@ -73,4 +79,9 @@ export type InternshipLocation = {
   updatedAt: string;
   confirmedAt: string | null;
   confirmedBy: number | null;
+  placeId: string | null;
+  workplaceAddress: string | null;
+  workplaceName: string | null;
+  companyName: string;
+  revision: number; mentorDecision: "APPROVE" | "REJECT" | null; mentorReviewerId: number | null; mentorReviewedAt: string | null; mentorRemarks: string | null; iiicDecision: "APPROVE" | "REJECT" | null; iiicRemarks: string | null;
 };

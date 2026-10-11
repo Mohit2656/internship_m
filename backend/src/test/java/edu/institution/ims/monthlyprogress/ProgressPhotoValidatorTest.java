@@ -14,7 +14,7 @@ import java.util.*;
 import static org.assertj.core.api.Assertions.*;
 
 class ProgressPhotoValidatorTest {
-    private final ProgressPhotoValidator validator = new ProgressPhotoValidator(5242880);
+    private final ProgressPhotoValidator validator = new ProgressPhotoValidator(20971520);
     static byte[] fixture(boolean gps, boolean capture, int degrees) throws Exception {
         ByteBuffer t = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN);
         t.put((byte)'I').put((byte)'I').putShort((short)42).putInt(8);
@@ -50,7 +50,7 @@ class ProgressPhotoValidatorTest {
         assertThat(photo.exifPresent()).isTrue();assertThat(photo.gpsPresent()).isTrue();assertThat(photo.imageWidth()).isEqualTo(16);assertThat(photo.imageHeight()).isEqualTo(12);
     }
     @Test void absentGpsAndPngRemainValid() throws Exception {
-        for(var photo:List.of(read("plain.jpg",plain("jpeg")),read("plain.png",plain("png")))) {
+        for(var photo:List.of(read("plain.jpg",plain("jpeg")),read("plain.jpeg",plain("jpeg")),read("plain.png",plain("png")))) {
             assertThat(photo.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.MISSING_GPS);assertThat(photo.latitude()).isNull();assertThat(photo.longitude()).isNull();
             assertThat(photo.capturedAt()).isNull();assertThat(photo.gpsPresent()).isFalse();assertThat(photo.exifPresent()).isFalse();
             assertThat(photo.geoVerificationMessage()).isEqualTo("No GPS coordinates were found in the image EXIF metadata.");
@@ -67,12 +67,39 @@ class ProgressPhotoValidatorTest {
     }
     @Test void corruptAndOversizedFilesFailCleanly() {
         assertThatThrownBy(()->read("corrupt.jpg",new byte[]{(byte)255,(byte)216,1,(byte)255,(byte)217})).isInstanceOf(MonthlyProgressException.class);
-        assertThatThrownBy(()->read("oversize.jpg",new byte[5242881])).isInstanceOfSatisfying(MonthlyProgressException.class,e->{assertThat(e.getCode()).isEqualTo("PHOTO_TOO_LARGE");assertThat(e.getStatus().value()).isEqualTo(413);});
+        assertThatThrownBy(()->read("oversize.jpg",new byte[20971521])).isInstanceOfSatisfying(MonthlyProgressException.class,e->{assertThat(e.getCode()).isEqualTo("PHOTO_TOO_LARGE");assertThat(e.getStatus().value()).isEqualTo(413);});
+    }
+    @Test void validCameraPaddingDoesNotMakeJpegMalformed() throws Exception {
+        byte[] jpeg = fixture(true, true, 21);
+        byte[] padded = Arrays.copyOf(jpeg, jpeg.length + 128);
+        assertThat(read("camera.jpeg", padded).geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
+        assertThat(read("camera.jpeg", padded).bytes()).isEqualTo(padded);
+    }
+    @Test void truncatedAndDisguisedFilesAreRejected() throws Exception {
+        for (String format : List.of("jpeg", "png")) {
+            byte[] source = plain(format);
+            String name = format.equals("png") ? "photo.png" : "photo.jpg";
+            assertThatThrownBy(() -> read(name, Arrays.copyOf(source, source.length - 8))).isInstanceOf(MonthlyProgressException.class);
+            byte[] padded = Arrays.copyOf(source, source.length + 2); padded[source.length] = 'M'; padded[source.length + 1] = 'Z';
+            assertThatThrownBy(() -> read(name, padded)).isInstanceOf(MonthlyProgressException.class);
+        }
+        assertThatThrownBy(() -> read("disguised.jpg", plain("png"))).isInstanceOf(MonthlyProgressException.class);
+        byte[] png = plain("png"); png[png.length - 1] ^= 1;
+        assertThatThrownBy(() -> read("bad-crc.png", png)).isInstanceOf(MonthlyProgressException.class);
+    }
+    @Test void jpegAboveOldFiveMiBLimitAndMissingBrowserMimeAreAccepted() throws Exception {
+        byte[] jpeg = plain("jpeg"); ByteArrayOutputStream out = new ByteArrayOutputStream(); out.write(jpeg, 0, 2);
+        for (int i = 0; i < 90; i++) { out.write(new byte[]{(byte)255, (byte)239, (byte)255, (byte)255}); out.write(new byte[65533]); }
+        out.write(jpeg, 2, jpeg.length - 2);
+        var photo = validator.validate(new MockMultipartFile("photo", "large.JPEG", "application/octet-stream", out.toByteArray()));
+        assertThat(photo.size()).isGreaterThan(5L * 1024 * 1024);
+        assertThat(photo.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.MISSING_GPS);
+        assertThat(validator.validate(new MockMultipartFile("photo", "empty-mime.jpg", null, jpeg)).mimeType()).isEqualTo("image/jpeg");
     }
     @Test void writeDeterministicLocalBrowserFixtures() throws Exception {
         Path root=Path.of("target","exif-fixtures");Files.createDirectories(root);
         Files.write(root.resolve("valid-gps.jpg"),fixture(true,true,21));Files.write(root.resolve("invalid-gps.jpg"),fixture(true,true,91));
         Files.write(root.resolve("missing-capture.jpg"),fixture(true,false,21));Files.write(root.resolve("no-gps.jpg"),plain("jpeg"));Files.write(root.resolve("no-exif.png"),plain("png"));
-        Files.write(root.resolve("corrupt.jpg"),new byte[]{1,2,3});Files.write(root.resolve("oversize.jpg"),new byte[5242881]);
+        Files.write(root.resolve("corrupt.jpg"),new byte[]{1,2,3});Files.write(root.resolve("oversize.jpg"),new byte[20971521]);
     }
 }

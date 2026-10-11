@@ -24,6 +24,9 @@ public class PhysicalVerificationPolicy {
 
     public VerificationDecision evaluate(InternshipMode mode, InternshipLocation location,
             PhysicalEvidenceInput input, Instant serverTime) {
+        return evaluate(mode,location,input,serverTime,location!=null && location.dualApproved());
+    }
+    public VerificationDecision evaluate(InternshipMode mode,InternshipLocation location,PhysicalEvidenceInput input,Instant serverTime,boolean approved) {
         BigDecimal distance = distance(input.latitude(), input.longitude(), location);
         Boolean metadataConsistent = metadataConsistency(input, serverTime);
         Boolean locationPassed = locationCheck(distance, input.accuracyMeters(), location);
@@ -32,7 +35,7 @@ public class PhysicalVerificationPolicy {
             return unverified(VerificationReason.PHYSICAL_VERIFICATION_NOT_APPLICABLE,
                     distance, locationPassed, metadataConsistent);
         }
-        if (location == null || location.getStatus() != InternshipLocationStatus.CONFIRMED) {
+        if (!approved) {
             return unverified(VerificationReason.EXPECTED_LOCATION_NOT_CONFIRMED,
                     distance, locationPassed, metadataConsistent);
         }
@@ -83,7 +86,7 @@ public class PhysicalVerificationPolicy {
         return haversineMeters(latitude, longitude, location.getLatitude(), location.getLongitude());
     }
 
-    static BigDecimal haversineMeters(BigDecimal latitude, BigDecimal longitude,
+    public static BigDecimal haversineMeters(BigDecimal latitude, BigDecimal longitude,
             BigDecimal expectedLatitude, BigDecimal expectedLongitude) {
         double lat1 = Math.toRadians(latitude.doubleValue());
         double lat2 = Math.toRadians(expectedLatitude.doubleValue());
@@ -91,6 +94,7 @@ public class PhysicalVerificationPolicy {
         double deltaLon = Math.toRadians(expectedLongitude.doubleValue() - longitude.doubleValue());
         double a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2)
                 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
+        a = Math.max(0, Math.min(1, a));
         double distance = EARTH_RADIUS_METERS * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return BigDecimal.valueOf(distance).setScale(2, RoundingMode.HALF_UP);
     }

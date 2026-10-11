@@ -5,4 +5,4 @@ import java.util.List;
 
 public record MonthlyProgressOverviewResponse(Long internshipId, String companyName, String internshipMode,
                                               LocalDate internshipStart, LocalDate internshipEnd,
-                                              List<MonthlyProgressPeriodResponse> periods) {}
+                                              List<MonthlyProgressPeriodResponse> periods, long maxPhotoSizeBytes) {}

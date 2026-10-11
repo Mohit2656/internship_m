@@ -10,3 +10,10 @@ frontend/.next/
 frontend/.env.local
 *.log
 *.tsbuildinfo
+
+# Ignore deployment credentials at every project level; retain blank examples.
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]

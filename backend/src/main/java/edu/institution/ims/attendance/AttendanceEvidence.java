@@ -50,15 +50,22 @@ public class AttendanceEvidence {
     private VerificationReason aiFailureReason;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
 
+    @Column(name="workplace_address", length=1000) private String workplaceAddress;
+    @Column(name="workplace_place_id", length=255) private String workplacePlaceId;
+    public String getWorkplaceAddress() { return workplaceAddress; }
+    public String getWorkplacePlaceId() { return workplacePlaceId; }
     protected AttendanceEvidence() {}
 
     public AttendanceEvidence(AttendanceRecord attendance, PhysicalEvidenceInput input,
             InternshipLocation location, VerificationDecision decision,
             AiVerificationDecision aiDecision, Instant createdAt) {
         this.attendance = attendance;
+        attendance.attachEvidence(this);
         this.latitude = input.latitude();
         this.longitude = input.longitude();
         this.gpsAccuracyMeters = input.accuracyMeters();
+        this.workplaceAddress = location == null ? null : location.getWorkplaceAddress();
+        this.workplacePlaceId = location == null ? null : location.getPlaceId();
         this.expectedLatitude = location == null ? null : location.getLatitude();
         this.expectedLongitude = location == null ? null : location.getLongitude();
         this.geofenceRadiusMeters = location == null ? null : location.getGeofenceRadiusMeters();
@@ -81,6 +88,7 @@ public class AttendanceEvidence {
             String dailyWorkSummary, Boolean metadataConsistent, VerificationReason reason,
             AiVerificationDecision aiDecision, Instant createdAt) {
         this.attendance = attendance;
+        attendance.attachEvidence(this);
         this.exifTimestamp = image.exifTimestamp();
         this.exifLatitude = image.exifLatitude();
         this.exifLongitude = image.exifLongitude();

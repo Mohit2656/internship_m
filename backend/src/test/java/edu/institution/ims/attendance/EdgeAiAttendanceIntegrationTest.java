@@ -50,6 +50,8 @@ class EdgeAiAttendanceIntegrationTest {
     @Autowired InternshipOnboardingRepository onboardings;
     @Autowired InternshipDetailsRepository internships;
     @Autowired InternshipLocationRepository locations;
+    @Autowired InternshipLocationService locationService;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired HybridWorkScheduleRepository schedules;
     @Autowired AttendanceRepository attendance;
     @Autowired AttendanceEvidenceRepository evidence;
@@ -205,13 +207,12 @@ class EdgeAiAttendanceIntegrationTest {
     }
 
     private void confirmLocation(User student) throws Exception {
-        String body = json.writeValueAsString(Map.of("latitude", "18.520400", "longitude", "73.856700",
-                "geofenceRadiusMeters", "200"));
-        mvc.perform(put("/api/v1/admin/students/{id}/internship/location", student.getId())
-                        .cookie(adminSession).contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isOk());
-        mvc.perform(post("/api/v1/admin/students/{id}/internship/location/confirm", student.getId())
-                        .cookie(adminSession)).andExpect(status().isOk());
+        var mentor=users.saveAndFlush(new User("edge.mentor."+student.getId()+"@example.edu",encoder.encode("MentorPassword!23"),Role.MENTOR,true));
+        if(assignments.findByStudentIdAndActiveTrue(student.getId()).isEmpty()) assignments.saveAndFlush(new MentorStudentAssignment(mentor,student,admin,NOW));
+        locationService.registerSelectedPlace(internships.findByOnboardingStudentId(student.getId()).orElseThrow(),new edu.institution.ims.internship.dto.RegisteredWorkplaceRequest("test-branch-"+student.getId(),"Actual test workplace address",new BigDecimal("18.520400"),new BigDecimal("73.856700")));
+        var current=locationService.getForAdmin(student.getId());
+        locationService.review(student.getId(),edu.institution.ims.security.UserPrincipal.from(mentor),new WorkplaceReview(current.revision(),WorkplaceReview.Decision.APPROVE,null));
+        locationService.review(student.getId(),edu.institution.ims.security.UserPrincipal.from(admin),new WorkplaceReview(current.revision(),WorkplaceReview.Decision.APPROVE,null));
     }
 
     private User studentWithInternship(String email, String uid, InternshipMode mode) {
@@ -240,6 +241,7 @@ class EdgeAiAttendanceIntegrationTest {
     }
 
     private void clearData() {
+        jdbc.update("delete from workplace_review_audit");
         evidence.deleteAll(); attendance.deleteAll(); verificationSessions.deleteAll(); locations.deleteAll();
         schedules.deleteAll(); assignments.deleteAll(); internships.deleteAll(); onboardings.deleteAll();
         studentProfiles.deleteAll(); mentorProfiles.deleteAll(); studentAccounts.deleteAll(); users.deleteAll();

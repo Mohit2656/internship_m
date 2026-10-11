@@ -17,15 +17,27 @@ spring:
     enabled: true
   servlet:
     multipart:
-      max-file-size: ${DOCUMENT_MAX_FILE_SIZE:10MB}
-      max-request-size: ${DOCUMENT_MAX_REQUEST_SIZE:11MB}
+      file-size-threshold: 0B
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:${DOCUMENT_MAX_FILE_SIZE:20MB}}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:${DOCUMENT_MAX_REQUEST_SIZE:21MB}}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
 server:
+  tomcat:
+    max-swallow-size: 23MB
   port: ${SERVER_PORT:8080}
   error:
     include-stacktrace: never
 app:
   monthly-progress:
-    max-photo-size-bytes: ${MONTHLY_PROGRESS_MAX_PHOTO_SIZE_BYTES:5242880}
+    max-photo-size-bytes: ${MONTHLY_PROGRESS_MAX_PHOTO_SIZE_BYTES:20971520}
   attendance:
     zone: ${ATTENDANCE_ZONE:Asia/Kolkata}
     default-geofence-radius-meters: ${ATTENDANCE_DEFAULT_GEOFENCE_RADIUS_METERS:200}

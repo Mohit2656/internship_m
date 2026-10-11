@@ -69,6 +69,49 @@ class AuthIntegrationTest {
         assertThat(encoder.matches("StudentPassword!23", stored.getPasswordHash())).isTrue();
     }
 
+    @Test void selectedLoginRoleMustMatchStoredAccountRoleBeforeCookieIsIssued() throws Exception {
+        User mentor = users.save(new User("mentor-login@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
+        for (User account : new User[]{student, admin, mentor}) {
+            String password = account == student ? "StudentPassword!23" : account == admin ? "AdminPassword!23" : "MentorPassword!23";
+            for (Role selected : new Role[]{Role.STUDENT, Role.ADMIN, Role.MENTOR}) {
+                var result = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(new LoginRequest(account.getEmail(), password, selected))));
+                if (selected == account.getRole()) result.andExpect(status().isOk()).andExpect(jsonPath("$.role").value(selected.name()));
+                else result.andExpect(status().isForbidden()).andExpect(header().doesNotExist("Set-Cookie"));
+            }
+        }
+    }
+
+    @Test void wrongPasswordWithSelectedRoleStillRejectsCredentials() throws Exception {
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+            .content(json.writeValueAsString(new LoginRequest(student.getEmail(), "WrongPassword!23", Role.ADMIN))))
+            .andExpect(status().isUnauthorized()).andExpect(header().doesNotExist("Set-Cookie"));
+    }
+
+    @Test void invalidExpiredAndRevokedJwtCookiesNeverAuthenticate() throws Exception {
+        var key = io.jsonwebtoken.security.Keys.hmacShaKeyFor("test-only-secret-with-more-than-thirty-two-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var otherKey = io.jsonwebtoken.security.Keys.hmacShaKeyFor("untrusted-test-key-with-more-than-thirty-two-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var future = java.util.Date.from(java.time.Instant.now().plusSeconds(120));
+        String expired = io.jsonwebtoken.Jwts.builder().subject(student.getId().toString())
+            .expiration(java.util.Date.from(java.time.Instant.now().minusSeconds(120))).signWith(key).compact();
+        String wrongSignature = io.jsonwebtoken.Jwts.builder().subject(student.getId().toString()).expiration(future).signWith(otherKey).compact();
+        String invalidSubject = io.jsonwebtoken.Jwts.builder().subject("not-a-number").expiration(future).signWith(key).compact();
+        String revoked = io.jsonwebtoken.Jwts.builder().subject(student.getId().toString()).claim("ver", 1).expiration(future).signWith(key).compact();
+        String invalidVersion = io.jsonwebtoken.Jwts.builder().subject(student.getId().toString()).claim("ver", -1).expiration(future).signWith(key).compact();
+        String inactiveToken = io.jsonwebtoken.Jwts.builder().subject(inactive.getId().toString()).expiration(future).signWith(key).compact();
+        for (String token : new String[]{"malformed-token", expired, wrongSignature, invalidSubject, revoked, invalidVersion, inactiveToken})
+            mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("ims_auth", token))).andExpect(status().isUnauthorized());
+    }
+
+    @Test void jwtRoleClaimCannotOverrideTheCurrentDatabaseRole() throws Exception {
+        var key = io.jsonwebtoken.security.Keys.hmacShaKeyFor("test-only-secret-with-more-than-thirty-two-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String token = io.jsonwebtoken.Jwts.builder().subject(student.getId().toString()).claim("role", "ADMIN")
+            .expiration(java.util.Date.from(java.time.Instant.now().plusSeconds(120))).signWith(key).compact();
+        var cookie = new Cookie("ims_auth", token);
+        mvc.perform(get("/api/v1/auth/me").cookie(cookie)).andExpect(status().isOk()).andExpect(jsonPath("$.role").value("STUDENT"));
+        mvc.perform(get("/api/v1/admin/verification").cookie(cookie)).andExpect(status().isForbidden());
+    }
+
     private ResultActions login(String email, String password) throws Exception {
         return mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new LoginRequest(email, password))));
     }

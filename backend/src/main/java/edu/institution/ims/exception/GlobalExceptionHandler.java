@@ -42,8 +42,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OnboardingException.class) ResponseEntity<ApiError> onboarding(OnboardingException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
     @ExceptionHandler(InternshipDetailsException.class) ResponseEntity<ApiError> internshipDetails(InternshipDetailsException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
     @ExceptionHandler(MonthlyProgressException.class) ResponseEntity<ApiError> monthlyProgress(MonthlyProgressException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
-    @ExceptionHandler(MaxUploadSizeExceededException.class) ResponseEntity<ApiError> oversized() { return error(HttpStatus.PAYLOAD_TOO_LARGE, "DOCUMENT_TOO_LARGE", "Documents must be 10 MB or smaller"); }
+    @ExceptionHandler(MaxUploadSizeExceededException.class) ResponseEntity<ApiError> oversized() { return error(HttpStatus.PAYLOAD_TOO_LARGE, "DOCUMENT_TOO_LARGE", "Upload exceeds the configured file or total request size limit"); }
     @ExceptionHandler(HttpMessageNotReadableException.class) ResponseEntity<ApiError> unreadable() { return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "Request contains an invalid value"); }
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class) ResponseEntity<ApiError> invalidParameter() { return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "Request contains an invalid parameter value"); }
     @ExceptionHandler(MissingServletRequestPartException.class) ResponseEntity<ApiError> missingPart(MissingServletRequestPartException e) { return error(HttpStatus.BAD_REQUEST, "MISSING_REQUEST_PART", "Required upload field is missing: " + e.getRequestPartName()); }
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class) ResponseEntity<ApiError> methodNotAllowed() { return error(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", "This operation is not supported"); }
     @ExceptionHandler(IllegalArgumentException.class) ResponseEntity<ApiError> invalidArgument(IllegalArgumentException e) { return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", e.getMessage()); }
@@ -52,6 +53,7 @@ public class GlobalExceptionHandler {
         var fields = e.getBindingResult().getFieldErrors().stream().collect(Collectors.toMap(x -> x.getField(), x -> x.getDefaultMessage() == null ? "Invalid value" : x.getDefaultMessage(), (a,b) -> a));
         return ResponseEntity.badRequest().body(new ApiError(Instant.now(), 400, "VALIDATION_FAILED", "Request validation failed", fields));
     }
+    @ExceptionHandler(org.springframework.dao.OptimisticLockingFailureException.class) ResponseEntity<ApiError> changedWorkplace() { return error(HttpStatus.CONFLICT,"RECORD_CHANGED","The record changed during review. Refresh and retry."); }
     @ExceptionHandler(Exception.class) ResponseEntity<ApiError> unexpected(Exception e) { return error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "An unexpected error occurred"); }
     private ResponseEntity<ApiError> error(HttpStatus status, String code, String message) { return ResponseEntity.status(status).body(new ApiError(Instant.now(), status.value(), code, message, null)); }
 }

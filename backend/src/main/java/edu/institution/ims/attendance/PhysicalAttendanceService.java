@@ -47,7 +47,9 @@ public class PhysicalAttendanceService {
     public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
             AiVerificationEvidenceRequest aiEvidence,
             BigDecimal latitude, BigDecimal longitude, BigDecimal accuracyMeters) {
-        validateCoordinates(latitude, longitude, accuracyMeters);
+        boolean invalidGps=false;
+        try { validateCoordinates(latitude,longitude,accuracyMeters); }
+        catch (AttendanceException invalid) { invalidGps=true;latitude=null;longitude=null;accuracyMeters=null; }
         ValidatedCameraImage image = imageValidator.validate(photo);
         User student = users.findById(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
@@ -64,14 +66,12 @@ public class PhysicalAttendanceService {
         AiVerificationDecision aiDecision = aiVerification.evaluate(principal, internship, today, aiEvidence);
         if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today).isPresent()) throw duplicate();
 
-        InternshipLocation location = locations.findByInternshipId(internship.getId()).orElse(null);
-        if (location == null) {
-            location = locationService.proposeFromAttendanceIfMissing(internship, latitude, longitude);
-        }
+        InternshipLocation location = locations.findForVerification(internship.getId()).orElse(null);
         Instant serverTime = clock.instant();
         PhysicalEvidenceInput input = new PhysicalEvidenceInput(latitude, longitude, accuracyMeters, image);
         VerificationDecision physicalDecision = verificationPolicy.evaluate(
-                InternshipMode.OFFICE_REPORTING, location, input, serverTime);
+                InternshipMode.OFFICE_REPORTING, location, input, serverTime, locationService.fullyApproved(location));
+        if(invalidGps) physicalDecision=new VerificationDecision(VerificationStatus.UNVERIFIED,VerificationReason.INVALID_LIVE_LOCATION,null,false,null);
         VerificationDecision decision = combine(physicalDecision, aiDecision);
         AttendanceRecord record = new AttendanceRecord(student, internship, today, AttendanceResult.PRESENT,
                 decision.status(), AttendanceSubmissionType.PHYSICAL_CAPTURE, serverTime);

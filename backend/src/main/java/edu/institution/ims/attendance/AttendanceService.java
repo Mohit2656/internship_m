@@ -87,7 +87,7 @@ public class AttendanceService {
     public static AttendanceResponse response(AttendanceRecord record) {
         return new AttendanceResponse(record.getId(), record.getInternship().getId(), record.getAttendanceDate(),
                 record.getAttendanceResult(), record.getVerificationStatus(), record.getSubmissionType(),
-                record.getServerSubmittedAt());
+                record.getServerSubmittedAt(), AttendanceEvidenceResponse.from(record.getEvidence()));
     }
 
     private static AttendanceException duplicate() {

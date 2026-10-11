@@ -6,15 +6,18 @@ import jakarta.persistence.*;
 import java.time.*;
 
 @Entity
+@org.hibernate.annotations.SQLRestriction("deleted_at IS NULL")
 @Table(name = "attendance_records", uniqueConstraints =
         @UniqueConstraint(name = "uk_attendance_records_student_internship_date",
-                columnNames = {"student_user_id", "internship_id", "attendance_date"}),
+                columnNames = {"student_user_id", "internship_id", "attendance_date", "active_slot"}),
         indexes = {
                 @Index(name = "idx_attendance_records_student_date", columnList = "student_user_id,attendance_date"),
                 @Index(name = "idx_attendance_records_internship_date", columnList = "internship_id,attendance_date"),
                 @Index(name = "idx_attendance_records_date_verification", columnList = "attendance_date,verification_status")
         })
 public class AttendanceRecord {
+    @Column(name="deleted_at") private Instant deletedAt;
+    @Column(name="active_slot") private Integer activeSlot = 1;
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -76,6 +79,9 @@ public class AttendanceRecord {
     @PreUpdate
     void updateTimestamp() { updatedAt = Instant.now(); }
 
+    @OneToOne(mappedBy="attendance", fetch=FetchType.LAZY) private AttendanceEvidence evidence;
+    public AttendanceEvidence getEvidence() { return evidence; }
+    public void attachEvidence(AttendanceEvidence evidence) { this.evidence = evidence; }
     public Long getId() { return id; }
     public User getStudent() { return student; }
     public InternshipDetails getInternship() { return internship; }

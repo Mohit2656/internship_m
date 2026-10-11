@@ -48,7 +48,7 @@ public class Opportunity {
 
     Opportunity(User creator, OpportunityRequest request) {
         createdBy = creator; status = OpportunityStatus.DRAFT;
-        createdAt = Instant.now(); updatedAt = createdAt; apply(request);
+        createdAt = databaseTime(); updatedAt = createdAt; apply(request);
     }
 
     void apply(OpportunityRequest request) {
@@ -60,11 +60,13 @@ public class Opportunity {
         minimumCgpa = request.minimumCgpa();
         eligibleBranches.clear(); eligibleBranches.addAll(request.eligibleBranches());
         eligibleSemesters.clear(); eligibleSemesters.addAll(request.eligibleSemesters());
-        updatedAt = Instant.now();
+        updatedAt = databaseTime();
     }
 
-    void publish() { status = OpportunityStatus.PUBLISHED; publishedAt = Instant.now(); updatedAt = publishedAt; }
-    void close() { status = OpportunityStatus.CLOSED; closedAt = Instant.now(); updatedAt = closedAt; }
+    void publish() { status = OpportunityStatus.PUBLISHED; publishedAt = databaseTime(); updatedAt = publishedAt; }
+    void close() { status = OpportunityStatus.CLOSED; closedAt = databaseTime(); updatedAt = closedAt; }
+    // PostgreSQL TIMESTAMP(6) retains microseconds; responses must match subsequent reads.
+    private static Instant databaseTime() { return Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS); }
     private static String clean(String value) { return value == null || value.isBlank() ? null : value.trim(); }
 
     public Long getId() { return id; }

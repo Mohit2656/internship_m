@@ -1,0 +1,12 @@
+ALTER TABLE internship_locations ADD COLUMN place_id VARCHAR(255);
+ALTER TABLE internship_locations ADD COLUMN workplace_address VARCHAR(1000);
+ALTER TABLE attendance_evidence ADD COLUMN workplace_place_id VARCHAR(255);
+ALTER TABLE attendance_evidence ADD COLUMN workplace_address VARCHAR(1000);
+ALTER TABLE monthly_progress_reports ADD COLUMN workplace_latitude NUMERIC(9,6);
+ALTER TABLE monthly_progress_reports ADD COLUMN workplace_longitude NUMERIC(10,6);
+ALTER TABLE monthly_progress_reports ADD COLUMN workplace_radius_meters NUMERIC(8,2);
+ALTER TABLE monthly_progress_reports ADD COLUMN workplace_distance_meters NUMERIC(12,2);
+ALTER TABLE monthly_progress_reports ADD COLUMN workplace_address VARCHAR(1000);
+ALTER TABLE monthly_progress_reports ADD COLUMN workplace_place_id VARCHAR(255);
+ALTER TABLE monthly_progress_reports ADD COLUMN workplace_verification_status VARCHAR(40);
+ALTER TABLE monthly_progress_reports ADD COLUMN workplace_verification_reason VARCHAR(255);

@@ -9,5 +9,5 @@ public record AttendanceResponse(
         AttendanceResult attendanceResult,
         VerificationStatus verificationStatus,
         AttendanceSubmissionType submissionType,
-        Instant serverSubmittedAt
+        Instant serverSubmittedAt, AttendanceEvidenceResponse evidence
 ) {}

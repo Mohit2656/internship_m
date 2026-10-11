@@ -26,10 +26,11 @@ class InternshipDetailsIntegrationTest {
     @Autowired MockMvc mvc; @Autowired ObjectMapper json; @Autowired UserRepository users; @Autowired StudentAccountRepository accounts;
     @Autowired StudentProfileRepository profiles; @Autowired InternshipOnboardingRepository onboardings;
     @Autowired InternshipDocumentRepository documents; @Autowired InternshipDetailsRepository details; @Autowired PasswordEncoder encoder;
+    @Autowired edu.institution.ims.attendance.InternshipLocationRepository locations;
     User admin; User studentA; User studentB; Cookie adminCookie; Cookie studentACookie; Cookie studentBCookie;
 
     @BeforeEach void setUp() throws Exception {
-        details.deleteAll(); documents.deleteAll(); onboardings.deleteAll(); profiles.deleteAll(); accounts.deleteAll(); users.deleteAll();
+        locations.deleteAll(); details.deleteAll(); documents.deleteAll(); onboardings.deleteAll(); profiles.deleteAll(); accounts.deleteAll(); users.deleteAll();
         admin = users.save(new User("incharge@example.edu", encoder.encode("AdminPassword!23"), Role.ADMIN, true));
         studentA = student("student.a@example.edu", "StudentAPassword!23"); studentB = student("student.b@example.edu", "StudentBPassword!23");
         adminCookie = login(admin.getEmail(), "AdminPassword!23"); studentACookie = login(studentA.getEmail(), "StudentAPassword!23"); studentBCookie = login(studentB.getEmail(), "StudentBPassword!23");
@@ -132,6 +133,46 @@ class InternshipDetailsIntegrationTest {
 
     @Test void unauthenticatedUserCannotAccessInternshipData() throws Exception {
         mvc.perform(get("/api/v1/student/internship")).andExpect(status().isUnauthorized());
+    }
+
+    @Test void selectedWorkplaceIsPersistedPendingAndReturnedForCorrectStudent() throws Exception {
+        ready(studentACookie, "A", "UID-A", "a@college.edu");
+        Map<String,Object> data = internship("Acme Systems");
+        data.put("studentId", studentB.getId());
+        data.put("workplace", Map.of("placeId", "ChIJ-test-workplace", "address", "Selected workplace address", "latitude", 30.733315, "longitude", 76.779419));
+        mvc.perform(post("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(data)))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.workplace.placeId").value("ChIJ-test-workplace"))
+            .andExpect(jsonPath("$.companyAddress").value("Selected workplace address"));
+        mvc.perform(get("/api/v1/student/internship").cookie(studentACookie)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.workplace.latitude").value(30.733315)).andExpect(jsonPath("$.workplace.longitude").value(76.779419));
+        var location = locations.findAll().get(0);
+        assertThat(location.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING);
+        assertThat(location.getInternship().getId()).isEqualTo(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getId());
+        assertThat(details.findByOnboardingStudentId(studentB.getId())).isEmpty();
+    }
+
+    @Test void invalidSelectedWorkplaceCannotBePersisted() throws Exception {
+        ready(studentACookie, "A", "UID-A", "a@college.edu");
+        Map<String,Object> data = internship("Acme Systems");
+        data.put("workplace", Map.of("placeId", "place", "address", "Selected workplace", "latitude", 91, "longitude", 76));
+        mvc.perform(post("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(data)))
+            .andExpect(status().isBadRequest());
+        assertThat(locations.count()).isZero(); assertThat(details.count()).isZero();
+    }
+
+    @Test void studentResubmissionReplacesLegacyWorkplaceAndRequiresNewApprovals() throws Exception {
+        readyAndCreate(studentACookie, "A", "UID-A", "a@college.edu", "Original Company");
+        var internship = details.findByOnboardingStudentId(studentA.getId()).orElseThrow();
+        var workplace = new edu.institution.ims.attendance.InternshipLocation(internship, new java.math.BigDecimal("30.733315"), new java.math.BigDecimal("76.779419"), new java.math.BigDecimal("200"), java.time.Instant.now());
+        workplace.selectedPlace("original-place", "Original office"); workplace.confirm(admin, java.time.Instant.now()); locations.saveAndFlush(workplace);
+        Map<String,Object> data = internship("Changed Company");
+        data.put("workplace", Map.of("placeId", "different-place", "address", "Different workplace", "latitude", 30.9, "longitude", 76.9));
+        mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(data)))
+            .andExpect(status().isOk());
+        assertThat(locations.findAll().get(0).getPlaceId()).isEqualTo("different-place");
+        assertThat(locations.findAll().get(0).getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING);
+        assertThat(locations.findAll().get(0).getConfirmedAt()).isNull();
+        assertThat(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getCompanyName()).isEqualTo("Changed Company");
     }
 
     private User student(String email, String password) { User user = users.save(new User(email, encoder.encode(password), Role.STUDENT, true)); accounts.save(new StudentAccount(user)); return user; }

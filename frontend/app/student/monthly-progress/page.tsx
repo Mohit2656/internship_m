@@ -7,7 +7,7 @@ import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ApiError, api } from "@/lib/api";
-import { formatDate, formatDateTime, MonthlyProgressOverview, MonthlyProgressPeriod, openPrivateFile } from "@/lib/monthly-progress";
+import { formatDate, formatDateTime, MonthlyProgressOverview, MonthlyProgressPeriod, openPrivateFile, privateFileErrorMessage } from "@/lib/monthly-progress";
 
 export default function StudentMonthlyProgressPage() {
   const [overview, setOverview] = useState<MonthlyProgressOverview | null>(null);
@@ -19,6 +19,9 @@ export default function StudentMonthlyProgressPage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
+  const maxPhotoBytes = overview?.maxPhotoSizeBytes ?? 20 * 1024 * 1024;
+  const maxPhotoMiB = maxPhotoBytes / (1024 * 1024);
+
   function load() {
     setLoading(true); setError("");
     api.get<MonthlyProgressOverview>("/student/monthly-progress").then(response => setOverview(response.data))
@@ -29,11 +32,13 @@ export default function StudentMonthlyProgressPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!selected || !photo) { setError("Choose a JPEG or PNG photograph before submitting."); return; }
+    if (!selected || !photo) { setError("Choose a JPG, JPEG or PNG photograph before submitting."); return; }
+    if (submitting) return;
+    if (photo.size > maxPhotoBytes) { setError(`Photographs must be ${maxPhotoMiB} MiB or smaller.`); return; }
     setSubmitting(true); setError("");
     const body = new FormData(); body.append("workDescription", description); body.append("photo", photo);
     try {
-      await api.post(`/student/monthly-progress/${selected.monthNumber}`, body, { headers: { "Content-Type": "multipart/form-data" } });
+      await api.post(`/student/monthly-progress/${selected.monthNumber}`, body, { headers: { "Content-Type": "multipart/form-data" }, timeout: 120_000 });
       setSelected(null); setDescription(""); setPhoto(null); load();
     } catch (cause) { setError((cause as AxiosError<ApiError>).response?.data?.message ?? "The monthly progress report could not be submitted."); }
     finally { setSubmitting(false); }
@@ -41,7 +46,7 @@ export default function StudentMonthlyProgressPage() {
   async function file(id: number, kind: "photo" | "pdf", uid?: string | null, month?: number) {
     setBusy(`${id}-${kind}`); setError("");
     try { await openPrivateFile(`/student/monthly-progress/${id}/${kind}`, kind === "pdf" ? `Monthly_Progress_${uid ?? "Student"}_Month_${month}.pdf` : undefined); }
-    catch { setError(`Unable to open the report ${kind}.`); } finally { setBusy(""); }
+    catch (cause) { setError(privateFileErrorMessage(cause, kind)); } finally { setBusy(""); }
   }
 
   return <ProtectedRoute role="STUDENT"><AppFrame><main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
@@ -55,11 +60,11 @@ export default function StudentMonthlyProgressPage() {
         {period.report ? <div className="mt-5"><p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{period.report.workDescription}</p><ProgressPhotoVerification report={period.report}/><dl className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><div><dt className="text-slate-500">Captured</dt><dd className="mt-1 font-semibold">{formatDateTime(period.report.exifCapturedAt)}</dd></div><div><dt className="text-slate-500">Latitude</dt><dd className="mt-1 font-semibold">{period.report.exifLatitude ?? "Not available"}</dd></div><div><dt className="text-slate-500">Longitude</dt><dd className="mt-1 font-semibold">{period.report.exifLongitude ?? "Not available"}</dd></div></dl><div className="mt-4 flex flex-wrap gap-3"><button onClick={() => file(period.report!.id, "photo")} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold">{busy === `${period.report.id}-photo` ? "Opening…" : "View Photograph"}</button><button onClick={() => file(period.report!.id, "pdf", period.report!.uid, period.monthNumber)} className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white">{busy === `${period.report.id}-pdf` ? "Preparing…" : "Download PDF"}</button></div></div> : period.status === "AVAILABLE" ? <button onClick={() => { setSelected(period); setError(""); }} className="mt-5 rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white">Submit Report</button> : <p className="mt-4 text-sm text-slate-500">Submission becomes available when this reporting period begins.</p>}
       </article>)}</div>
     </>}
-    {selected && <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4"><div className="mx-auto my-8 max-w-xl rounded-2xl bg-white p-6 shadow-2xl sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Monthly Progress Report</p><h2 className="mt-2 text-2xl font-bold">Month {selected.monthNumber}</h2><p className="mt-1 text-sm text-slate-600">{formatDate(selected.periodStart)} – {formatDate(selected.periodEnd)}</p></div><button type="button" onClick={() => setSelected(null)} className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-500">Close</button></div><form onSubmit={submit} className="mt-7 space-y-5">{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}<label className="block"><span className="mb-2 block text-sm font-semibold">Geo-tagged photograph</span><input type="file" required accept="image/jpeg,image/png" onChange={event => {
+    {selected && <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4"><div className="mx-auto my-8 max-w-xl rounded-2xl bg-white p-6 shadow-2xl sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Monthly Progress Report</p><h2 className="mt-2 text-2xl font-bold">Month {selected.monthNumber}</h2><p className="mt-1 text-sm text-slate-600">{formatDate(selected.periodStart)} – {formatDate(selected.periodEnd)}</p></div><button type="button" onClick={() => setSelected(null)} className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-500">Close</button></div><form onSubmit={submit} className="mt-7 space-y-5">{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}<label className="block"><span className="mb-2 block text-sm font-semibold">Geo-tagged photograph</span><input type="file" required accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={event => {
           const chosen = event.target.files?.[0] ?? null;
-          if (chosen && (chosen.size > 5 * 1024 * 1024 || !["image/jpeg", "image/png"].includes(chosen.type))) {
-            setPhoto(null); event.target.value = ""; setError("Choose a JPEG or PNG photograph of 5 MB or smaller.");
+          if (chosen && (chosen.size > maxPhotoBytes || !/\.(jpe?g|png)$/i.test(chosen.name))) {
+            setPhoto(null); event.target.value = ""; setError(`Choose a JPG, JPEG or PNG photograph of ${maxPhotoMiB} MiB or smaller.`);
           } else { setPhoto(chosen); setError(""); }
-        }} className="block w-full rounded-xl border border-slate-300 p-3 text-sm"/><span className="mt-2 block text-xs text-slate-500">JPEG or PNG, maximum 5 MB. The server verifies available EXIF/GPS metadata after submission.</span></label><label className="block"><span className="mb-2 block text-sm font-semibold">Work performed during this month</span><textarea required maxLength={3000} rows={7} value={description} onChange={event => setDescription(event.target.value)} className="w-full rounded-xl border border-slate-300 p-4 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"/><span className="mt-1 block text-right text-xs text-slate-500">{description.length}/3000</span></label><p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">After submission this institutional record is read-only.</p><button disabled={submitting} className="w-full rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Submit Report"}</button></form></div></div>}
+        }} className="block w-full rounded-xl border border-slate-300 p-3 text-sm"/><span className="mt-2 block text-xs text-slate-500">JPG, JPEG or PNG, maximum {maxPhotoMiB} MiB. The server verifies available EXIF/GPS metadata after submission.</span></label><label className="block"><span className="mb-2 block text-sm font-semibold">Work performed during this month</span><textarea required maxLength={3000} rows={7} value={description} onChange={event => setDescription(event.target.value)} className="w-full rounded-xl border border-slate-300 p-4 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"/><span className="mt-1 block text-right text-xs text-slate-500">{description.length}/3000</span></label><p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">After submission this institutional record is read-only.</p><button disabled={submitting} className="w-full rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Submit Report"}</button></form></div></div>}
   </main></AppFrame></ProtectedRoute>;
 }

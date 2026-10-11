@@ -3,15 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AxiosError } from "axios";
 import { api, ApiError } from "@/lib/api";
-import { AiVerificationEvidence, AiVerificationSession, Attendance, AttendancePolicy, HybridSchedule, TodayAttendance } from "@/lib/attendance";
+import { AiVerificationEvidence, AiVerificationSession, Attendance, AttendancePolicy, HybridSchedule, TodayAttendance, attendanceLabel } from "@/lib/attendance";
+import { AttendanceLocations } from "@/components/AttendanceLocations";
 import { challengeLabel, EdgeAiAnalyzer, EdgeAiFrameState, EDGE_AI_MODEL_VERSION } from "@/lib/edge-ai";
 
 type LiveLocation = { latitude: number; longitude: number; accuracy: number };
-
-function attendanceLabel(attendance: Attendance) {
-  if (attendance.attendanceResult !== "PRESENT") return "Absent";
-  return attendance.verificationStatus === "VERIFIED" ? "Present — automatically verified" : "Present — verification unavailable";
-}
 
 export function TodayAttendanceCard() {
   const [today, setToday] = useState<TodayAttendance | null>(null);
@@ -219,9 +215,10 @@ export function TodayAttendanceCard() {
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-7 lg:col-span-2">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Today&apos;s Attendance</p><h2 className="mt-3 text-xl font-bold">{loading ? "Checking attendance…" : attendance ? attendanceLabel(attendance) : "Not submitted"}</h2></div>
-        {attendance && <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${attendance.verificationStatus === "VERIFIED" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{attendance.verificationStatus === "VERIFIED" ? "Verified" : "Unverified"}</span>}
+        {attendance && <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${attendance.verificationStatus === "VERIFIED" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{attendance.verificationStatus === "VERIFIED" ? "Attendance verified" : "Attendance unverified"}</span>}
       </div>
       {!loading && attendance ? <p className="mt-3 text-sm text-slate-600">Submitted at {new Date(attendance.serverSubmittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} using server time.</p> : !loading && <p className="mt-3 text-sm text-slate-600">Attendance can be submitted once today during your registered internship period.</p>}
+      {!loading && attendance?.submissionType === "PHYSICAL_CAPTURE" && <AttendanceLocations evidence={attendance.evidence} />}
       {!loading && policy?.todayWorkMode && <p className="mt-3 text-sm font-semibold text-slate-700">Today&apos;s expected work mode: {policy.todayWorkMode === "OFFICE" ? "Office" : "Remote"}</p>}
       {!loading && policy?.internshipMode === "HYBRID" && schedule && <div className="mt-4 flex flex-wrap gap-2">{schedule.entries.map(entry => <span key={entry.dayOfWeek} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-700">{entry.dayOfWeek.slice(0, 3)} · {entry.workMode === "OFFICE" ? "Office" : "Remote"}</span>)}</div>}
       {!loading && !attendance && !policy && <p role="alert" className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s attendance policy could not be confirmed. Reload the dashboard before submitting attendance.</p>}

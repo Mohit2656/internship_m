@@ -2,13 +2,26 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import { AxiosError } from "axios";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError, AuthUser } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
+const loginOptions = [
+  { role: "STUDENT", label: "Student Login" },
+  { role: "ADMIN", label: "IIIC Incharge Login" },
+  { role: "MENTOR", label: "Faculty Mentor Login" },
+] as const;
+
 export default function LoginPage() {
+  return <Suspense><LoginContent /></Suspense>;
+}
+
+function LoginContent() {
+  const landing = usePathname() === "/";
+  const selectedRole = useSearchParams().get("role");
+  const selectedOption = loginOptions.find(option => option.role === selectedRole);
   const router = useRouter();
   const { user, loading, refresh } = useAuth();
   const [email, setEmail] = useState("");
@@ -18,16 +31,21 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const destination = (account: AuthUser) => account.role === "ADMIN" ? "/admin/dashboard" : account.role === "MENTOR" ? account.mustChangePassword ? "/mentor/change-password" : "/mentor/dashboard" : account.mustChangePassword ? "/student/change-password" : "/student/dashboard";
 
-  useEffect(() => { if (!loading && user) router.replace(destination(user)); }, [loading, user, router]);
+  useEffect(() => {
+    if (!loading && user) router.replace(destination(user));
+    else if (!loading && !landing && !selectedOption) router.replace("/");
+  }, [loading, user, router, landing, selectedOption]);
 
   async function submit(event: FormEvent) {
-    event.preventDefault(); setError(""); setSubmitting(true);
+    event.preventDefault();
+    if (!selectedOption || submitting) return;
+    setError(""); setSubmitting(true);
     try {
-      const { data } = await api.post<AuthUser>("/auth/login", { email, password });
+      const { data } = await api.post<AuthUser>("/auth/login", { email, password, role: selectedOption.role });
       await refresh(); router.replace(destination(data));
     } catch (cause) {
       const response = (cause as AxiosError<ApiError>).response;
-      setError(response?.data?.message ?? "Unable to sign in. Please try again.");
+      setError(response?.status === 403 ? "This account cannot sign in here. Check that it is active and choose the correct login option." : response?.data?.message ?? "Unable to sign in. Please try again.");
     } finally { setSubmitting(false); }
   }
 
@@ -76,16 +94,19 @@ export default function LoginPage() {
         <div className="absolute -bottom-48 left-12 h-[380px] w-[380px] rounded-full bg-white/80" />
         <div className="relative w-full max-w-xl rounded-[1.75rem] border border-white/90 bg-white/80 p-7 shadow-[0_28px_80px_rgba(41,91,160,0.13)] backdrop-blur-xl sm:p-10 lg:p-[clamp(2rem,4vw,3.5rem)]">
           <p className="text-sm font-semibold text-blue-600 sm:text-base">Welcome back</p>
-          <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Sign in to your account</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">Use the email and password provided by your institution.</p>
+          <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">{landing ? "Choose your login" : selectedOption?.label ?? "Sign in to your account"}</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">{landing ? "Select your role to sign in to your account." : "Use the email and password provided by your institution."}</p>
 
-          <form onSubmit={submit} className="mt-8 space-y-5">
+          {landing ? <nav aria-label="Login options" className="mt-8 space-y-5">
+            {loginOptions.map(option => <Link key={option.role} href={`/login?role=${option.role}`} className="block w-full rounded-xl bg-blue-600 px-4 py-3.5 text-center font-semibold text-white shadow-[0_10px_25px_rgba(37,99,235,0.22)] transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-200">{option.label}</Link>)}
+          </nav> : <form onSubmit={submit} className="mt-8 space-y-5">
             <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-900">Email address</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-4 grid place-items-center text-slate-500" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><input autoComplete="email" type="email" required value={email} onChange={event => setEmail(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-3.5 pl-12 pr-4 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100" placeholder="you@institution.edu" /></span></label>
             <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-900">Password</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-4 grid place-items-center text-slate-500" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg></span><input autoComplete="current-password" type={showPassword ? "text" : "password"} required minLength={1} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-3.5 pl-12 pr-12 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100" placeholder="Enter your password" /><button type="button" onClick={() => setShowPassword(value => !value)} className="absolute inset-y-0 right-3 grid w-9 place-items-center rounded-lg text-slate-500 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200" aria-label={showPassword ? "Hide password" : "Show password"}><svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/>{showPassword && <path d="m4 4 16 16"/>}</svg></button></span></label>
+            <Link href="/" className="block text-sm font-semibold text-blue-700">Choose a different login option</Link>
             <Link href="/forgot-password" className="block text-sm font-semibold text-blue-700">Forgot Password?</Link>
             {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
             <button type="submit" disabled={submitting} className="w-full rounded-xl bg-blue-600 px-4 py-3.5 font-semibold text-white shadow-[0_10px_25px_rgba(37,99,235,0.22)] transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? "Signing in…" : "Sign in"}</button>
-          </form>
+          </form>}
           <p className="mt-8 text-center text-xs leading-5 text-slate-500">Accounts are created and managed by the III Cell.</p>
         </div>
       </section>

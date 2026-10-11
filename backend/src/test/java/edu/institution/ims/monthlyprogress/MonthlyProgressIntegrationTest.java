@@ -144,7 +144,7 @@ class MonthlyProgressIntegrationTest {
     }
 
     @Test void validationUsesRealImageBytesAndPreservesOriginal() throws Exception {
-        ProgressPhotoValidator validator = new ProgressPhotoValidator(5242880);
+        ProgressPhotoValidator validator = new ProgressPhotoValidator(20971520);
         MockMultipartFile source = exifJpeg("original.jpg", 21, 7, 30, 79, 5, 15);
         ValidatedProgressPhoto verified = validator.validate(source);
         assertThat(verified.geoVerificationStatus()).isEqualTo(GeoVerificationStatus.VERIFIED);
@@ -202,10 +202,10 @@ class MonthlyProgressIntegrationTest {
 
     @Test void captureTimestampIsPersistedIndependentlyAndInvalidDatesRemainNull() throws Exception {
         MockMultipartFile valid = jpegWithCapture("2026:10:06 16:02:00");
-        var metadata = new ProgressPhotoValidator(5242880).validate(valid);
+        var metadata = new ProgressPhotoValidator(20971520).validate(valid);
         assertThat(metadata.capturedAt()).isEqualTo(Instant.parse("2026-10-06T16:02:00Z"));
         assertThat(metadata.captureTimeStatus()).isEqualTo("PRESENT");
-        var invalid = new ProgressPhotoValidator(5242880).validate(jpegWithCapture("2026:02:30 16:02:00"));
+        var invalid = new ProgressPhotoValidator(20971520).validate(jpegWithCapture("2026:02:30 16:02:00"));
         assertThat(invalid.capturedAt()).isNull();
         assertThat(invalid.captureTimeStatus()).isEqualTo("INVALID_METADATA");
         Cookie session = loginCookie(studentA.getEmail(),"StudentPassword!23");

@@ -77,10 +77,19 @@ public class InstitutionalReportService {
     }
     private List<DashboardReportCatalog.Field> monthlyFields() {
         var f = new ArrayList<>(identity());
+        f.add(field("recordId","Monthly record ID",NUMBER));
+        f.add(field("workplaceLatitude","Workplace snapshot latitude",NUMBER));
+        f.add(field("workplaceLongitude","Workplace snapshot longitude",NUMBER));
+        f.add(field("workplaceRadiusMeters","Workplace radius (m)",NUMBER));
+        f.add(field("workplaceDistanceMeters","Photo distance (m)",NUMBER));
+        f.add(field("workplaceAddress","Workplace snapshot address",TEXT));
+        f.add(field("workplacePlaceId","Workplace place ID",TEXT));
+        f.add(field("workplaceVerificationStatus","Photo workplace status",TEXT));
+        f.add(field("workplaceVerificationReason","Photo workplace reason",TEXT));
         f.add(field("monthNumber","Report Month",NUMBER));
-        f.add(new DashboardReportCatalog.Field("geoVerificationStatus","Geo Tag Status","Photo metadata",TEXT,false,null,false));
-        f.add(new DashboardReportCatalog.Field("gpsLatitude","GPS Latitude","Photo metadata",NUMBER,false,null,false));
-        f.add(new DashboardReportCatalog.Field("gpsLongitude","GPS Longitude","Photo metadata",NUMBER,false,null,false));
+        f.add(new DashboardReportCatalog.Field("geoVerificationStatus","Geo Tag Status","Photo metadata",TEXT,false,null,true));
+        f.add(new DashboardReportCatalog.Field("gpsLatitude","GPS Latitude","Photo metadata",NUMBER,false,null,true));
+        f.add(new DashboardReportCatalog.Field("gpsLongitude","GPS Longitude","Photo metadata",NUMBER,false,null,true));
         f.add(new DashboardReportCatalog.Field("gpsAltitude","GPS Altitude","Photo metadata",NUMBER,false,null,false));
         f.add(new DashboardReportCatalog.Field("gpsTimestamp","GPS Timestamp","Photo metadata",DATETIME,false,null,false));
         f.add(new DashboardReportCatalog.Field("imageCaptureTimestamp","Image Capture Timestamp","Photo metadata",DATETIME,false,null,false));
@@ -90,12 +99,26 @@ public class InstitutionalReportService {
         f.add(new DashboardReportCatalog.Field("gpsPresent","GPS Present","Photo metadata",BOOLEAN,false,null,false));
         f.add(new DashboardReportCatalog.Field("captureTimeStatus","Capture Time Status","Photo metadata",TEXT,false,null,false));
         f.add(new DashboardReportCatalog.Field("exifVerificationStatus","EXIF Verification Status","Photo metadata",TEXT,false,null,false));
-        f.add(new DashboardReportCatalog.Field("geoVerificationMessage","EXIF Verification Message","Photo metadata",TEXT,false,null,false));
+        f.add(new DashboardReportCatalog.Field("geoVerificationMessage","EXIF Verification Message","Photo metadata",TEXT,false,null,true));
         f.add(new DashboardReportCatalog.Field("imageSha256","Image SHA-256","Photo metadata",TEXT,false,null,false));
         return f;
     }
     private List<DashboardReportCatalog.Field> attendanceFields() {
         List<DashboardReportCatalog.Field> f=new ArrayList<>(identity());
+        f.add(field("recordId","Attendance record ID",NUMBER));
+        f.add(field("attendanceLatitude","Attendance latitude",NUMBER));
+        f.add(field("attendanceLongitude","Attendance longitude",NUMBER));
+        f.add(field("accuracyMeters","GPS accuracy (m)",NUMBER));
+        f.add(field("workplaceLatitude","Workplace snapshot latitude",NUMBER));
+        f.add(field("workplaceLongitude","Workplace snapshot longitude",NUMBER));
+        f.add(field("workplaceRadiusMeters","Workplace radius (m)",NUMBER));
+        f.add(field("workplaceDistanceMeters","Attendance distance (m)",NUMBER));
+        f.add(field("workplaceAddress","Workplace snapshot address",TEXT));
+        f.add(field("workplacePlaceId","Workplace place ID",TEXT));
+        f.add(field("exifLatitude","Camera EXIF latitude",NUMBER));
+        f.add(field("exifLongitude","Camera EXIF longitude",NUMBER));
+        f.add(field("imageSizeBytes","Camera evidence bytes",NUMBER));
+        f.add(field("metadataConsistent","Metadata consistent",BOOLEAN));
         f.addAll(List.of(field("date","Attendance date",DATE),field("submittedAt","Submitted at",DATETIME),field("result","Attendance status",TEXT),field("verification","Verification status",TEXT),field("submissionType","Submission type",TEXT),field("workMode","Expected work mode",TEXT),field("reason","Verification reason",TEXT),field("liveness","Liveness passed",BOOLEAN),field("locationPassed","Location check passed",BOOLEAN)));
         return f;
     }
@@ -164,7 +187,7 @@ public class InstitutionalReportService {
             window+=" and ar."+pair[1]+" = :"+pair[0];params.addValue(pair[0],filters.get(pair[0]));
         }
         String sql=switch(type.id()) {
-            case "MONTHLY_PROGRESS" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,m.id as recordId,m.report_month_number as monthNumber,m.geo_verification_status as geoVerificationStatus,m.exif_latitude as gpsLatitude,m.exif_longitude as gpsLongitude,m.gps_altitude as gpsAltitude,m.gps_timestamp as gpsTimestamp,m.exif_captured_at as imageCaptureTimestamp,m.camera_make as cameraMake,m.camera_model as cameraModel,m.exif_present as exifPresent,m.gps_present as gpsPresent,m.geo_verification_status as exifVerificationStatus,m.capture_time_status as captureTimeStatus,m.geo_verification_message as geoVerificationMessage,m.image_sha256 as imageSha256 from "+base+" join monthly_progress_reports m on m.student_internship_id=s.internshipId where 1=1"+monthlyWindow;
+            case "MONTHLY_PROGRESS" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,m.id as recordId,m.report_month_number as monthNumber,m.geo_verification_status as geoVerificationStatus,m.exif_latitude as gpsLatitude,m.exif_longitude as gpsLongitude,m.gps_altitude as gpsAltitude,m.gps_timestamp as gpsTimestamp,m.exif_captured_at as imageCaptureTimestamp,m.camera_make as cameraMake,m.camera_model as cameraModel,m.exif_present as exifPresent,m.gps_present as gpsPresent,m.geo_verification_status as exifVerificationStatus,m.capture_time_status as captureTimeStatus,m.geo_verification_message as geoVerificationMessage,m.image_sha256 as imageSha256,m.workplace_latitude as workplaceLatitude,m.workplace_longitude as workplaceLongitude,m.workplace_radius_meters as workplaceRadiusMeters,m.workplace_distance_meters as workplaceDistanceMeters,m.workplace_address as workplaceAddress,m.workplace_place_id as workplacePlaceId,m.workplace_verification_status as workplaceVerificationStatus,m.workplace_verification_reason as workplaceVerificationReason from "+base+" join monthly_progress_reports m on m.student_internship_id=s.internshipId and m.deleted_at is null where 1=1"+monthlyWindow;
             case "ROSTER" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,s.source,s.stipend,s.offer from "+base;
             case "OVERALL" -> "select source as category,count(*) as total,cast(cast(count(*) as decimal(18,4))*100/nullif((select count(*) from "+base+"),0) as decimal(12,4)) as percentage from "+base+" group by source";
             case "STIPEND" -> "select source as category,count(*) as total,"+sums()+",sum(case when stipend is null then 1 else 0 end) as \"unknown\" from "+base+" group by source";
@@ -175,8 +198,8 @@ public class InstitutionalReportService {
             case "WORKFLOW" -> "select workflow as category,count(*) as total from "+base+" group by workflow";
             case "DIARY_ISSUANCE" -> "select source as category,count(*) as total,sum(case when diary=true then 1 else 0 end) as issued,sum(case when diary=false or diary is null then 1 else 0 end) as notIssued from "+base+" group by source";
             case "COMPARISON" -> comparison(base);
-            case "ATTENDANCE" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,ar.id as recordId,ar.attendance_date as date,ar.server_submitted_at as submittedAt,ar.attendance_result as result,ar.verification_status as verification,ar.submission_type as submissionType,e.expected_work_mode as workMode,e.verification_reason as reason,e.ai_liveness_passed as liveness,e.location_check_passed as locationPassed from "+base+" join attendance_records ar on ar.student_user_id=s.sid and ar.internship_id=s.internshipId left join attendance_evidence e on e.attendance_id=ar.id where 1=1"+window;
-            case "ATTENDANCE_SUMMARY" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,count(ar.id) as total,sum(case when ar.attendance_result='PRESENT' then 1 else 0 end) as present,sum(case when ar.attendance_result='ABSENT' then 1 else 0 end) as absent,sum(case when ar.verification_status='VERIFIED' then 1 else 0 end) as verified,sum(case when ar.verification_status='UNVERIFIED' then 1 else 0 end) as unverified,cast(100.0*sum(case when ar.attendance_result='PRESENT' then 1 else 0 end)/nullif(count(ar.id),0) as decimal(12,4)) as percentage from "+base+" left join attendance_records ar on ar.student_user_id=s.sid and ar.internship_id=s.internshipId"+window+" group by s.sid,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow";
+            case "ATTENDANCE" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,ar.id as recordId,ar.attendance_date as date,ar.server_submitted_at as submittedAt,ar.attendance_result as result,ar.verification_status as verification,ar.submission_type as submissionType,e.expected_work_mode as workMode,e.verification_reason as reason,e.ai_liveness_passed as liveness,e.location_check_passed as locationPassed,e.latitude as attendanceLatitude,e.longitude as attendanceLongitude,e.gps_accuracy_meters as accuracyMeters,e.expected_latitude as workplaceLatitude,e.expected_longitude as workplaceLongitude,e.geofence_radius_meters as workplaceRadiusMeters,e.distance_meters as workplaceDistanceMeters,e.workplace_address as workplaceAddress,e.workplace_place_id as workplacePlaceId,e.exif_latitude as exifLatitude,e.exif_longitude as exifLongitude,e.image_size_bytes as imageSizeBytes,e.metadata_consistent as metadataConsistent from "+base+" join attendance_records ar on ar.student_user_id=s.sid and ar.internship_id=s.internshipId and ar.deleted_at is null left join attendance_evidence e on e.attendance_id=ar.id where 1=1"+window;
+            case "ATTENDANCE_SUMMARY" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,count(ar.id) as total,sum(case when ar.attendance_result='PRESENT' then 1 else 0 end) as present,sum(case when ar.attendance_result='ABSENT' then 1 else 0 end) as absent,sum(case when ar.verification_status='VERIFIED' then 1 else 0 end) as verified,sum(case when ar.verification_status='UNVERIFIED' then 1 else 0 end) as unverified,cast(100.0*sum(case when ar.attendance_result='PRESENT' then 1 else 0 end)/nullif(count(ar.id),0) as decimal(12,4)) as percentage from "+base+" left join attendance_records ar on ar.student_user_id=s.sid and ar.internship_id=s.internshipId and ar.deleted_at is null"+window+" group by s.sid,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow";
             default -> throw new IllegalArgumentException("Unsupported report type");
         };
         List<DashboardReportCatalog.Field> selected=type.id().equals("MONTHLY_PROGRESS") ? type.fields().stream().filter(DashboardReportCatalog.Field::defaultSelected).toList() : type.fields();

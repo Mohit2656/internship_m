@@ -37,7 +37,7 @@ public class DashboardReportRepository {
             left join student_professional_profiles pp on pp.student_user_id = u.id
             left join student_resumes r on r.professional_profile_id = pp.id and r.is_active = true
             left join resume_analyses ra on ra.resume_id = r.id
-            left join attendance_records t on t.student_user_id = u.id and t.attendance_date = :attendanceDate
+            left join attendance_records t on t.student_user_id = u.id and t.attendance_date = :attendanceDate and t.deleted_at is null
             left join hybrid_work_schedule hs on hs.internship_id = i.id and hs.day_of_week = :dayOfWeek
             """;
     public record Scope(String where, MapSqlParameterSource params, Map<String, String> filters, LocalDate attendanceDate) {}
@@ -189,30 +189,30 @@ public class DashboardReportRepository {
                     sum(case when ar.attendance_result='ABSENT' then 1 else 0 end) as absent_count,
                     sum(case when ar.verification_status='VERIFIED' then 1 else 0 end) as verified_count,
                     sum(case when ar.verification_status='UNVERIFIED' then 1 else 0 end) as unverified_count
-                    from attendance_records ar where ar.student_user_id in (:ids)
+                    from attendance_records ar where ar.deleted_at is null and ar.student_user_id in (:ids)
                     """ + attendanceWindow + " group by ar.student_user_id", params, rs -> {
                 var row = byId.get(rs.getLong("sid"));
                 for (String[] pair : new String[][]{{"attendanceCount","attendance_count"},{"presentCount","present_count"},{"absentCount","absent_count"},{"verifiedCount","verified_count"},{"unverifiedCount","unverified_count"}})
                     if (selected.contains(pair[0])) row.put(pair[0], rs.getLong(pair[1]));
             });
         }
-        if (selected.contains("attendanceHistory")) batch("select ar.student_user_id as sid, ar.attendance_date, ar.attendance_result, ar.verification_status, ar.submission_type, ar.server_submitted_at from attendance_records ar where ar.student_user_id in (:ids)" + attendanceWindow + " order by ar.attendance_date", params,
+        if (selected.contains("attendanceHistory")) batch("select ar.student_user_id as sid, ar.attendance_date, ar.attendance_result, ar.verification_status, ar.submission_type, ar.server_submitted_at from attendance_records ar where ar.deleted_at is null and ar.student_user_id in (:ids)" + attendanceWindow + " order by ar.attendance_date", params,
                 rs -> append(byId.get(rs.getLong("sid")), selected, "attendanceHistory", describe(rs, "attendance_date", "attendance_result", "verification_status", "submission_type", "server_submitted_at")));
-        if (selected.contains("attendanceEvidence")) batch("select ar.student_user_id as sid, ar.attendance_date, e.* from attendance_evidence e join attendance_records ar on ar.id=e.attendance_id where ar.student_user_id in (:ids)" + attendanceWindow + " order by ar.attendance_date", params, rs -> {
+        if (selected.contains("attendanceEvidence")) batch("select ar.student_user_id as sid, ar.attendance_date, e.* from attendance_evidence e join attendance_records ar on ar.id=e.attendance_id where ar.deleted_at is null and ar.student_user_id in (:ids)" + attendanceWindow + " order by ar.attendance_date", params, rs -> {
             List<String> parts = new ArrayList<>(); parts.add(text(rs.getObject("attendance_date")));
-            for (String column : List.of("verification_reason", "expected_work_mode", "daily_work_summary", "latitude", "longitude", "gps_accuracy_meters", "distance_meters", "location_check_passed", "metadata_consistent", "camera_capture_used", "exif_timestamp", "exif_latitude", "exif_longitude", "ai_challenge_type", "ai_face_detected", "ai_single_face", "ai_quality_passed", "ai_liveness_passed", "ai_model_version", "ai_processed_at", "ai_failure_reason")) {
+            for (String column : List.of("verification_reason", "expected_work_mode", "daily_work_summary", "latitude", "longitude", "gps_accuracy_meters", "expected_latitude", "expected_longitude", "geofence_radius_meters", "workplace_address", "workplace_place_id", "distance_meters", "location_check_passed", "metadata_consistent", "camera_capture_used", "exif_timestamp", "exif_latitude", "exif_longitude", "ai_challenge_type", "ai_face_detected", "ai_single_face", "ai_quality_passed", "ai_liveness_passed", "ai_model_version", "ai_processed_at", "ai_failure_reason")) {
                 Object value = rs.getObject(column); if (value != null) parts.add(column.replace('_', ' ') + ": " + text(value));
             }
             append(byId.get(rs.getLong("sid")), selected, "attendanceEvidence", String.join(" | ", parts));
         });
         if (selected.contains("monthlyReportCount") && !has(selected, "monthlyReports", "monthlyPhotos")) {
             rows.forEach(row -> row.put("monthlyReportCount", 0L));
-            batch("select o.student_user_id as sid, count(*) as reports_count from monthly_progress_reports m join internship_details i on i.id=m.student_internship_id join internship_onboarding o on o.id=i.onboarding_id where o.student_user_id in (:ids)" + monthlyWindow + " group by o.student_user_id", params,
+            batch("select o.student_user_id as sid, count(*) as reports_count from monthly_progress_reports m join internship_details i on i.id=m.student_internship_id join internship_onboarding o on o.id=i.onboarding_id where m.deleted_at is null and o.student_user_id in (:ids)" + monthlyWindow + " group by o.student_user_id", params,
                     rs -> byId.get(rs.getLong("sid")).put("monthlyReportCount", rs.getLong("reports_count")));
         }
         if (has(selected, "monthlyReports", "monthlyPhotos")) {
             rows.forEach(row -> row.put("monthlyReportCount", 0L));
-            batch("select o.student_user_id as sid, m.* from monthly_progress_reports m join internship_details i on i.id=m.student_internship_id join internship_onboarding o on o.id=i.onboarding_id where o.student_user_id in (:ids)" + monthlyWindow + " order by m.report_month_number", params, rs -> {
+            batch("select o.student_user_id as sid, m.* from monthly_progress_reports m join internship_details i on i.id=m.student_internship_id join internship_onboarding o on o.id=i.onboarding_id where m.deleted_at is null and o.student_user_id in (:ids)" + monthlyWindow + " order by m.report_month_number", params, rs -> {
                 var row = byId.get(rs.getLong("sid")); row.put("monthlyReportCount", ((Number) row.get("monthlyReportCount")).longValue() + 1);
                 String month = "Month " + rs.getInt("report_month_number") + ": ";
                 append(row, selected, "monthlyReports", month + describe(rs, "period_start", "period_end", "work_description", "submitted_at"));

@@ -36,4 +36,4 @@ public record MonthlyProgressReportResponse(
         Integer imageHeight,
         Boolean exifPresent,
         Boolean gpsPresent,
-        String imageSha256) {}
+        String imageSha256, BigDecimal workplaceLatitude, BigDecimal workplaceLongitude, BigDecimal workplaceRadiusMeters, BigDecimal workplaceDistanceMeters, String workplaceAddress, String workplacePlaceId, String workplaceVerificationStatus, String workplaceVerificationReason) {}

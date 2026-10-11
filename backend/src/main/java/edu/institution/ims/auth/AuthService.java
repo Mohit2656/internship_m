@@ -19,6 +19,8 @@ public class AuthService {
         var principal = (UserPrincipal) authentication.getPrincipal();
         var current = users.findByIdForPasswordUpdate(principal.id()).orElseThrow(() -> new BadCredentialsException("Invalid credentials"));
         if (!current.isActive() || !encoder.matches(request.password(), current.getPasswordHash())) throw new BadCredentialsException("Invalid credentials");
+        if (request.role() != null && request.role() != current.getRole())
+            throw new org.springframework.security.access.AccessDeniedException("Account does not match the selected login role");
         principal = UserPrincipal.from(current);
         return new LoginResult(jwt.create(principal), response(principal));
     }
