@@ -41,15 +41,15 @@ class AttendanceLivenessStatusTest {
     }
 
     @Test
-    void successfulLivenessRedactsLocationInResponsesWithoutMutatingRetainedEvidence() {
+    void successfulLivenessExposesSubmissionLocationWithoutWorkplaceOrEvidenceMutation() {
         var record = record(VerificationStatus.VERIFIED, true);
         AttendanceEvidence stored = evidence(record,
                 decision(true, true, true, true, true, VerificationReason.EDGE_AI_VERIFIED));
         assertThat(record.getLivenessStatus()).isEqualTo(LivenessStatus.VERIFIED);
         AttendanceEvidenceResponse response = AttendanceEvidenceResponse.from(stored);
-        assertThat(response.latitude()).isNull();
-        assertThat(response.longitude()).isNull();
-        assertThat(response.gpsAccuracyMeters()).isNull();
+        assertThat(response.latitude()).isEqualByComparingTo("21.125");
+        assertThat(response.longitude()).isEqualByComparingTo("79.0875");
+        assertThat(response.gpsAccuracyMeters()).isEqualByComparingTo("10");
         assertThat(response.expectedLatitude()).isNull();
         assertThat(response.expectedLongitude()).isNull();
         assertThat(response.geofenceRadiusMeters()).isNull();

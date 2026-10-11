@@ -430,11 +430,11 @@ class DashboardReportIntegrationTest {
         }
     }
 
-    @Test void pausedLocationColumnsCannotBeRequestedWhileMonthlyImageMetadataRemainsAvailable() throws Exception {
+    @Test void submissionCoordinatesAreAvailableWhileWorkplaceColumnsRemainPaused() throws Exception {
         var response=mvc.perform(get("/api/v1/admin/reports/types").cookie(cookie(admin))).andExpect(status().isOk()).andReturn();
-        assertThat(response.getResponse().getContentAsString()).contains("reviewStatus","revision","reviewedAt","Liveness status","HISTORICAL")
-                .doesNotContain("attendanceLatitude","accuracyMeters","workplaceLatitude","workplaceRadiusMeters","locationPassed","locationStatus");
-        typedReport(admin,"table","ATTENDANCE",List.of("attendanceLatitude"),Map.of(),List.of(),"XLSX").andExpect(status().isBadRequest());
+        assertThat(response.getResponse().getContentAsString()).contains("reviewStatus","revision","reviewedAt","Liveness status","HISTORICAL","attendanceLatitude","attendanceLongitude","gpsAccuracyMeters")
+                .doesNotContain("workplaceLatitude","workplaceRadiusMeters","locationPassed","locationStatus");
+        typedReport(admin,"table","ATTENDANCE",List.of("attendanceLatitude"),Map.of(),List.of(),"XLSX").andExpect(status().isOk());
         preview(admin,List.of("expectedLatitude"),Map.of()).andExpect(status().isBadRequest());
         preview(admin,List.of("uid"),Map.of("locationStatus","CONFIRMED")).andExpect(status().isBadRequest());
         typedReport(admin,"table","ATTENDANCE",List.of("verification"),Map.of("verificationStatus","UNVERIFIED"),List.of(),"XLSX").andExpect(status().isBadRequest());

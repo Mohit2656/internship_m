@@ -115,6 +115,13 @@ public class AttendanceEvidence {
         this.aiFailureReason = decision.accepted() ? null : decision.reason();
     }
 
+    void recordSubmissionLocation(BigDecimal latitude, BigDecimal longitude, BigDecimal accuracy) {
+        SubmissionLocation submitted = SubmissionLocation.from(latitude, longitude, accuracy);
+        this.latitude = submitted.latitude();
+        this.longitude = submitted.longitude();
+        this.gpsAccuracyMeters = submitted.accuracyMeters();
+    }
+
     public Long getId() { return id; }
     public AttendanceRecord getAttendance() { return attendance; }
     public BigDecimal getLatitude() { return latitude; }

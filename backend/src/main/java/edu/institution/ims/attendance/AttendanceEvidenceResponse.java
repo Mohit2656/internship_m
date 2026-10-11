@@ -10,7 +10,8 @@ public record AttendanceEvidenceResponse(BigDecimal latitude, BigDecimal longitu
     public static AttendanceEvidenceResponse from(AttendanceEvidence e) {
         if(e == null) return null;
         boolean legacy = e.getAttendance().getVerificationBasis() == AttendanceVerificationBasis.LEGACY;
-        return new AttendanceEvidenceResponse(legacy ? e.getLatitude() : null,legacy ? e.getLongitude() : null,legacy ? e.getGpsAccuracyMeters() : null,
+        SubmissionLocation submitted = SubmissionLocation.from(e.getLatitude(), e.getLongitude(), e.getGpsAccuracyMeters());
+        return new AttendanceEvidenceResponse(submitted.latitude(),submitted.longitude(),submitted.accuracyMeters(),
             legacy ? e.getExpectedLatitude() : null,legacy ? e.getExpectedLongitude() : null,legacy ? e.getGeofenceRadiusMeters() : null,legacy ? e.getDistanceMeters() : null,
             legacy ? e.getLocationCheckPassed() : null,e.getVerificationReason(),legacy ? e.getWorkplaceAddress() : null,legacy ? e.getWorkplacePlaceId() : null,
             legacy ? e.getExifLatitude() : null,legacy ? e.getExifLongitude() : null,e.getExifTimestamp(),e.getMetadataConsistent(),e.isCameraCaptureUsed(),

@@ -50,9 +50,12 @@ public class StudentAttendanceController {
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestPart(value = "photo", required = false) MultipartFile photo,
             @RequestPart(value = "aiEvidence", required = false) @Valid AiVerificationEvidenceRequest aiEvidence,
-            @RequestParam(required = false) String dailyWorkSummary) {
+            @RequestParam(required = false) String dailyWorkSummary,
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude,
+            @RequestParam(required = false) BigDecimal accuracy) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(remoteService.submitToday(principal, photo, aiEvidence, dailyWorkSummary));
+                .body(remoteService.submitToday(principal, photo, aiEvidence, dailyWorkSummary, latitude, longitude, accuracy));
     }
 
     @PostMapping("/verification-session")

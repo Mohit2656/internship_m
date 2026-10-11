@@ -147,7 +147,7 @@ class EdgeAiAttendanceIntegrationTest {
         submitPhysical(locationFail, new AiFlags(1, true, true), "18.5404", "VERIFIED");
         assertThat(storedEvidence(aiFail).getAiFailureReason()).isEqualTo(VerificationReason.EDGE_AI_LIVENESS_FAILED);
         assertThat(storedEvidence(locationFail).getVerificationReason()).isEqualTo(VerificationReason.EDGE_AI_VERIFIED);
-        assertThat(storedEvidence(locationFail).getLatitude()).isNull();
+        assertThat(storedEvidence(locationFail).getLatitude()).isEqualByComparingTo("18.540400");
         assertThat(storedEvidence(locationFail).getExpectedLatitude()).isNull();
         assertThat(storedEvidence(locationFail).getDistanceMeters()).isNull();
     }

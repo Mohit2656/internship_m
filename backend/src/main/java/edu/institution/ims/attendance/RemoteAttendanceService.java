@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import java.time.*;
+import java.math.BigDecimal;
 
 @Service
 public class RemoteAttendanceService {
@@ -38,6 +39,13 @@ public class RemoteAttendanceService {
     @Transactional
     public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
             AiVerificationEvidenceRequest aiEvidence, String workSummary) {
+        return submitToday(principal, photo, aiEvidence, workSummary, null, null, null);
+    }
+
+    @Transactional
+    public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
+            AiVerificationEvidenceRequest aiEvidence, String workSummary,
+            BigDecimal latitude, BigDecimal longitude, BigDecimal accuracy) {
         String summary = validateSummary(workSummary);
         ValidatedCameraImage image = imageValidator.validate(photo);
         User student = users.findById(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
@@ -66,8 +74,9 @@ public class RemoteAttendanceService {
         } catch (DataIntegrityViolationException exception) {
             throw duplicate();
         }
-        evidence.saveAndFlush(new AttendanceEvidence(record, image, summary, null,
-                reason, aiDecision, serverTime));
+        AttendanceEvidence captured = new AttendanceEvidence(record, image, summary, null, reason, aiDecision, serverTime);
+        captured.recordSubmissionLocation(latitude, longitude, accuracy);
+        evidence.saveAndFlush(captured);
         return AttendanceService.response(record);
     }
 

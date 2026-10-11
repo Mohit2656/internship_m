@@ -1,5 +1,7 @@
 # Temporary liveness-only attendance
 
+Submission coordinates were subsequently restored as optional attendance evidence and dashboard Maps links. See [ATTENDANCE_SUBMISSION_LOCATION.md](ATTENDANCE_SUBMISSION_LOCATION.md). They remain independent of liveness verification; its capture policy supersedes the earlier description below.
+
 Monthly reports subsequently changed to explicit faculty mentor review and no longer evaluate photo GPS. See [MONTHLY_REPORT_REVIEW.md](MONTHLY_REPORT_REVIEW.md) for that workflow; the attendance policy and validation results documented here are unchanged.
 
 This change pauses the workplace-registration interface and makes new daily attendance verification depend only on the existing liveness decision. Company details, attendance eligibility, authentication, camera/image validation, hybrid schedules, monthly uploads, photograph access, and mentor deletion safeguards remain in place.

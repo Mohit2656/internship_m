@@ -13,6 +13,9 @@ function load(file, imports = {}) {
   return m.exports;
 }
 const attendance = load("lib/attendance.ts");
+const submissionMaps = load("components/LocationMapLink.tsx");
+const submissionLocations = load("components/AttendanceLocations.tsx", {"@/components/LocationMapLink": submissionMaps});
+
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const record = status => ({ id: 42, attendanceDate: "2026-10-11", attendanceResult: "PRESENT", verificationStatus: "VERIFIED",
   livenessStatus: status, submissionType: "PHYSICAL_CAPTURE", serverSubmittedAt: "2026-10-11T10:00:00Z",
@@ -36,7 +39,7 @@ function renderStudent(item) {
     return [index === 0 ? { attendance: item } : index === 3 ? false : initial, () => {}];
   }};
   const { TodayAttendanceCard } = load("components/TodayAttendanceCard.tsx", {
-    react: hooks, "@/lib/api": {}, "@/lib/attendance": attendance, "@/lib/edge-ai": {}
+    react: hooks, "@/lib/api": {}, "@/components/AttendanceLocations": submissionLocations, "@/lib/attendance": attendance, "@/lib/edge-ai": {}
   });
   return renderToStaticMarkup(React.createElement(TodayAttendanceCard));
 }
@@ -51,7 +54,7 @@ function renderMentor(item) {
   const empty = () => null;
   const { default: Page } = load("app/mentor/dashboard/page.tsx", {
     react: hooks, "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
-    "@/lib/api": {}, "@/lib/attendance": attendance,
+    "@/lib/api": {}, "@/components/AttendanceLocations": submissionLocations, "@/lib/attendance": attendance,
     "@/components/AppFrame": { AppFrame: children }, "@/components/ProtectedRoute": { ProtectedRoute: children },
     "@/components/MentorRecordDelete": { MentorRecordDelete: empty },
     "@/components/MonthlyProgressReportList": { MonthlyProgressReportList: empty },
@@ -90,10 +93,11 @@ function cameraHarness({ liveness = true, method = "PHYSICAL" } = {}) {
   };
   class Analyzer { async initialize() {} start(video, challenge, update) { if (liveness !== null) update({ faceCount: 1, faceDetected: true, singleFace: true, qualityPassed: true, livenessPassed: liveness }); } close() {} }
   const { TodayAttendanceCard } = load("components/TodayAttendanceCard.tsx", { react: hooks, "@/lib/api": { api },
-    "@/lib/attendance": attendance, "@/lib/edge-ai": { EdgeAiAnalyzer: Analyzer, challengeLabel: () => "Blink", EDGE_AI_MODEL_VERSION: "existing-model" } });
+    "@/components/AttendanceLocations": submissionLocations, "@/lib/attendance": attendance, "@/lib/edge-ai": { EdgeAiAnalyzer: Analyzer, challengeLabel: () => "Blink", EDGE_AI_MODEL_VERSION: "existing-model" } });
   function render() { stateIndex = refIndex = effectIndex = 0; return TodayAttendanceCard(); }
   function nodes(type) { const result = []; function walk(node) { if (!node || typeof node !== "object") return; if (node.type === type) result.push(node); React.Children.forEach(node.props?.children, walk); } walk(render()); return result; }
   return { calls, button: label => nodes("button").find(node => node.props.children === label),
+    summary: value => nodes("textarea")[0].props.onChange({ target: { value } }),
     html: () => renderToStaticMarkup(render()),
     async mount() { render(); pendingEffects.splice(0).forEach(effect => effect()); await flush(); },
     cancel() { const cancel = nodes("button").find(node => node.props.children === "Cancel"); cancel?.props.onClick(); }
@@ -119,7 +123,7 @@ test("attendance capture submits liveness evidence without workplace or denied l
   for (const key of ["latitude", "longitude", "accuracy", "workplace"]) assert.equal(submission.body.has(key), false);
   const evidence = JSON.parse(await submission.body.get("aiEvidence").text());
   assert.equal(evidence.sessionId, "issued-by-server"); assert.equal(evidence.livenessPassed, true);
-  assert.match(h.html(), /Liveness verified/); assert.doesNotMatch(h.html(), /location|workplace|GPS/i); h.cancel();
+  assert.match(h.html(), /Liveness verified/); assert.doesNotMatch(h.html(), /Registered workplace|geofence|GPS_ACCURACY/i); h.cancel();
 });
 for (const liveness of [false, null]) test(`${liveness === null ? "missing" : "failed"} liveness keeps capture disabled without submitting attendance`, async t => {
   const locationRequests = navigatorWithoutLocation(t);
@@ -135,4 +139,54 @@ test("existing basic attendance records liveness not performed instead of claimi
   const h = cameraHarness({ method: "BASIC" }); await h.mount(); h.button("Mark Today's Attendance").props.onClick(); await flush();
   assert.equal(h.calls.length, 1); assert.equal(h.calls[0].url, "/student/attendance/today");
   assert.match(h.html(), /Liveness not performed/); assert.doesNotMatch(h.html(), /Liveness verified/); assert.equal(locationRequests(), 0);
+});
+
+test("student and mentor display the same stored submission coordinates without requesting permission", t => {
+  const requests = navigatorWithoutLocation(t);
+  const item = { ...record("FAILED"), evidence: { latitude: 18.5204, longitude: 73.8567, gpsAccuracyMeters: 106, workplaceAddress: "Unrelated company address" } };
+  for (const html of [renderStudent(item), renderMentor(item)]) {
+    assert.match(html, /Latitude: 18[.]5204/); assert.match(html, /Longitude: 73[.]8567/); assert.match(html, /Reported GPS accuracy: 106 m/);
+    assert.match(html, /query=18[.]5204%2C73[.]8567/); assert.match(html, /Open submission location in Google Maps/);
+    assert.match(html, /target="_blank"/); assert.match(html, /noopener noreferrer/); assert.match(html, /Liveness not confirmed/);
+    assert.doesNotMatch(html, /Unrelated company address|Registered workplace|geofence|radius/i);
+  }
+  assert.equal(requests(), 0);
+});
+
+test("missing, partial, invalid and nonnumeric stored coordinates are neutral; zero coordinates remain valid", () => {
+  for (const evidence of [null, { latitude: null, longitude: null }, { latitude: 18, longitude: null }, { latitude: 91, longitude: 73 }, { latitude: 18, longitude: Infinity }, { latitude: "18", longitude: 73 }]) {
+    const item = { ...record("VERIFIED"), evidence };
+    for (const html of [renderStudent(item), renderMentor(item)]) {
+      assert.match(html, /Submission location unavailable/); assert.doesNotMatch(html, /google[.]com\/maps/); assert.match(html, /Liveness verified/);
+    }
+  }
+  for (const html of [renderStudent({ ...record("HISTORICAL"), evidence: { latitude: 0, longitude: 0, gpsAccuracyMeters: -1 } }), renderMentor({ ...record("HISTORICAL"), evidence: { latitude: 0, longitude: 0, gpsAccuracyMeters: -1 } })]) {
+    assert.match(html, /query=0%2C0/); assert.doesNotMatch(html, /Reported GPS accuracy/); assert.match(html, /Historical attendance/);
+  }
+});
+
+for (const method of ["PHYSICAL", "REMOTE"]) test(`${method}: explicitly optional browser capture sends the actual coordinates with liveness evidence`, async t => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "navigator"); let requests = 0;
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+    mediaDevices: { async getUserMedia() { return { getTracks: () => [{ stop() {} }] }; } },
+    geolocation: { getCurrentPosition(success) { requests++; success({ coords: { latitude: 18.5204, longitude: 73.8567, accuracy: 12 } }); } }
+  }});
+  t.after(() => { if (original) Object.defineProperty(globalThis, "navigator", original); else delete globalThis.navigator; });
+  const h = cameraHarness({ method }); await h.mount(); h.button("Mark Today's Attendance").props.onClick(); await flush();
+  await h.button("Capture Attendance").props.onClick(); await flush(); assert.equal(requests, 0);
+  h.button("Include submission location (optional)").props.onClick(); await flush(); assert.equal(requests, 1);
+  if (method === "REMOTE") h.summary("Completed implementation and tested the attendance flow.");
+  h.button("Submit Attendance").props.onClick(); await flush();
+  const body = h.calls.find(call => call.url.endsWith(method === "REMOTE" ? "/remote" : "/physical")).body;
+  assert.equal(body.get("latitude"), "18.5204"); assert.equal(body.get("longitude"), "73.8567"); assert.equal(body.get("accuracy"), "12");
+  assert.equal(JSON.parse(await body.get("aiEvidence").text()).livenessPassed, true); assert.equal(body.has("workplace"), false); h.cancel();
+});
+
+test("denied optional location capture never prevents liveness attendance submission", async t => {
+  const requests = navigatorWithoutLocation(t); const h = cameraHarness(); await h.mount();
+  h.button("Mark Today's Attendance").props.onClick(); await flush(); await h.button("Capture Attendance").props.onClick(); await flush();
+  h.button("Include submission location (optional)").props.onClick(); await flush(); assert.equal(requests(), 1);
+  assert.match(h.html(), /You can still submit attendance/); assert.equal(h.button("Submit Attendance").props.disabled, false);
+  h.button("Submit Attendance").props.onClick(); await flush(); const body = h.calls.find(call => call.url.endsWith("/physical")).body;
+  assert.equal(body.has("latitude"), false); assert.equal(body.has("longitude"), false); assert.match(h.html(), /Liveness verified/); h.cancel();
 });

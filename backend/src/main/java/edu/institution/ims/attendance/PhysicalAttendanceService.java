@@ -40,8 +40,7 @@ public class PhysicalAttendanceService {
     public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
             AiVerificationEvidenceRequest aiEvidence,
             BigDecimal latitude, BigDecimal longitude, BigDecimal accuracyMeters) {
-        // Optional legacy GPS parameters are ignored. New attendance does not
-        // collect or compare browser coordinates or registered workplaces.
+        // Optional submission coordinates are evidence only, never a liveness or workplace check.
         ValidatedCameraImage image = imageValidator.validate(photo);
         User student = users.findById(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
@@ -59,7 +58,8 @@ public class PhysicalAttendanceService {
         if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today).isPresent()) throw duplicate();
 
         Instant serverTime = clock.instant();
-        PhysicalEvidenceInput input = new PhysicalEvidenceInput(null, null, null, image);
+        SubmissionLocation submitted = SubmissionLocation.from(latitude, longitude, accuracyMeters);
+        PhysicalEvidenceInput input = new PhysicalEvidenceInput(submitted.latitude(), submitted.longitude(), submitted.accuracyMeters(), image);
         VerificationDecision decision = new VerificationDecision(
                 aiDecision.accepted() ? VerificationStatus.VERIFIED : VerificationStatus.UNVERIFIED,
                 aiDecision.reason(), null, null, null);

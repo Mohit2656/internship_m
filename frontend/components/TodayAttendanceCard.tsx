@@ -5,6 +5,7 @@ import { AxiosError } from "axios";
 import { api, ApiError } from "@/lib/api";
 import { AiVerificationEvidence, AiVerificationSession, Attendance, AttendancePolicy, HybridSchedule, TodayAttendance, attendanceLabel, livenessLabel } from "@/lib/attendance";
 import { challengeLabel, EdgeAiAnalyzer, EdgeAiFrameState, EDGE_AI_MODEL_VERSION } from "@/lib/edge-ai";
+import { AttendanceLocations, validSubmissionCoordinates } from "@/components/AttendanceLocations";
 
 export function TodayAttendanceCard() {
   const [today, setToday] = useState<TodayAttendance | null>(null);
@@ -21,12 +22,16 @@ export function TodayAttendanceCard() {
   const [aiState, setAiState] = useState<EdgeAiFrameState | null>(null);
   const [aiError, setAiError] = useState("");
   const [error, setError] = useState("");
+  const [submissionLocation, setSubmissionLocation] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
+  const [locationNotice, setLocationNotice] = useState("");
+  const [locating, setLocating] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const analyzerRef = useRef<EdgeAiAnalyzer | null>(null);
   const aiPassedRef = useRef(false);
   const challengeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const locationRequestRef = useRef(0);
 
   useEffect(() => {
     Promise.all([
@@ -41,7 +46,7 @@ export function TodayAttendanceCard() {
     })
       .catch(() => setError("Today's attendance status could not be loaded."))
       .finally(() => setLoading(false));
-    return () => { stopCamera(); };
+    return () => { stopCamera(); locationRequestRef.current += 1; };
     // The cleanup intentionally owns camera, animation-frame, model and timer lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -73,6 +78,7 @@ export function TodayAttendanceCard() {
   }
 
   async function startCamera() {
+    locationRequestRef.current += 1; setSubmissionLocation(null); setLocationNotice(""); setLocating(false);
     stopCamera(); setError(""); setAiError(""); setFlowOpen(true); setPhoto(null);
     setAiSession(null); setAiState(null); aiPassedRef.current = false;
     setCameraStatus("Preparing server challenge…");
@@ -136,6 +142,33 @@ export function TodayAttendanceCard() {
     form.append("aiEvidence", new Blob([JSON.stringify(evidence)], { type: "application/json" }), "ai-evidence.json");
   }
 
+  function includeSubmissionLocation() {
+    const request = ++locationRequestRef.current;
+    setLocating(true); setSubmissionLocation(null); setLocationNotice("");
+    const unavailable = () => {
+      if (request !== locationRequestRef.current) return;
+      setLocating(false); setLocationNotice("Submission location was not captured. You can still submit attendance.");
+    };
+    try {
+      if (!navigator.geolocation) { unavailable(); return; }
+      navigator.geolocation.getCurrentPosition(position => {
+        if (request !== locationRequestRef.current) return;
+        const { latitude, longitude, accuracy } = position.coords;
+        if (!validSubmissionCoordinates(latitude, longitude)) { unavailable(); return; }
+        setSubmissionLocation({ latitude, longitude, accuracy }); setLocating(false);
+        setLocationNotice("Submission location captured. It does not affect liveness verification.");
+      }, unavailable, { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 });
+    } catch { unavailable(); }
+  }
+
+  function appendSubmissionLocation(form: FormData) {
+    if (!submissionLocation) return;
+    form.append("latitude", String(submissionLocation.latitude));
+    form.append("longitude", String(submissionLocation.longitude));
+    if (Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0)
+      form.append("accuracy", String(submissionLocation.accuracy));
+  }
+
   async function submitBasic() {
     if (policy?.verificationMethod !== "BASIC" && policy?.verificationMethod !== "UNAVAILABLE") {
       setError("Use today's required attendance evidence flow.");
@@ -157,6 +190,7 @@ export function TodayAttendanceCard() {
     const form = new FormData();
     form.append("photo", photo, "attendance-capture.jpg");
     appendAiEvidence(form);
+    appendSubmissionLocation(form);
     try {
       const { data } = await api.post<Attendance>("/student/attendance/today/physical", form,
         { headers: { "Content-Type": "multipart/form-data" } });
@@ -176,6 +210,7 @@ export function TodayAttendanceCard() {
     const form = new FormData();
     form.append("photo", photo, "attendance-capture.jpg");
     appendAiEvidence(form);
+    appendSubmissionLocation(form);
     form.append("dailyWorkSummary", summary);
     try {
       const { data } = await api.post<Attendance>("/student/attendance/today/remote", form,
@@ -196,6 +231,7 @@ export function TodayAttendanceCard() {
         {attendance && attendance.attendanceResult === "PRESENT" && <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${attendance.livenessStatus === "VERIFIED" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{livenessLabel(attendance.livenessStatus)}</span>}
       </div>
       {!loading && attendance ? <p className="mt-3 text-sm text-slate-600">Submitted at {new Date(attendance.serverSubmittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} using server time.</p> : !loading && <p className="mt-3 text-sm text-slate-600">Attendance can be submitted once today during your registered internship period.</p>}
+      {!loading && attendance && <AttendanceLocations evidence={attendance.evidence} />}
       {!loading && policy?.todayWorkMode && <p className="mt-3 text-sm font-semibold text-slate-700">Today&apos;s expected work mode: {policy.todayWorkMode === "OFFICE" ? "Office" : "Remote"}</p>}
       {!loading && policy?.internshipMode === "HYBRID" && schedule && <div className="mt-4 flex flex-wrap gap-2">{schedule.entries.map(entry => <span key={entry.dayOfWeek} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-700">{entry.dayOfWeek.slice(0, 3)} · {entry.workMode === "OFFICE" ? "Office" : "Remote"}</span>)}</div>}
       {!loading && !attendance && !policy && <p role="alert" className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s attendance policy could not be confirmed. Reload the dashboard before submitting attendance.</p>}
@@ -208,6 +244,7 @@ export function TodayAttendanceCard() {
         <div className="mt-4 flex flex-wrap gap-3 text-sm"><span className={cameraStatus ? "font-semibold text-emerald-700" : "text-slate-500"}>{cameraStatus || "Camera unavailable"}</span></div>
         {!photo && aiSession && <div className="mt-4 max-w-xl rounded-xl border border-slate-200 bg-white p-4 text-sm"><p className="font-semibold">Liveness challenge: {challengeLabel(aiSession.challenge)}</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><span>{aiState?.faceDetected ? "✓" : "○"} Face detected</span><span>{aiState?.singleFace && aiState.qualityPassed ? "✓" : "○"} Face positioned</span><span>{aiState?.livenessPassed ? "✓" : "○"} Liveness confirmed</span></div><p className="mt-3 text-slate-600">{aiState?.guidance ?? "Loading face analysis…"}</p></div>}
         {aiError && <p role="alert" className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">{aiError}</p>}
+        {photo && <div className="mt-4 text-sm text-slate-600"><button type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="font-semibold text-blue-700 hover:underline disabled:opacity-50">{locating ? "Capturing submission location…" : "Include submission location (optional)"}</button><p className="mt-1">Location is optional and does not affect liveness verification.</p>{locationNotice && <p role="status" className="mt-2">{locationNotice}</p>}</div>}
         <div className="mt-4 flex flex-wrap gap-3">
           {!photo && streamRef.current && <button type="button" disabled={!aiState?.livenessPassed || !aiState.qualityPassed} onClick={() => void capture()} className="rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Capture Attendance</button>}
           {!photo && aiError && <button type="button" onClick={() => void startCamera()} className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold">Retry Edge Verification</button>}

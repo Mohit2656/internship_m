@@ -148,7 +148,7 @@ class PhysicalAttendanceIntegrationTest {
     }
 
     @Test
-    void poorGpsAccuracyCannotOverrideSuccessfulLivenessAndIsNotPersisted() throws Exception {
+    void poorGpsAccuracyIsEvidenceOnlyAndCannotOverrideSuccessfulLiveness() throws Exception {
         saveLocation(verifiedStudent, true);
         Cookie session = loginCookie(verifiedStudent.getEmail(), "StudentPassword!21");
         mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo())
@@ -160,17 +160,17 @@ class PhysicalAttendanceIntegrationTest {
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.evidence.verificationReason").value("EDGE_AI_VERIFIED"))
-                .andExpect(jsonPath("$.evidence.gpsAccuracyMeters").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.evidence.gpsAccuracyMeters").value(106))
                 .andExpect(jsonPath("$.evidence.locationCheckPassed").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.evidence.distanceMeters").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.evidence.latitude").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.evidence.longitude").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.evidence.latitude").value(18.5204))
+                .andExpect(jsonPath("$.evidence.longitude").value(73.8567));
         mvc.perform(get("/api/v1/mentor/attendance/today")
                         .cookie(loginCookie(mentorA.getEmail(), "MentorPassword!23")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].todayAttendance.attendanceResult").value("PRESENT"))
                 .andExpect(jsonPath("$[0].todayAttendance.livenessStatus").value("VERIFIED"))
-                .andExpect(jsonPath("$[0].todayAttendance.evidence.gpsAccuracyMeters").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$[0].todayAttendance.evidence.gpsAccuracyMeters").value(106))
                 .andExpect(jsonPath("$[0].todayAttendance.evidence.verificationReason").value("EDGE_AI_VERIFIED"));
         assertThat(evidence.findAll()).hasSize(1);
         assertThat(evidence.findAll().get(0).isCameraCaptureUsed()).isTrue();
@@ -310,6 +310,23 @@ class PhysicalAttendanceIntegrationTest {
         assertThat(retained.getVerificationReason()).isEqualTo(VerificationReason.VERIFIED_GEOFENCE);
     }
 
+    @Test void storedSubmissionLocationFlowsToOwnerAssignedMentorAndAuthorizedHistory() throws Exception {
+        assignments.saveAndFlush(new MentorStudentAssignment(mentorA,verifiedStudent,admin,NOW));
+        submitPhysical(verifiedStudent,"StudentPassword!21","0","0","10");
+        Cookie student=loginCookie(verifiedStudent.getEmail(),"StudentPassword!21"),mentor=loginCookie(mentorA.getEmail(),"MentorPassword!23");
+        mvc.perform(get("/api/v1/student/attendance/today").cookie(student)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.attendance.evidence.latitude").value(0)).andExpect(jsonPath("$.attendance.evidence.longitude").value(0)).andExpect(jsonPath("$.attendance.livenessStatus").value("VERIFIED"));
+        mvc.perform(get("/api/v1/mentor/attendance/today").cookie(mentor)).andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].todayAttendance.evidence.latitude").value(0)).andExpect(jsonPath("$[0].todayAttendance.evidence.gpsAccuracyMeters").value(10));
+        mvc.perform(get("/api/v1/mentor/attendance/today").cookie(loginCookie(mentorB.getEmail(),"MentorPassword!24"))).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(get("/api/v1/student/attendance").cookie(loginCookie(outsideStudent.getEmail(),"StudentPassword!22"))).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        String request=json.writeValueAsString(Map.of("reportType","ATTENDANCE","fields",java.util.List.of("attendanceLatitude","attendanceLongitude","gpsAccuracyMeters","verification"),"filters",Map.of(),"studentIds",java.util.List.of(verifiedStudent.getId()),"page",0,"format","XLSX"));
+        mvc.perform(post("/api/v1/mentor/reports/table").cookie(mentor).contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.rows[0].attendanceLatitude").value(0)).andExpect(jsonPath("$.rows[0].attendanceLongitude").value(0)).andExpect(jsonPath("$.rows[0].verification").value("VERIFIED"));
+        mvc.perform(post("/api/v1/mentor/reports/table").cookie(loginCookie(mentorB.getEmail(),"MentorPassword!24")).contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isForbidden());
+        assertThat(locations.findAll()).isEmpty();
+    }
+
     private void submitPhysical(User student, String password, String latitude, String longitude,
             String accuracy) throws Exception {
         Cookie session = loginCookie(student.getEmail(), password);
@@ -323,7 +340,7 @@ class PhysicalAttendanceIntegrationTest {
         AttendanceRecord record = attendance.findByStudentIdAndAttendanceDate(student.getId(), TODAY).orElseThrow();
         AttendanceEvidence stored = evidence.findByAttendanceId(record.getId()).orElseThrow();
         assertThat(stored.getVerificationReason()).isEqualTo(VerificationReason.EDGE_AI_VERIFIED);
-        assertThat(stored.getLatitude()).isNull();
+        assertThat(stored.getLatitude()).isEqualTo(SubmissionLocation.from(new BigDecimal(latitude),new BigDecimal(longitude),new BigDecimal(accuracy)).latitude());
         assertThat(stored.getExpectedLatitude()).isNull();
         assertThat(stored.getDistanceMeters()).isNull();
     }
