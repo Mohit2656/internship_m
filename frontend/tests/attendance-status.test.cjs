@@ -89,7 +89,7 @@ function cameraHarness({ liveness = true, method = "PHYSICAL" } = {}) {
   };
   const api = {
     async get(url) { return { data: url.endsWith("/policy") ? { internshipMode: "OFFICE_REPORTING", verificationMethod: method, configurationReady: true } : { attendanceDate: "2026-10-11", attendance: null } }; },
-    async post(url, body) { calls.push({ url, body }); return { data: url.endsWith("verification-session") ? { sessionId: "issued-by-server", challenge: "BLINK" } : record(method === "BASIC" ? "NOT_PERFORMED" : "VERIFIED") }; }
+    async post(url, body, config) { calls.push({ url, body, config }); return { data: url.endsWith("verification-session") ? { sessionId: "issued-by-server", challenge: "BLINK" } : record(method === "BASIC" ? "NOT_PERFORMED" : "VERIFIED") }; }
   };
   class Analyzer { async initialize() {} start(video, challenge, update) { if (liveness !== null) update({ faceCount: 1, faceDetected: true, singleFace: true, qualityPassed: true, livenessPassed: liveness }); } close() {} }
   const { TodayAttendanceCard } = load("components/TodayAttendanceCard.tsx", { react: hooks, "@/lib/api": { api },
@@ -112,18 +112,14 @@ function navigatorWithoutLocation(t) {
   t.after(() => { if (original) Object.defineProperty(globalThis, "navigator", original); else delete globalThis.navigator; });
   return () => locationRequests;
 }
-test("attendance capture submits liveness evidence without workplace or denied location permission", async t => {
-  const locationRequests = navigatorWithoutLocation(t);
+test("attendance cannot submit before required location capture", async t => {
+  const requests = navigatorWithoutLocation(t);
   const h = cameraHarness(); await h.mount(); h.button("Mark Today's Attendance").props.onClick(); await flush();
   await h.button("Capture Attendance").props.onClick(); await flush();
+  assert.equal(h.button("Submit Attendance").props.disabled, true);
   h.button("Submit Attendance").props.onClick(); await flush();
-  assert.equal(locationRequests(), 0);
-  const submission = h.calls.find(call => call.url.endsWith("/physical")); assert.ok(submission);
-  assert.ok(submission.body.has("photo"));
-  for (const key of ["latitude", "longitude", "accuracy", "workplace"]) assert.equal(submission.body.has(key), false);
-  const evidence = JSON.parse(await submission.body.get("aiEvidence").text());
-  assert.equal(evidence.sessionId, "issued-by-server"); assert.equal(evidence.livenessPassed, true);
-  assert.match(h.html(), /Liveness verified/); assert.doesNotMatch(h.html(), /Registered workplace|geofence|GPS_ACCURACY/i); h.cancel();
+  assert.equal(h.calls.filter(call => call.url.endsWith("/physical")).length, 0);
+  assert.match(h.html(), /Capture your submission location/); assert.equal(requests(), 0); h.cancel();
 });
 for (const liveness of [false, null]) test(`${liveness === null ? "missing" : "failed"} liveness keeps capture disabled without submitting attendance`, async t => {
   const locationRequests = navigatorWithoutLocation(t);
@@ -134,11 +130,18 @@ for (const liveness of [false, null]) test(`${liveness === null ? "missing" : "f
   assert.equal(h.calls.filter(call => !call.url.endsWith("verification-session")).length, 0);
   assert.equal(locationRequests(), 0); h.cancel();
 });
-test("existing basic attendance records liveness not performed instead of claiming verification", async t => {
-  const locationRequests = navigatorWithoutLocation(t);
-  const h = cameraHarness({ method: "BASIC" }); await h.mount(); h.button("Mark Today's Attendance").props.onClick(); await flush();
+test("basic attendance requires location and still records liveness not performed", async t => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { geolocation: { getCurrentPosition(success) { success({ coords: { latitude: 18, longitude: 73, accuracy: 10 } }); } } } });
+  t.after(() => { if (original) Object.defineProperty(globalThis, "navigator", original); else delete globalThis.navigator; });
+  const h = cameraHarness({ method: "BASIC" }); await h.mount();
+  assert.equal(h.button("Mark Today's Attendance").props.disabled, true);
+  h.button("Capture submission location (required)").props.onClick(); await flush();
+  assert.equal(h.button("Mark Today's Attendance").props.disabled, false);
+  h.button("Mark Today's Attendance").props.onClick(); await flush();
   assert.equal(h.calls.length, 1); assert.equal(h.calls[0].url, "/student/attendance/today");
-  assert.match(h.html(), /Liveness not performed/); assert.doesNotMatch(h.html(), /Liveness verified/); assert.equal(locationRequests(), 0);
+  assert.deepEqual(h.calls[0].config.params, { latitude: 18, longitude: 73, accuracy: 10 });
+  assert.match(h.html(), /Liveness not performed/); assert.doesNotMatch(h.html(), /Liveness verified/);
 });
 
 test("student and mentor display the same stored submission coordinates without requesting permission", t => {
@@ -165,7 +168,7 @@ test("missing, partial, invalid and nonnumeric stored coordinates are neutral; z
   }
 });
 
-for (const method of ["PHYSICAL", "REMOTE"]) test(`${method}: explicitly optional browser capture sends the actual coordinates with liveness evidence`, async t => {
+for (const method of ["PHYSICAL", "REMOTE"]) test(`${method}: required browser capture sends the actual coordinates with liveness evidence`, async t => {
   const original = Object.getOwnPropertyDescriptor(globalThis, "navigator"); let requests = 0;
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
     mediaDevices: { async getUserMedia() { return { getTracks: () => [{ stop() {} }] }; } },
@@ -174,7 +177,7 @@ for (const method of ["PHYSICAL", "REMOTE"]) test(`${method}: explicitly optiona
   t.after(() => { if (original) Object.defineProperty(globalThis, "navigator", original); else delete globalThis.navigator; });
   const h = cameraHarness({ method }); await h.mount(); h.button("Mark Today's Attendance").props.onClick(); await flush();
   await h.button("Capture Attendance").props.onClick(); await flush(); assert.equal(requests, 0);
-  h.button("Include submission location (optional)").props.onClick(); await flush(); assert.equal(requests, 1);
+  h.button("Capture submission location (required)").props.onClick(); await flush(); assert.equal(requests, 1);
   if (method === "REMOTE") h.summary("Completed implementation and tested the attendance flow.");
   h.button("Submit Attendance").props.onClick(); await flush();
   const body = h.calls.find(call => call.url.endsWith(method === "REMOTE" ? "/remote" : "/physical")).body;
@@ -182,11 +185,12 @@ for (const method of ["PHYSICAL", "REMOTE"]) test(`${method}: explicitly optiona
   assert.equal(JSON.parse(await body.get("aiEvidence").text()).livenessPassed, true); assert.equal(body.has("workplace"), false); h.cancel();
 });
 
-test("denied optional location capture never prevents liveness attendance submission", async t => {
-  const requests = navigatorWithoutLocation(t); const h = cameraHarness(); await h.mount();
+for (const method of ["PHYSICAL", "REMOTE"]) test(`${method}: denied required location prevents submission`, async t => {
+  const requests = navigatorWithoutLocation(t); const h = cameraHarness({ method }); await h.mount();
   h.button("Mark Today's Attendance").props.onClick(); await flush(); await h.button("Capture Attendance").props.onClick(); await flush();
-  h.button("Include submission location (optional)").props.onClick(); await flush(); assert.equal(requests(), 1);
-  assert.match(h.html(), /You can still submit attendance/); assert.equal(h.button("Submit Attendance").props.disabled, false);
-  h.button("Submit Attendance").props.onClick(); await flush(); const body = h.calls.find(call => call.url.endsWith("/physical")).body;
-  assert.equal(body.has("latitude"), false); assert.equal(body.has("longitude"), false); assert.match(h.html(), /Liveness verified/); h.cancel();
+  h.button("Capture submission location (required)").props.onClick(); await flush(); assert.equal(requests(), 1);
+  assert.match(h.html(), /Submission location is required/); assert.equal(h.button("Submit Attendance").props.disabled, true);
+  if (method === "REMOTE") h.summary("Completed implementation and tested the attendance flow.");
+  h.button("Submit Attendance").props.onClick(); await flush();
+  assert.equal(h.calls.filter(call => call.url.endsWith("/physical") || call.url.endsWith("/remote")).length, 0); h.cancel();
 });

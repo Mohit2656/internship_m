@@ -60,6 +60,7 @@ public class RemoteAttendanceService {
                     : error(HttpStatus.CONFLICT, "HYBRID_SCHEDULE_NOT_CONFIGURED",
                             "Today's hybrid work mode has not been configured");
         }
+        SubmissionLocation submitted = SubmissionLocation.require(latitude, longitude, accuracy);
         AiVerificationDecision aiDecision = aiVerification.evaluate(principal, internship, today, aiEvidence);
         if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today).isPresent()) throw duplicate();
 
@@ -75,7 +76,7 @@ public class RemoteAttendanceService {
             throw duplicate();
         }
         AttendanceEvidence captured = new AttendanceEvidence(record, image, summary, null, reason, aiDecision, serverTime);
-        captured.recordSubmissionLocation(latitude, longitude, accuracy);
+        captured.recordSubmissionLocation(submitted.latitude(), submitted.longitude(), submitted.accuracyMeters());
         evidence.saveAndFlush(captured);
         return AttendanceService.response(record);
     }

@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
+import java.math.BigDecimal;
 import java.util.List;
 
 @Service
@@ -17,18 +18,25 @@ public class AttendanceService {
     private final UserRepository users;
     private final AttendancePolicyService policies;
     private final Clock clock;
+    private final AttendanceEvidenceRepository evidence;
 
     public AttendanceService(AttendanceRepository attendance, InternshipDetailsRepository internships,
-            UserRepository users, AttendancePolicyService policies, Clock clock) {
+            UserRepository users, AttendancePolicyService policies, Clock clock, AttendanceEvidenceRepository evidence) {
         this.attendance = attendance;
         this.internships = internships;
         this.users = users;
         this.policies = policies;
         this.clock = clock;
+        this.evidence = evidence;
     }
 
     @Transactional
     public AttendanceResponse submitToday(UserPrincipal principal) {
+        return submitToday(principal, null, null, null);
+    }
+
+    @Transactional
+    public AttendanceResponse submitToday(UserPrincipal principal, BigDecimal latitude, BigDecimal longitude, BigDecimal accuracy) {
         User student = users.findById(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
         InternshipDetails internship = eligibleInternship(student.getId());
@@ -42,12 +50,15 @@ public class AttendanceService {
         if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today).isPresent()) {
             throw duplicate();
         }
+        SubmissionLocation location = SubmissionLocation.require(latitude, longitude, accuracy);
         AttendanceRecord record = new AttendanceRecord(student, internship, today,
                 AttendanceResult.PRESENT, VerificationStatus.UNVERIFIED,
                 AttendanceSubmissionType.BASIC, clock.instant());
         record.useLivenessVerification();
         try {
-            return response(attendance.saveAndFlush(record));
+            attendance.saveAndFlush(record);
+            evidence.saveAndFlush(new AttendanceEvidence(record, location, clock.instant()));
+            return response(record);
         } catch (DataIntegrityViolationException exception) {
             throw duplicate();
         }

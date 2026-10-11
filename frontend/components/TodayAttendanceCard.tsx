@@ -147,7 +147,7 @@ export function TodayAttendanceCard() {
     setLocating(true); setSubmissionLocation(null); setLocationNotice("");
     const unavailable = () => {
       if (request !== locationRequestRef.current) return;
-      setLocating(false); setLocationNotice("Submission location was not captured. You can still submit attendance.");
+      setLocating(false); setLocationNotice("Submission location is required. Allow location access in your browser settings, then retry capture.");
     };
     try {
       if (!navigator.geolocation) { unavailable(); return; }
@@ -174,9 +174,12 @@ export function TodayAttendanceCard() {
       setError("Use today's required attendance evidence flow.");
       return;
     }
+    if (!submissionLocation || !validSubmissionCoordinates(submissionLocation.latitude, submissionLocation.longitude)) {
+      setError("Capture your submission location before submitting attendance."); return;
+    }
     setSubmitting(true); setError("");
     try {
-      const { data } = await api.post<Attendance>("/student/attendance/today");
+      const { data } = await api.post<Attendance>("/student/attendance/today", null, { params: { latitude: submissionLocation.latitude, longitude: submissionLocation.longitude, accuracy: Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? submissionLocation.accuracy : undefined } });
       setToday({ attendanceDate: data.attendanceDate, attendance: data });
       stopCamera(); setFlowOpen(false);
     } catch (cause) {
@@ -186,6 +189,9 @@ export function TodayAttendanceCard() {
 
   async function submitPhysical() {
     if (!photo) return;
+    if (!submissionLocation || !validSubmissionCoordinates(submissionLocation.latitude, submissionLocation.longitude)) {
+      setError("Capture your submission location before submitting attendance."); return;
+    }
     setSubmitting(true); setError("");
     const form = new FormData();
     form.append("photo", photo, "attendance-capture.jpg");
@@ -205,6 +211,9 @@ export function TodayAttendanceCard() {
     const summary = dailyWorkSummary.trim();
     if (summary.length < 20 || summary.length > 1000) {
       setError("Daily work summary must contain between 20 and 1000 characters."); return;
+    }
+    if (!submissionLocation || !validSubmissionCoordinates(submissionLocation.latitude, submissionLocation.longitude)) {
+      setError("Capture your submission location before submitting attendance."); return;
     }
     setSubmitting(true); setError("");
     const form = new FormData();
@@ -236,7 +245,8 @@ export function TodayAttendanceCard() {
       {!loading && policy?.internshipMode === "HYBRID" && schedule && <div className="mt-4 flex flex-wrap gap-2">{schedule.entries.map(entry => <span key={entry.dayOfWeek} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-700">{entry.dayOfWeek.slice(0, 3)} · {entry.workMode === "OFFICE" ? "Office" : "Remote"}</span>)}</div>}
       {!loading && !attendance && !policy && <p role="alert" className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s attendance policy could not be confirmed. Reload the dashboard before submitting attendance.</p>}
       {!loading && !attendance && policy && !policy.configurationReady && <p className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s work mode has not been configured. Attendance can be recorded; liveness will be marked as not performed.</p>}
-      {!loading && !attendance && policy && !flowOpen && <button type="button" disabled={submitting} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Mark Today's Attendance"}</button>}
+      {!loading && !attendance && policy && !flowOpen && <button type="button" disabled={submitting || ((!physical && !remote) && (!submissionLocation || locating))} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Mark Today's Attendance"}</button>}
+      {!loading && !attendance && policy && !physical && !remote && <div className="mt-4 text-sm text-slate-600"><button type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="font-semibold text-blue-700 hover:underline disabled:opacity-50">{locating ? "Capturing submission location..." : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance. Verification remains based only on liveness.</p>{locationNotice && <p role="status" className="mt-2">{locationNotice}</p>}</div>}
       {!loading && !attendance && flowOpen && <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div className="mb-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-950"><p className="font-bold">Edge Verification</p><p className="mt-1">Camera analysis verifies a live attendance capture on this device. Face recognition and identity matching are not performed.</p></div>
         {!photo ? <video ref={videoRef} playsInline muted className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" /> : <img src={photoUrl} alt="Fresh attendance camera capture" className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" />}
@@ -244,12 +254,12 @@ export function TodayAttendanceCard() {
         <div className="mt-4 flex flex-wrap gap-3 text-sm"><span className={cameraStatus ? "font-semibold text-emerald-700" : "text-slate-500"}>{cameraStatus || "Camera unavailable"}</span></div>
         {!photo && aiSession && <div className="mt-4 max-w-xl rounded-xl border border-slate-200 bg-white p-4 text-sm"><p className="font-semibold">Liveness challenge: {challengeLabel(aiSession.challenge)}</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><span>{aiState?.faceDetected ? "✓" : "○"} Face detected</span><span>{aiState?.singleFace && aiState.qualityPassed ? "✓" : "○"} Face positioned</span><span>{aiState?.livenessPassed ? "✓" : "○"} Liveness confirmed</span></div><p className="mt-3 text-slate-600">{aiState?.guidance ?? "Loading face analysis…"}</p></div>}
         {aiError && <p role="alert" className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">{aiError}</p>}
-        {photo && <div className="mt-4 text-sm text-slate-600"><button type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="font-semibold text-blue-700 hover:underline disabled:opacity-50">{locating ? "Capturing submission location…" : "Include submission location (optional)"}</button><p className="mt-1">Location is optional and does not affect liveness verification.</p>{locationNotice && <p role="status" className="mt-2">{locationNotice}</p>}</div>}
+        {!loading && !attendance && policy && photo && <div className="mt-4 text-sm text-slate-600"><button type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="font-semibold text-blue-700 hover:underline disabled:opacity-50">{locating ? "Capturing submission location…" : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance. Verification remains based only on liveness.</p>{locationNotice && <p role="status" className="mt-2">{locationNotice}</p>}</div>}
         <div className="mt-4 flex flex-wrap gap-3">
           {!photo && streamRef.current && <button type="button" disabled={!aiState?.livenessPassed || !aiState.qualityPassed} onClick={() => void capture()} className="rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Capture Attendance</button>}
           {!photo && aiError && <button type="button" onClick={() => void startCamera()} className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold">Retry Edge Verification</button>}
           {photo && remote && <label className="w-full max-w-xl text-sm font-semibold text-slate-700">Today&apos;s work/activity<textarea value={dailyWorkSummary} onChange={event => setDailyWorkSummary(event.target.value)} minLength={20} maxLength={1000} rows={4} placeholder="Describe the work you completed today (20–1000 characters)." className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"/><span className="mt-1 block text-xs font-normal text-slate-500">{dailyWorkSummary.trim().length} / 1000 characters</span></label>}
-          {photo && <><button type="button" disabled={submitting || (remote && dailyWorkSummary.trim().length < 20)} onClick={() => void (remote ? submitRemote() : submitPhysical())} className="rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Submit Attendance"}</button><button type="button" disabled={submitting} onClick={() => void startCamera()} className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold">Retake</button></>}
+          {photo && <><button type="button" disabled={submitting || locating || !submissionLocation || (remote && dailyWorkSummary.trim().length < 20)} onClick={() => void (remote ? submitRemote() : submitPhysical())} className="rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{submitting ? "Submitting…" : "Submit Attendance"}</button><button type="button" disabled={submitting} onClick={() => void startCamera()} className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold">Retake</button></>}
           <button type="button" onClick={() => { stopCamera(); setFlowOpen(false); setError(""); }} className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600">Cancel</button>
         </div>
       </div>}

@@ -88,7 +88,7 @@ class OnlineHybridAttendanceIntegrationTest {
 
     @AfterEach void cleanup() { clearData(); }
 
-    @Test void remoteSubmissionStoresOptionalLocationWithoutWorkplaceOrLivenessDependency() throws Exception {
+    @Test void remoteSubmissionStoresRequiredLocationWithoutWorkplaceOrLivenessDependency() throws Exception {
         Cookie session = loginCookie(online.getEmail(), "StudentPassword!21");
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
                 .file(aiEvidence(session,1,true,true)).param("dailyWorkSummary",SUMMARY)
@@ -102,7 +102,7 @@ class OnlineHybridAttendanceIntegrationTest {
     }
 
     @Test
-    void onlinePolicyNeedsNoGpsOrGeofenceAndValidCaptureIsVerified() throws Exception {
+    void onlinePolicyNeedsNoWorkplaceAndValidLocatedCaptureIsVerified() throws Exception {
         Cookie session = loginCookie(online.getEmail(), "StudentPassword!21");
         mvc.perform(get("/api/v1/student/attendance/today/policy").cookie(session)
                         .queryParam("browserDate", "1999-01-01"))
@@ -114,7 +114,7 @@ class OnlineHybridAttendanceIntegrationTest {
 
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
                         .file(aiEvidence(session, 1, true, true))
-                        .param("dailyWorkSummary", SUMMARY).param("attendanceDate", "2099-01-01")
+                        .param("dailyWorkSummary", SUMMARY).param("latitude","18.5204").param("longitude","73.8567").param("attendanceDate", "2099-01-01")
                         .param("verificationStatus", "VERIFIED").cookie(session))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceDate").value(TODAY.toString()))
                 .andExpect(jsonPath("$.serverSubmittedAt").value(NOW.toString()))
@@ -126,13 +126,13 @@ class OnlineHybridAttendanceIntegrationTest {
         AttendanceEvidence stored = evidence.findByAttendanceId(record.getId()).orElseThrow();
         assertThat(stored.getDailyWorkSummary()).isEqualTo(SUMMARY);
         assertThat(stored.getExpectedWorkMode()).isEqualTo(HybridWorkMode.REMOTE);
-        assertThat(stored.getLatitude()).isNull();
+        assertThat(stored.getLatitude()).isEqualByComparingTo("18.5204");
         assertThat(stored.getGpsAccuracyMeters()).isNull();
         assertThat(stored.getVerificationReason()).isEqualTo(VerificationReason.EDGE_AI_VERIFIED);
         assertThat(locations.findAll()).isEmpty();
 
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
-                        .param("dailyWorkSummary", SUMMARY).cookie(session))
+                        .param("dailyWorkSummary", SUMMARY).param("latitude","18.5204").param("longitude","73.8567").cookie(session))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_ALREADY_SUBMITTED"));
         mvc.perform(get("/api/v1/student/attendance").cookie(session)).andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].verificationStatus").value("VERIFIED"))
@@ -143,7 +143,7 @@ class OnlineHybridAttendanceIntegrationTest {
     void onlineMissingCameraOrMeaningfulSummaryCannotVerifyOrCreateAttendance() throws Exception {
         Cookie session = loginCookie(onlineInvalid.getEmail(), "StudentPassword!22");
         mvc.perform(multipart("/api/v1/student/attendance/today/remote")
-                        .param("dailyWorkSummary", SUMMARY).cookie(session))
+                        .param("dailyWorkSummary", SUMMARY).param("latitude","18.5204").param("longitude","73.8567").cookie(session))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CAMERA_IMAGE_REQUIRED"));
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
                         .param("dailyWorkSummary", "   ").cookie(session))
@@ -192,15 +192,15 @@ class OnlineHybridAttendanceIntegrationTest {
                         .cookie(remoteSession)).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REMOTE_ATTENDANCE_REQUIRED"));
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
-                        .param("dailyWorkSummary", SUMMARY).param("todayWorkMode", "REMOTE").cookie(officeSession))
+                        .param("dailyWorkSummary", SUMMARY).param("latitude","18.5204").param("longitude","73.8567").param("todayWorkMode", "REMOTE").cookie(officeSession))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PHYSICAL_ATTENDANCE_REQUIRED"));
 
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
                         .file(aiEvidence(remoteSession, 1, true, true))
-                        .param("dailyWorkSummary", SUMMARY).cookie(remoteSession))
+                        .param("dailyWorkSummary", SUMMARY).param("latitude","18.5204").param("longitude","73.8567").cookie(remoteSession))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.verificationStatus").value("VERIFIED"));
         mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo())
-                        .file(aiEvidence(officeSession, 1, true, true))
+                        .file(aiEvidence(officeSession, 1, true, true)).param("latitude","18.5204").param("longitude","73.8567")
                         .cookie(officeSession)).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
@@ -226,14 +226,25 @@ class OnlineHybridAttendanceIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.configurationReady").value(false))
                 .andExpect(jsonPath("$.verificationMethod").value("UNAVAILABLE"));
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
-                        .param("dailyWorkSummary", SUMMARY).cookie(session))
+                        .param("dailyWorkSummary", SUMMARY).param("latitude","18.5204").param("longitude","73.8567").cookie(session))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("HYBRID_SCHEDULE_NOT_CONFIGURED"));
-        mvc.perform(post("/api/v1/student/attendance/today").cookie(session)
+        mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567").cookie(session)
                         .queryParam("attendanceDate", "1999-01-01").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"verificationStatus\":\"VERIFIED\",\"todayWorkMode\":\"REMOTE\"}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceDate").value(TODAY.toString()))
                 .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("NOT_PERFORMED"));
+    }
+
+    @Test void remoteMissingOrPartialCoordinatesCannotCreateAttendance() throws Exception {
+        Cookie session = loginCookie(online.getEmail(), "StudentPassword!21");
+        for (String latitude : new String[]{"", "18.5", "91"}) {
+            var request = multipart("/api/v1/student/attendance/today/remote").file(photo())
+                .param("dailyWorkSummary", SUMMARY).cookie(session);
+            if (!latitude.isEmpty()) request.param("latitude", latitude);
+            mvc.perform(request).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SUBMISSION_LOCATION_REQUIRED"));
+        }
+        assertThat(attendance.findAll()).isEmpty(); assertThat(evidence.findAll()).isEmpty();
     }
 
     private void saveSchedule(User student, String mode) throws Exception {

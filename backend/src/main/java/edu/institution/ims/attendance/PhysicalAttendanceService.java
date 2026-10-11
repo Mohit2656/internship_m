@@ -40,7 +40,7 @@ public class PhysicalAttendanceService {
     public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
             AiVerificationEvidenceRequest aiEvidence,
             BigDecimal latitude, BigDecimal longitude, BigDecimal accuracyMeters) {
-        // Optional submission coordinates are evidence only, never a liveness or workplace check.
+        // Required submission coordinates are evidence only, never a liveness or workplace check.
         ValidatedCameraImage image = imageValidator.validate(photo);
         User student = users.findById(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
@@ -54,11 +54,11 @@ public class PhysicalAttendanceService {
                     : error(HttpStatus.CONFLICT, "HYBRID_SCHEDULE_NOT_CONFIGURED",
                             "Today's hybrid work mode has not been configured");
         }
+        SubmissionLocation submitted = SubmissionLocation.require(latitude, longitude, accuracyMeters);
         AiVerificationDecision aiDecision = aiVerification.evaluate(principal, internship, today, aiEvidence);
         if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today).isPresent()) throw duplicate();
 
         Instant serverTime = clock.instant();
-        SubmissionLocation submitted = SubmissionLocation.from(latitude, longitude, accuracyMeters);
         PhysicalEvidenceInput input = new PhysicalEvidenceInput(submitted.latitude(), submitted.longitude(), submitted.accuracyMeters(), image);
         VerificationDecision decision = new VerificationDecision(
                 aiDecision.accepted() ? VerificationStatus.VERIFIED : VerificationStatus.UNVERIFIED,

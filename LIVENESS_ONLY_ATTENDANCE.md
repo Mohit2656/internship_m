@@ -1,6 +1,6 @@
 # Temporary liveness-only attendance
 
-Submission coordinates were subsequently restored as optional attendance evidence and dashboard Maps links. See [ATTENDANCE_SUBMISSION_LOCATION.md](ATTENDANCE_SUBMISSION_LOCATION.md). They remain independent of liveness verification; its capture policy supersedes the earlier description below.
+Submission coordinates were subsequently restored as attendance evidence and dashboard Maps links, and are now required for new submissions. See [REQUIRED_ATTENDANCE_LOCATION.md](REQUIRED_ATTENDANCE_LOCATION.md). See [ATTENDANCE_SUBMISSION_LOCATION.md](ATTENDANCE_SUBMISSION_LOCATION.md). They remain independent of liveness verification; its capture policy supersedes the earlier description below.
 
 Monthly reports subsequently changed to explicit faculty mentor review and no longer evaluate photo GPS. See [MONTHLY_REPORT_REVIEW.md](MONTHLY_REPORT_REVIEW.md) for that workflow; the attendance policy and validation results documented here are unchanged.
 

@@ -29,7 +29,7 @@ public class AttendanceEvidence {
     @Column(name = "camera_capture_used", nullable = false) private boolean cameraCaptureUsed;
     @Enumerated(EnumType.STRING) @Column(name = "verification_reason", nullable = false, length = 80)
     private VerificationReason verificationReason;
-    @Column(name = "image_media_type", nullable = false, length = 50) private String imageMediaType;
+    @Column(name = "image_media_type", length = 50) private String imageMediaType;
     @Column(name = "image_size_bytes", nullable = false) private long imageSizeBytes;
     @Column(name = "daily_work_summary", length = 1000) private String dailyWorkSummary;
     @Enumerated(EnumType.STRING) @Column(name = "expected_work_mode", length = 20)
@@ -101,6 +101,15 @@ public class AttendanceEvidence {
         this.expectedWorkMode = HybridWorkMode.REMOTE;
         applyAi(aiDecision);
         this.createdAt = createdAt;
+    }
+
+    public AttendanceEvidence(AttendanceRecord attendance, SubmissionLocation location, Instant createdAt) {
+        this.attendance = attendance;
+        attendance.attachEvidence(this);
+        recordSubmissionLocation(location.latitude(), location.longitude(), location.accuracyMeters());
+        this.verificationReason = VerificationReason.EDGE_AI_EVIDENCE_MISSING;
+        this.createdAt = createdAt;
+        // BASIC evidence has no camera photograph or liveness session.
     }
 
     private void applyAi(AiVerificationDecision decision) {

@@ -29,8 +29,11 @@ public class StudentAttendanceController {
     }
 
     @PostMapping("/today")
-    public ResponseEntity<AttendanceResponse> submitToday(@AuthenticationPrincipal UserPrincipal principal) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.submitToday(principal));
+    public ResponseEntity<AttendanceResponse> submitToday(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) BigDecimal latitude,
+            @RequestParam(required = false) BigDecimal longitude,
+            @RequestParam(required = false) BigDecimal accuracy) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.submitToday(principal, latitude, longitude, accuracy));
     }
 
     @PostMapping(value = "/today/physical", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

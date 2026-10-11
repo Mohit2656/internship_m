@@ -1,5 +1,7 @@
 # Attendance submission location
 
+**Current policy:** Submission coordinates are now required for all new attendance submissions. The optional-capture implementation and its test results below describe the previous version. See [REQUIRED_ATTENDANCE_LOCATION.md](REQUIRED_ATTENDANCE_LOCATION.md) for the correction.
+
 ## Root cause and fix
 
 The liveness-only transition removed the location component from student and mentor dashboards, ignored supplied coordinates in PhysicalAttendanceService, and hid stored coordinates in AttendanceEvidenceResponse for LIVENESS records. Historical evidence remained in the database.

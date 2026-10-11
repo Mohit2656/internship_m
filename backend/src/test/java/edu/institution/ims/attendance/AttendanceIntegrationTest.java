@@ -45,6 +45,7 @@ class AttendanceIntegrationTest {
     @Autowired InternshipOnboardingRepository onboardings;
     @Autowired InternshipDetailsRepository internships;
     @Autowired AttendanceRepository attendance;
+    @Autowired AttendanceEvidenceRepository evidence;
     @Autowired PasswordEncoder encoder;
 
     User admin;
@@ -84,7 +85,7 @@ class AttendanceIntegrationTest {
     @Test
     void studentSubmissionUsesPrincipalAndServerDateAndPreventsDuplicates() throws Exception {
         Cookie studentSession = loginCookie(studentA.getEmail(), "StudentPassword!23");
-        mvc.perform(post("/api/v1/student/attendance/today")
+        mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567")
                         .queryParam("attendanceDate", "1999-01-01")
                         .cookie(studentSession).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"studentUserId\":" + studentB.getId() + ",\"attendanceDate\":\"2099-01-01\"}"))
@@ -94,6 +95,9 @@ class AttendanceIntegrationTest {
                 .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("NOT_PERFORMED"))
                 .andExpect(jsonPath("$.verificationBasis").value("LIVENESS"))
+                .andExpect(jsonPath("$.evidence.latitude").value(18.5204))
+                .andExpect(jsonPath("$.evidence.cameraCaptureUsed").value(false))
+                .andExpect(jsonPath("$.evidence.imageSizeBytes").value(0))
                 .andExpect(jsonPath("$.submissionType").value("BASIC"))
                 .andExpect(jsonPath("$.serverSubmittedAt").value(NOW.toString()));
 
@@ -101,7 +105,7 @@ class AttendanceIntegrationTest {
         assertThat(stored.getStudent().getId()).isEqualTo(studentA.getId());
         assertThat(attendance.findByStudentIdAndAttendanceDate(studentB.getId(), TODAY)).isEmpty();
 
-        mvc.perform(post("/api/v1/student/attendance/today").cookie(studentSession))
+        mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567").cookie(studentSession))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ATTENDANCE_ALREADY_SUBMITTED"));
 
@@ -110,7 +114,7 @@ class AttendanceIntegrationTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
 
         Cookie studentCSession = loginCookie(studentC.getEmail(), "StudentPassword!25");
-        mvc.perform(post("/api/v1/student/attendance/today")
+        mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567")
                         .queryParam("attendanceDate", TODAY.plusDays(20).toString()).cookie(studentCSession))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceDate").value(TODAY.toString()));
 
@@ -124,13 +128,13 @@ class AttendanceIntegrationTest {
 
     @Test
     void submissionRequiresCompletedInternshipAndDateInsideRegisteredPeriod() throws Exception {
-        mvc.perform(post("/api/v1/student/attendance/today")
+        mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567")
                         .cookie(loginCookie(noInternshipStudent.getEmail(), "StudentPassword!26")))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_NOT_ELIGIBLE"));
-        mvc.perform(post("/api/v1/student/attendance/today")
+        mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567")
                         .cookie(loginCookie(incompleteInternshipStudent.getEmail(), "StudentPassword!28")))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_NOT_ELIGIBLE"));
-        mvc.perform(post("/api/v1/student/attendance/today")
+        mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567")
                         .cookie(loginCookie(futureInternshipStudent.getEmail(), "StudentPassword!27")))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_OUTSIDE_INTERNSHIP_PERIOD"));
     }
@@ -161,6 +165,15 @@ class AttendanceIntegrationTest {
         mvc.perform(get("/api/v1/mentor/attendance/today")
                         .cookie(loginCookie(studentA.getEmail(), "StudentPassword!23")))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test void basicMissingOrInvalidCoordinatesCannotCreateAttendance() throws Exception {
+        Cookie session = loginCookie(studentA.getEmail(), "StudentPassword!23");
+        mvc.perform(post("/api/v1/student/attendance/today").cookie(session))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SUBMISSION_LOCATION_REQUIRED"));
+        mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18").param("longitude","181").cookie(session))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SUBMISSION_LOCATION_REQUIRED"));
+        assertThat(attendance.findAll()).isEmpty(); assertThat(evidence.findAll()).isEmpty();
     }
 
     private User user(String email, String password, Role role) {
@@ -200,7 +213,7 @@ class AttendanceIntegrationTest {
     }
 
     private void clearData() {
-        attendance.deleteAll(); assignments.deleteAll(); internships.deleteAll(); onboardings.deleteAll();
+        evidence.deleteAll(); attendance.deleteAll(); assignments.deleteAll(); internships.deleteAll(); onboardings.deleteAll();
         studentProfiles.deleteAll(); mentorProfiles.deleteAll(); studentAccounts.deleteAll(); users.deleteAll();
     }
 

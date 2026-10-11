@@ -160,6 +160,7 @@ class EdgeAiAttendanceIntegrationTest {
         var request = multipart("/api/v1/student/attendance/today/remote");
         request.file(photo());
         request.param("dailyWorkSummary", SUMMARY);
+        request.param("latitude", "18.5204").param("longitude", "73.8567");
         if (ai != null) request.file(ai);
         request.cookie(cookie);
         mvc.perform(request).andExpect(status().isCreated())
@@ -204,7 +205,7 @@ class EdgeAiAttendanceIntegrationTest {
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder remote(
             Cookie cookie, MockMultipartFile ai) throws Exception {
         return multipart("/api/v1/student/attendance/today/remote").file(photo()).file(ai)
-                .param("dailyWorkSummary", SUMMARY).cookie(cookie);
+                .param("dailyWorkSummary", SUMMARY).param("latitude","18.5204").param("longitude","73.8567").cookie(cookie);
     }
 
     private AttendanceEvidence storedEvidence(User student) {

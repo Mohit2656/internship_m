@@ -3,6 +3,12 @@ import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 class SubmissionLocationTest {
+ @Test void newSubmissionsRequireCompleteValidCoordinatesButHistoricalMappingRemainsSafe() {
+  for(BigDecimal[] pair:new BigDecimal[][]{{null,null},{BigDecimal.ONE,null},{new BigDecimal("91"),BigDecimal.ZERO},{BigDecimal.ZERO,new BigDecimal("181")}})
+   assertThatThrownBy(() -> SubmissionLocation.require(pair[0],pair[1],null)).isInstanceOf(AttendanceException.class).hasMessageContaining("location is required");
+  assertThat(SubmissionLocation.require(BigDecimal.ZERO,BigDecimal.ZERO,null).latitude()).isEqualByComparingTo("0");
+ }
+
  @Test void realCoordinatesAndZeroAreNormalizedWithoutAStatusDecision() {
   var point=SubmissionLocation.from(new BigDecimal("18.5204001"),new BigDecimal("73.8567001"),new BigDecimal("106.125"));
   assertThat(point.latitude()).isEqualByComparingTo("18.520400");assertThat(point.longitude()).isEqualByComparingTo("73.856700");assertThat(point.accuracyMeters()).isEqualByComparingTo("106.13");
@@ -14,7 +20,7 @@ class SubmissionLocationTest {
   }
  }
  @Test void invalidAccuracyDoesNotEraseValidCoordinates() {
-  for(BigDecimal accuracy:new BigDecimal[]{null,new BigDecimal("-1"),new BigDecimal("1000000"),new BigDecimal("1e2147483647")}) {
+  for(BigDecimal accuracy:new BigDecimal[]{null,BigDecimal.ZERO,new BigDecimal("-1"),new BigDecimal("1000000"),new BigDecimal("1e2147483647")}) {
    var point=SubmissionLocation.from(BigDecimal.ONE,BigDecimal.TEN,accuracy);assertThat(point.latitude()).isEqualByComparingTo("1");assertThat(point.accuracyMeters()).isNull();
   }
  }
