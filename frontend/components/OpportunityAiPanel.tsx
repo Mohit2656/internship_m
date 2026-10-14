@@ -53,7 +53,7 @@ export function OpportunityAiPanel({ opportunity, onSkillsChanged }: { opportuni
       {values.length === 0 ? <p className="mt-2 text-sm text-slate-500">No new {title.toLowerCase()}.</p> : <ul className="mt-2 space-y-2">{values.map(item =>
         <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
           <span className="font-medium">{item.displayName}</span>
-          {item.reviewStatus === "PENDING" ? <span className="flex gap-2"><button disabled={!!working} onClick={() => void review(item, "confirm")} className="font-semibold text-emerald-700 disabled:opacity-50">Confirm</button><button disabled={!!working} onClick={() => void review(item, "reject")} className="font-semibold text-red-700 disabled:opacity-50">Reject</button></span>
+          {item.reviewStatus === "PENDING" ? <span className="flex gap-2"><button data-button-variant="text" disabled={!!working} onClick={() => void review(item, "confirm")} className="">Confirm</button><button data-button-variant="text" disabled={!!working} onClick={() => void review(item, "reject")} className="">Reject</button></span>
             : <span className={`text-xs font-bold ${item.reviewStatus === "CONFIRMED" ? "text-emerald-700" : "text-slate-500"}`}>{item.reviewStatus === "CONFIRMED" ? "Confirmed" : "Rejected"}</span>}
         </li>)}</ul>}
     </div>;
@@ -61,7 +61,7 @@ export function OpportunityAiPanel({ opportunity, onSkillsChanged }: { opportuni
 
   return <section className="mt-8 border-t border-slate-200 pt-7">
     <div className="flex flex-wrap items-start justify-between gap-4"><div><h3 className="text-lg font-bold">AI Job Description Analysis</h3><p className="mt-1 text-sm text-slate-600">Local AI identifies candidate skills and signals. Nothing becomes authoritative until you confirm it.</p></div>
-      {!loading && opportunity.status !== "CLOSED" && analysis?.status !== "PENDING" && <button disabled={working === "analyze" || !opportunity.description || analysis?.status === "ANALYZED"} onClick={() => void analyze()} className="rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{working === "analyze" ? "Analyzing…" : analysis?.status === "STALE" || analysis?.status === "FAILED" ? "Re-analyze JD" : analysis?.status === "ANALYZED" ? "Analysis current" : "Analyze JD"}</button>}
+      {!loading && opportunity.status !== "CLOSED" && analysis?.status !== "PENDING" && <button disabled={working === "analyze" || !opportunity.description || analysis?.status === "ANALYZED"} onClick={() => void analyze()} className="text-sm">{working === "analyze" ? "Analyzing…" : analysis?.status === "STALE" || analysis?.status === "FAILED" ? "Re-analyze JD" : analysis?.status === "ANALYZED" ? "Analysis current" : "Analyze JD"}</button>}
     </div>
     {loading && <p className="mt-5 text-sm text-slate-500">Loading analysis…</p>}
     {error && <p role="alert" className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
@@ -72,7 +72,7 @@ export function OpportunityAiPanel({ opportunity, onSkillsChanged }: { opportuni
     {analysis?.status === "STALE" && <p className="mt-5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Job description changed. Re-analyze to refresh AI suggestions.</p>}
     {analysis?.status === "ANALYZED" && <div className="mt-6 space-y-6">
       <div className="grid gap-5 sm:grid-cols-2">{suggestionList("Required Skills", analysis.requiredSuggestions)}{suggestionList("Preferred Skills", analysis.preferredSuggestions)}</div>
-      {pendingCount > 0 && <button disabled={!!working} onClick={() => void confirmAll()} className="rounded-xl border border-violet-300 px-4 py-2.5 text-sm font-semibold text-violet-800 disabled:opacity-50">{working === "all" ? "Confirming…" : `Confirm All Skills (${pendingCount})`}</button>}
+      {pendingCount > 0 && <button data-button-variant="outline" disabled={!!working} onClick={() => void confirmAll()} className="text-sm">{working === "all" ? "Confirming…" : `Confirm All Skills (${pendingCount})`}</button>}
       <div className="grid gap-5 rounded-xl bg-slate-50 p-4 sm:grid-cols-2"><div><h4 className="text-sm font-bold">Role Signals</h4><p className="mt-2 text-sm text-slate-600">{analysis.roleSignals.length ? analysis.roleSignals.join(", ") : "None detected"}</p></div><div><h4 className="text-sm font-bold">Responsibilities</h4>{analysis.responsibilitySignals.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">{analysis.responsibilitySignals.map(value => <li key={value}>{value}</li>)}</ul> : <p className="mt-2 text-sm text-slate-600">None detected</p>}</div></div>
       <p className="text-xs text-slate-500">Local model: {analysis.modelName} · {analysis.modelVersion}</p>
     </div>}

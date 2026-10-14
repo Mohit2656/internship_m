@@ -4,6 +4,89 @@
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--ink); background: #f4f7fb; font-family: Arial, Helvetica, sans-serif; }
 button, input { font: inherit; }
+/* Unlayered rules keep every native button (including future screens) on the
+   shared theme, above Tailwind's utility layers. Layout utilities still apply. */
+:root {
+  --button-blue: #1d4ed8;
+  --button-hover: #1e40af;
+  --button-active: #1e3a8a;
+  --button-soft: #eff6ff;
+  --button-soft-hover: #dbeafe;
+  --button-disabled: #bfdbfe;
+  --button-radius: .75rem;
+}
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]) {
+  min-height: 2.75rem;
+  padding: .625rem 1rem;
+  border: 1px solid var(--button-blue);
+  border-radius: var(--button-radius);
+  background: var(--button-blue);
+  color: white;
+  font-size: .875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  vertical-align: middle;
+  cursor: pointer;
+  box-shadow: none;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+.ui-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+button.text-left { text-align: left; }
+:is(button, .ui-button)[data-button-variant="outline"] {
+  background: var(--button-soft);
+  color: var(--button-blue);
+}
+:is(button, .ui-button)[data-button-variant="text"],
+:is(button, .ui-button)[data-button-variant="icon"] {
+  background: transparent;
+  border-color: transparent;
+  color: var(--button-blue);
+  padding-inline: .5rem;
+}
+:is(button, .ui-button)[data-button-variant="icon"] {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  padding: .5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+button[data-button-variant="icon"].absolute { top: 50%; right: .25rem; bottom: auto; transform: translateY(-50%); }
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):enabled:hover,
+.ui-button:not([aria-disabled="true"]):hover {
+  background: var(--button-hover);
+  border-color: var(--button-hover);
+  color: white;
+}
+:is(button, .ui-button)[data-button-variant]:not(:disabled):not([aria-disabled="true"]):hover {
+  background: var(--button-soft-hover);
+  border-color: var(--button-blue);
+  color: var(--button-active);
+}
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not(:disabled):not([aria-disabled="true"]):active,
+button[aria-pressed="true"] {
+  background: var(--button-active);
+  border-color: var(--button-active);
+  color: white;
+}
+button[aria-pressed="true"] > span { color: inherit; }
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):focus-visible {
+  outline: 3px solid var(--button-blue);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px white;
+}
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):is(:disabled, [aria-disabled="true"]) {
+  background: var(--button-disabled);
+  border-color: var(--button-disabled);
+  color: var(--button-active);
+  opacity: 1;
+  cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(button, .ui-button) { transition: none; }
+}
 .input { width: 100%; border: 1px solid #cbd5e1; border-radius: .75rem; background: white; padding: .75rem 1rem; font: inherit; font-size: .875rem; outline: none; }
 .input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgb(37 99 235 / .12); }
 

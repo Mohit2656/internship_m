@@ -82,7 +82,7 @@ export function MentorAssignmentManager({ mentor, onClose, onCountChanged }: Pro
     <section className="mt-8 rounded-2xl border border-blue-200 bg-blue-50/40 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><p className="text-sm font-semibold text-blue-700">Student assignment</p><h2 className="mt-1 text-2xl font-bold">{mentor.name}</h2><p className="mt-1 text-sm text-slate-600">{mentor.department} · {mentor.designation}</p></div>
-        <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold">Close</button>
+        <button data-button-variant="outline" type="button" onClick={onClose} className="text-sm">Close</button>
       </div>
       {loading ? <p className="mt-6 text-sm text-slate-500">Loading assignments…</p> : workspace && (
         <>
@@ -96,13 +96,13 @@ export function MentorAssignmentManager({ mentor, onClose, onCountChanged }: Pro
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <h3 className="font-bold">Currently assigned ({workspace.assignedStudents.length})</h3>
-              {workspace.assignedStudents.length === 0 ? <p className="mt-4 text-sm text-slate-500">No students are assigned to this mentor.</p> : <ul className="mt-4 divide-y divide-slate-100">{workspace.assignedStudents.map(student => <li key={student.userId} className="flex items-start justify-between gap-4 py-4 first:pt-0 last:pb-0"><span><span className="font-semibold">{identity(student)}</span><StudentFacts student={student} /></span><button type="button" disabled={saving} onClick={() => void remove(student)} className="text-sm font-semibold text-red-700 disabled:opacity-50">Remove</button></li>)}</ul>}
+              {workspace.assignedStudents.length === 0 ? <p className="mt-4 text-sm text-slate-500">No students are assigned to this mentor.</p> : <ul className="mt-4 divide-y divide-slate-100">{workspace.assignedStudents.map(student => <li key={student.userId} className="flex items-start justify-between gap-4 py-4 first:pt-0 last:pb-0"><span><span className="font-semibold">{identity(student)}</span><StudentFacts student={student} /></span><button data-button-variant="text" type="button" disabled={saving} onClick={() => void remove(student)} className="text-sm">Remove</button></li>)}</ul>}
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <h3 className="font-bold">Available for assignment</h3>
               <p className="mt-1 text-xs text-slate-500">Students assigned elsewhere may be selected to reassign them transactionally.</p>
               {workspace.availableStudents.length === 0 ? <p className="mt-4 text-sm text-slate-500">No other students are available.</p> : <ul className="mt-4 max-h-96 divide-y divide-slate-100 overflow-y-auto pr-1">{workspace.availableStudents.map(student => <li key={student.userId} className="py-4 first:pt-0 last:pb-0"><label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={selected.includes(student.userId)} onChange={() => toggle(student.userId)} className="mt-1 h-4 w-4" /><span><span className="font-semibold">{identity(student)}</span><StudentFacts student={student} />{student.currentMentorName && <span className="mt-1 block text-xs font-medium text-amber-700">Currently assigned to {student.currentMentorName}</span>}</span></label></li>)}</ul>}
-              <button type="button" disabled={saving || selected.length === 0} onClick={() => void assignSelected()} className="mt-5 w-full rounded-xl bg-blue-700 px-4 py-3 font-semibold text-white disabled:opacity-50">{saving ? "Saving…" : `Assign Selected (${selected.length})`}</button>
+              <button type="button" disabled={saving || selected.length === 0} onClick={() => void assignSelected()} className="mt-5 w-full">{saving ? "Saving…" : `Assign Selected (${selected.length})`}</button>
             </div>
           </div>
         </>

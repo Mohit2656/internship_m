@@ -14,8 +14,8 @@ export function ResumeAnalysisCard({ hasResume, loading, analysis, onAnalyze }: 
     <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">AI Resume Analysis</p>
     {!hasResume ? <><h2 className="mt-2 text-xl font-bold">Upload a resume first</h2><p className="mt-2 text-sm text-slate-600">A current PDF or DOCX resume is required for local analysis.</p></>
       : loading || status === "PENDING" ? <><h2 className="mt-2 text-xl font-bold">Analyzing your resume…</h2><p className="mt-2 text-sm text-slate-600">Local DistilBERT analysis may take a moment. Please keep this page open.</p></>
-      : status === "FAILED" ? <><h2 className="mt-2 text-xl font-bold">We couldn&apos;t analyze this resume.</h2><p className="mt-2 text-sm text-slate-600">Your resume is unchanged. You can safely retry the analysis.</p><button onClick={onAnalyze} className="mt-5 rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white">Try Again</button></>
-      : status === "NOT_PARSED" ? <><h2 className="mt-2 text-xl font-bold">Your resume has not been analyzed yet.</h2><p className="mt-2 text-sm text-slate-600">Run the local AI model to extract candidate skills, experience, education, and certifications.</p><button onClick={onAnalyze} className="mt-5 rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white">Analyze Resume</button></>
+      : status === "FAILED" ? <><h2 className="mt-2 text-xl font-bold">We couldn&apos;t analyze this resume.</h2><p className="mt-2 text-sm text-slate-600">Your resume is unchanged. You can safely retry the analysis.</p><button onClick={onAnalyze} className="mt-5 text-sm">Try Again</button></>
+      : status === "NOT_PARSED" ? <><h2 className="mt-2 text-xl font-bold">Your resume has not been analyzed yet.</h2><p className="mt-2 text-sm text-slate-600">Run the local AI model to extract candidate skills, experience, education, and certifications.</p><button onClick={onAnalyze} className="mt-5 text-sm">Analyze Resume</button></>
       : <div className="mt-2">
         <h2 className="text-xl font-bold">Analysis complete</h2>
         <div className="mt-6 grid gap-7 sm:grid-cols-2">

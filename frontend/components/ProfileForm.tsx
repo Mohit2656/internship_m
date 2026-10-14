@@ -60,7 +60,7 @@ export function ProfileForm({ existing, institutional, onSaved, onCancel }: { ex
       <Field label="Aadhaar Number" name="aadhaarNumber" type="password" value={form.aadhaarNumber} error={errors.aadhaarNumber} optional={Boolean(existing)} placeholder={existing ? "Leave blank to keep the saved Aadhaar number" : undefined} onChange={update}/>
     </FormSection>
     {message && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{message}</p>}
-    <div className="flex justify-end gap-3 rounded-2xl border border-slate-200 bg-white p-5">{onCancel && <button type="button" onClick={onCancel} className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold">Cancel</button>}<button disabled={saving} className="rounded-xl bg-blue-700 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">{saving ? "Saving…" : existing ? "Save Changes" : "Complete Profile"}</button></div>
+    <div className="flex justify-end gap-3 rounded-2xl border border-slate-200 bg-white p-5">{onCancel && <button data-button-variant="outline" type="button" onClick={onCancel} className="text-sm">Cancel</button>}<button disabled={saving} className="text-sm">{saving ? "Saving…" : existing ? "Save Changes" : "Complete Profile"}</button></div>
   </form>;
 }
 

@@ -22,7 +22,7 @@ async function errorMessage(error: unknown, fallback: string) {
 export function DashboardReportExport({ role }: { role: "ADMIN" | "MENTOR" }) {
   const [open, setOpen] = useState(false);
   return <>
-    <button type="button" onClick={() => setOpen(true)} className="rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800">Export Report</button>
+    <button type="button" onClick={() => setOpen(true)} className="text-sm">Export Report</button>
     {open && <ReportDialog role={role} onClose={() => setOpen(false)} />}
   </>;
 }
@@ -99,16 +99,16 @@ function ReportDialog({ role, onClose }: { role: "ADMIN" | "MENTOR"; onClose: ()
     className="m-auto max-h-[90dvh] w-[min(96vw,72rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/50">
     <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-7">
       <div><h2 id="report-title" className="text-xl font-bold">Export Dashboard Report</h2><p className="mt-1 text-sm text-slate-600">Choose students, columns, and a download format.</p></div>
-      <button type="button" aria-label="Close report configuration" disabled={generating} onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-50">Close</button>
+      <button data-button-variant="outline" type="button" aria-label="Close report configuration" disabled={generating} onClick={onClose} className="text-sm">Close</button>
     </div>
     <div className="space-y-6 p-5 sm:p-7" aria-busy={generating}>
-      {error && <div role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}{!options && <button type="button" onClick={() => setReload(value => value + 1)} className="ml-3 font-bold underline">Retry</button>}</div>}
+      {error && <div role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}{!options && <button data-button-variant="text" type="button" onClick={() => setReload(value => value + 1)} className="ml-3 underline">Retry</button>}</div>}
       {!options && !error && <p role="status" className="text-sm text-slate-500">Loading authorized report fields…</p>}
       {options && <>
         <p className="rounded-xl bg-blue-50 p-4 text-sm text-blue-950">{options.scope}. Attendance reference: {options.attendanceDate} ({options.timezone}).</p>
         <fieldset disabled={generating} className="space-y-6 disabled:opacity-70">
           <section aria-labelledby="report-filters-title">
-            <div className="flex flex-wrap items-center justify-between gap-3"><h3 id="report-filters-title" className="text-lg font-bold">1. Filter students</h3><button type="button" onClick={() => setFilters({})} className="text-sm font-semibold text-blue-700">Clear filters</button></div>
+            <div className="flex flex-wrap items-center justify-between gap-3"><h3 id="report-filters-title" className="text-lg font-bold">1. Filter students</h3><button data-button-variant="text" type="button" onClick={() => setFilters({})} className="text-sm">Clear filters</button></div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{options.filters.map(filter => <label key={filter.id} className="text-sm font-semibold text-slate-700">
               {filter.label}
               {filter.type === "select" ? <select value={filters[filter.id] || ""} onChange={event => setFilters(previous => ({ ...previous, [filter.id]: event.target.value }))} className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-normal"><option value="">All</option>{filter.choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select>
@@ -140,7 +140,7 @@ function ReportDialog({ role, onClose }: { role: "ADMIN" | "MENTOR"; onClose: ()
             <p className="mt-2 text-xs text-slate-500">Excel includes a report metadata sheet, formatted columns, filters, and a frozen header. CSV includes the same selected headers and data, using UTF-8.</p>
           </section>
         </fieldset>
-        <div className="flex flex-wrap items-center gap-4"><button type="button" disabled={generating || previewing || !currentPreview || !selected.length} onClick={() => void download()} className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">{generating ? "Generating report…" : `Download ${format === "XLSX" ? "Excel" : "CSV"} Report`}</button>
+        <div className="flex flex-wrap items-center gap-4"><button type="button" disabled={generating || previewing || !currentPreview || !selected.length} onClick={() => void download()} className="text-sm">{generating ? "Generating report…" : `Download ${format === "XLSX" ? "Excel" : "CSV"} Report`}</button>
           {generating && <p role="status" className="text-sm text-slate-500">Preparing your selected student records. Please keep this dialog open.</p>}
           {success && <p role="status" className="text-sm text-emerald-700">{success}</p>}</div>
       </>}

@@ -16,7 +16,7 @@ function ProfileContent() {
   if (loading) return <p className="py-20 text-center text-sm text-slate-500">Loading your profile…</p>;
   return <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
     <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">← Back to dashboard</Link>
-    <div className="mt-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm font-semibold text-blue-700">Student profile</p><h1 className="mt-2 text-3xl font-bold tracking-tight">{profile ? editing ? "Edit Your Profile" : "Your Student Profile" : "Complete Your Student Profile"}</h1><p className="mt-2 text-slate-600">Institutional information used by the III Cell.</p></div>{profile && !editing && <button onClick={() => setEditing(true)} className="rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white">Edit Profile</button>}</div>
+    <div className="mt-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm font-semibold text-blue-700">Student profile</p><h1 className="mt-2 text-3xl font-bold tracking-tight">{profile ? editing ? "Edit Your Profile" : "Your Student Profile" : "Complete Your Student Profile"}</h1><p className="mt-2 text-slate-600">Institutional information used by the III Cell.</p></div>{profile && !editing && <button onClick={() => setEditing(true)} className="text-sm">Edit Profile</button>}</div>
     <div className="mt-8">{profile && !editing ? <ProfileDetails profile={profile}/> : <ProfileForm existing={profile ?? undefined} institutional={prefill ?? undefined} onCancel={profile ? () => setEditing(false) : undefined} onSaved={saved => { setProfile(saved); setEditing(false); }}/>}</div>
   </main>;
 }
