@@ -19,7 +19,7 @@ class DashboardReportPdfWriterTest {
         return new DashboardReportCatalog.Field(id,label,"Report",DashboardReportCatalog.Kind.TEXT,true,null,false);
     }
 
-    @Test void shortPdfPreservesSelectedDataMetadataEmbeddedFontsAndPageNumbers() throws Exception {
+    @Test void shortPdfPreservesSelectedDataMetadataStandardFontsAndPageNumbers() throws Exception {
         Path file=temporary.resolve("short.pdf");
         try(var writer=new DashboardReportWriter(file,DashboardReportRequest.Format.PDF,
                 List.of(field("name","Student"),field("company","Company"),field("period","Reporting period")),ZoneId.of("Asia/Kolkata"))) {
@@ -30,7 +30,7 @@ class DashboardReportPdfWriterTest {
         try(PDDocument pdf=PDDocument.load(file.toFile())) {
             assertThat(pdf.getNumberOfPages()).isEqualTo(1);
             assertThat(new PDFTextStripper().getText(pdf)).contains("José Student","Example Ltd","01 Sep - 30 Sep 2026","mentor@example.edu","Page 1 of 1");
-            assertEmbeddedFontsAndBounds(pdf);
+            assertStandardFontsAndBounds(pdf);
             renderReview(pdf,"short",0);
         }
     }
@@ -49,7 +49,7 @@ class DashboardReportPdfWriterTest {
             assertThat(pdf.getNumberOfPages()).isGreaterThan(5);
             String text=new PDFTextStripper().getText(pdf);
             assertThat(text).contains("Progress line 0:","Progress line 219:","NARROW-END","SECOND-STUDENT-END","Page "+pdf.getNumberOfPages()+" of "+pdf.getNumberOfPages());
-            assertEmbeddedFontsAndBounds(pdf);
+            assertStandardFontsAndBounds(pdf);
             PDFTextStripper firstPage=new PDFTextStripper(); firstPage.setStartPage(2);firstPage.setEndPage(2);
             assertThat(firstPage.getText(pdf)).contains("Student UID","Work description");
             renderReview(pdf,"long-table-first",0);
@@ -75,7 +75,7 @@ class DashboardReportPdfWriterTest {
                 if(n!=4) assertThat(text).contains("VALUE-"+n);
             }
             assertThat(text).contains("WIDE-END","PENDING_MENTOR_REVIEW","Record 1","Report details");
-            assertEmbeddedFontsAndBounds(pdf);
+            assertStandardFontsAndBounds(pdf);
             renderReview(pdf,"wide-first",0);
             renderReview(pdf,"wide-last",pdf.getNumberOfPages()-1);
         }
@@ -97,17 +97,16 @@ class DashboardReportPdfWriterTest {
             try(var writer=new DashboardReportWriter(file,DashboardReportRequest.Format.PDF,List.of(field("name","Student")),ZoneId.of("Asia/Kolkata"))) {
                 writer.row(Map.of("name","Student \uD83D\uDE00"));writer.finish(Map.of());
             }
-        }).isInstanceOf(IOException.class).hasMessageContaining("Times New Roman cannot render");
+        }).isInstanceOf(IOException.class).hasMessageContaining("report PDF font cannot render");
         assertThat(Files.exists(file)).isFalse();
     }
 
-    private static void assertEmbeddedFontsAndBounds(PDDocument pdf) throws IOException {
+    private static void assertStandardFontsAndBounds(PDDocument pdf) throws IOException {
         for(PDPage page:pdf.getPages()) {
             for(var name:page.getResources().getFontNames()) {
                 var font=page.getResources().getFont(name);
-                assertThat(font.getName()).contains("TimesNewRoman");
-                assertThat(font.isEmbedded()).isTrue();
-                assertThat(font.getFontDescriptor().getFontFile2()).isNotNull();
+                assertThat(font.getName()).isIn("Times-Roman", "Times-Bold");
+                assertThat(font.isEmbedded()).isFalse();
             }
         }
         PDFTextStripper bounds=new PDFTextStripper() {

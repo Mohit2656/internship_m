@@ -13,7 +13,7 @@ public final class ReportPdfText {
         String text = value == null ? "Not available" : value.replace('\t', ' ');
         try { font.encode(text); }
         catch (IllegalArgumentException exception) {
-            throw new UnrenderableTextException("Times New Roman cannot render a character in this report. Please check the report text.", exception);
+            throw new UnrenderableTextException("The report PDF font cannot render a character in this report. Please check the report text.", exception);
         }
         return text;
     }

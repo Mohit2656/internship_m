@@ -70,9 +70,6 @@ public class MonthlyProgressPdfService {
             writer.pageNumbers();
             document.save(output);
             return output.toByteArray();
-        } catch (ReportPdfFonts.FontUnavailableException exception) {
-            throw new MonthlyProgressException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
-                    "REPORT_FONT_UNAVAILABLE", exception.getMessage());
         } catch (ReportPdfText.UnrenderableTextException exception) {
             throw new MonthlyProgressException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
                     "REPORT_TEXT_UNSUPPORTED", exception.getMessage());

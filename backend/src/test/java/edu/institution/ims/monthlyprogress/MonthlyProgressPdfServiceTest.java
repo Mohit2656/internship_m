@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class MonthlyProgressPdfServiceTest {
-    @Test void shortAndLongReportsEmbedTimesNewRomanAndKeepAllTextInsidePages() throws Exception {
+    @Test void shortAndLongReportsUseStandardPdfFontsAndKeepAllTextInsidePages() throws Exception {
         for (boolean longReport : new boolean[]{false, true}) {
             String work = longReport ? "Wide-token: " + "W".repeat(2200) + "\nFinal work paragraph." : "Implemented and verified attendance reporting.";
             var report = report(work);
@@ -35,8 +35,8 @@ class MonthlyProgressPdfServiceTest {
                 }
                 for (var page : document.getPages()) for (var name : page.getResources().getFontNames()) {
                     var font = page.getResources().getFont(name);
-                    assertThat(font.isEmbedded()).isTrue();
-                    assertThat(font.getName()).contains("TimesNewRoman");
+                    assertThat(font.isEmbedded()).isFalse();
+                    assertThat(font.getName()).isIn("Times-Roman", "Times-Bold");
                 }
                 new PDFTextStripper() {
                     @Override protected void processTextPosition(TextPosition position) {
@@ -57,12 +57,13 @@ class MonthlyProgressPdfServiceTest {
         }
     }
 
-    @Test void unavailableTimesNewRomanDoesNotSilentlyUseAnotherFont() throws Exception {
+    @Test void standardPdfFontsWorkWithAStaleFontDirectorySetting() throws Exception {
         String previous = System.getProperty("report.pdf.font-directory");
         System.setProperty("report.pdf.font-directory", Path.of("target", "no-report-fonts").toAbsolutePath().toString());
         try (var document = new PDDocument()) {
-            assertThatThrownBy(() -> ReportPdfFonts.load(document)).isInstanceOf(ReportPdfFonts.FontUnavailableException.class)
-                    .hasMessageContaining("REPORT_PDF_FONT_DIRECTORY");
+            var fonts = ReportPdfFonts.load(document);
+            assertThat(fonts.regular().getName()).isEqualTo("Times-Roman");
+            assertThat(fonts.bold().getName()).isEqualTo("Times-Bold");
         } finally {
             if (previous == null) System.clearProperty("report.pdf.font-directory");
             else System.setProperty("report.pdf.font-directory", previous);

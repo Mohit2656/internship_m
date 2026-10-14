@@ -26,8 +26,6 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-    @ExceptionHandler(edu.institution.ims.reports.ReportPdfFonts.FontUnavailableException.class)
-    ResponseEntity<ApiError> reportFont(edu.institution.ims.reports.ReportPdfFonts.FontUnavailableException e) { return error(HttpStatus.SERVICE_UNAVAILABLE, "REPORT_FONT_UNAVAILABLE", e.getMessage()); }
     @ExceptionHandler(edu.institution.ims.reports.ReportPdfText.UnrenderableTextException.class)
     ResponseEntity<ApiError> reportText(edu.institution.ims.reports.ReportPdfText.UnrenderableTextException e) { return error(HttpStatus.UNPROCESSABLE_ENTITY, "REPORT_TEXT_UNSUPPORTED", e.getMessage()); }
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class) ResponseEntity<ApiError> denied() { return error(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have permission to access this resource"); }
