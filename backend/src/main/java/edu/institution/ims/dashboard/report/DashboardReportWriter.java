@@ -10,7 +10,7 @@ import java.sql.Timestamp;
 import java.time.*;
 import java.util.*;
 
-/** Both formats consume the same ordered columns and row values. */
+/** All formats consume the same ordered columns and row values. */
 final class DashboardReportWriter implements AutoCloseable {
     private final Path file;
     private final List<DashboardReportCatalog.Field> fields;
@@ -18,6 +18,7 @@ final class DashboardReportWriter implements AutoCloseable {
     private SXSSFWorkbook workbook;
     private Sheet students;
     private BufferedWriter csv;
+    private DashboardReportPdfWriter pdf;
     private final Map<String, CellStyle> styles = new HashMap<>();
     private int count;
     private boolean finished;
@@ -30,6 +31,7 @@ final class DashboardReportWriter implements AutoCloseable {
     DashboardReportWriter(Path file, DashboardReportRequest.Format format, List<DashboardReportCatalog.Field> fields, ZoneId zone, String title, String reference) throws IOException {
         this(file, format, fields, zone);
         this.reportTitle=title; this.reference=reference; historical=true; styles.remove("header");
+        if (pdf != null) pdf.title(title);
         if (workbook != null) {
             // The historical template uses merged title bands above the data table.
             students.removeRow(students.getRow(0)); headerRow=3;
@@ -52,6 +54,8 @@ final class DashboardReportWriter implements AutoCloseable {
         if (format == DashboardReportRequest.Format.CSV) {
             csv = Files.newBufferedWriter(file, StandardCharsets.UTF_8); csv.write('\ufeff');
             csvRow(fields.stream().map(DashboardReportCatalog.Field::label).toList());
+        } else if (format == DashboardReportRequest.Format.PDF) {
+            pdf = new DashboardReportPdfWriter(file, fields, reportTitle);
         } else {
             workbook = new SXSSFWorkbook(100); workbook.setCompressTempFiles(true);
             students = workbook.createSheet("Students");
@@ -72,6 +76,11 @@ final class DashboardReportWriter implements AutoCloseable {
             List<String> cells = new ArrayList<>();
             for (var field : fields) cells.add(display(values.get(field.id())));
             csvRow(cells); count++; return;
+        }
+        if (pdf != null) {
+            List<String> cells = new ArrayList<>();
+            for (var field : fields) cells.add(display(values.get(field.id())));
+            pdf.row(cells, ++count); return;
         }
         Row row = students.createRow(++count + headerRow); int lines = 1;
         for (int n = 0; n < fields.size(); n++) {
@@ -139,7 +148,8 @@ final class DashboardReportWriter implements AutoCloseable {
                 detail.setCellStyle(style(field, false));
             }
             try (OutputStream output = Files.newOutputStream(file)) { workbook.write(output); }
-        } else csv.flush();
+        } else if (pdf != null) pdf.finish(metadata);
+        else csv.flush();
         finished = true;
     }
     private CellStyle bandStyle(String hex) {
@@ -174,7 +184,7 @@ final class DashboardReportWriter implements AutoCloseable {
         });
     }
     @Override public void close() throws IOException {
-        try { if (csv != null) csv.close(); if (workbook != null) workbook.close(); }
+        try { if (csv != null) csv.close(); if (pdf != null) pdf.close(); if (workbook != null) workbook.close(); }
         finally { if (workbook != null) workbook.dispose(); if (!finished) Files.deleteIfExists(file); }
     }
 }

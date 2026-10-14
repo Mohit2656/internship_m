@@ -32,7 +32,7 @@ function ReportDialog({ role, onClose }: { role: "ADMIN" | "MENTOR"; onClose: ()
   const [options, setOptions] = useState<Options | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [filters, setFilters] = useState<Record<string, string>>({});
-  const [format, setFormat] = useState<"XLSX" | "CSV">("XLSX");
+  const [format, setFormat] = useState<"XLSX" | "CSV" | "PDF">("XLSX");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -82,13 +82,13 @@ function ReportDialog({ role, onClose }: { role: "ADMIN" | "MENTOR"; onClose: ()
     const controller = new AbortController(); request.current = controller;
     try {
       const response = await api.post<Blob>(`${base}/export`, JSON.parse(configuration), { responseType: "blob", timeout: 180_000, signal: controller.signal });
-      const extension = format === "XLSX" ? "xlsx" : "csv";
+      const extension = format.toLowerCase();
       const url = URL.createObjectURL(response.data); const link = document.createElement("a");
       link.href = url; link.download = `dashboard-students-${preview.attendanceDate}.${extension}`;
       document.body.appendChild(link); link.click(); link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
       const count = response.headers["x-report-student-count"] ?? preview.studentCount;
-      setSuccess(`Downloaded ${format === "XLSX" ? "Excel" : "CSV"} report containing ${count} students.`);
+      setSuccess(`Downloaded ${format === "XLSX" ? "Excel" : format} report containing ${count} students.`);
     } catch (failure) {
       if (!controller.signal.aborted) setError(await errorMessage(failure, "Unable to generate the report. Please try again."));
     } finally { setGenerating(false); request.current = null; }
@@ -136,11 +136,11 @@ function ReportDialog({ role, onClose }: { role: "ADMIN" | "MENTOR"; onClose: ()
               {previewing ? <p className="text-slate-500">Checking matching students…</p> : previewError ? <p role="alert" className="text-red-700">{previewError}</p> : currentPreview && <><p className="font-semibold">{currentPreview.studentCount} authorized students match. Attendance reference date: {currentPreview.attendanceDate}.</p>
                 {currentPreview.studentCount === 0 ? <p className="mt-1 text-slate-500">The report will contain headers with no student rows.</p> : <details className="mt-2"><summary className="cursor-pointer text-blue-700">Preview students (first {currentPreview.students.length})</summary><ul className="mt-2 space-y-1 text-slate-600">{currentPreview.students.map(student => <li key={student.studentId}>{student.studentName || "Profile incomplete"} · {student.uid || "UID unavailable"} · {student.loginEmail} · Account ID {student.studentId}</li>)}</ul></details>}</>}
             </div>
-            <label className="mt-5 block text-sm font-semibold">Report format<select value={format} onChange={event => setFormat(event.target.value as "XLSX" | "CSV")} className="ml-3 rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="XLSX">Excel (.xlsx)</option><option value="CSV">CSV (.csv)</option></select></label>
-            <p className="mt-2 text-xs text-slate-500">Excel includes a report metadata sheet, formatted columns, filters, and a frozen header. CSV includes the same selected headers and data, using UTF-8.</p>
+            <label className="mt-5 block text-sm font-semibold">Report format<select value={format} onChange={event => setFormat(event.target.value as "XLSX" | "CSV" | "PDF")} className="ml-3 rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="XLSX">Excel (.xlsx)</option><option value="CSV">CSV (.csv)</option><option value="PDF">PDF (.pdf)</option></select></label>
+            <p className="mt-2 text-xs text-slate-500">Excel includes a report metadata sheet, formatted columns, filters, and a frozen header. CSV includes the same selected headers and data, using UTF-8. PDF includes the selected data and report details in Times New Roman, with page numbers; wide selections use readable sections for each student.</p>
           </section>
         </fieldset>
-        <div className="flex flex-wrap items-center gap-4"><button type="button" disabled={generating || previewing || !currentPreview || !selected.length} onClick={() => void download()} className="text-sm">{generating ? "Generating report…" : `Download ${format === "XLSX" ? "Excel" : "CSV"} Report`}</button>
+        <div className="flex flex-wrap items-center gap-4"><button type="button" disabled={generating || previewing || !currentPreview || !selected.length} onClick={() => void download()} className="text-sm">{generating ? "Generating report…" : `Download ${format === "XLSX" ? "Excel" : format} Report`}</button>
           {generating && <p role="status" className="text-sm text-slate-500">Preparing your selected student records. Please keep this dialog open.</p>}
           {success && <p role="status" className="text-sm text-emerald-700">{success}</p>}</div>
       </>}

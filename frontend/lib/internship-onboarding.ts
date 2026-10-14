@@ -13,7 +13,7 @@ export type InternshipOnboarding = {
   id: number | null; workflowStatus: WorkflowStatus; source: InternshipSource | null; sourceLabel: string | null;
   documentsCompleted: number; documentsRequired: number; documents: InternshipDocument[]; diaryIssued: boolean;
   securedAt: string | null; documentsCompletedAt: string | null; diaryIssuedAt: string | null;
-  createdAt: string | null; updatedAt: string | null;
+  createdAt: string | null; updatedAt: string | null; lastStudentUpdatedAt: string | null;
 };
 
 export const sourceOptions: { value: InternshipSource; label: string }[] = [

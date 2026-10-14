@@ -60,8 +60,16 @@ class StudentProfileIntegrationTest {
 
     @Test void adminCanViewStudentListAndSearch() throws Exception {
         create(studentACookie, profile("A", "UID-A", "a@college.edu"));
+        var saved = profiles.findByUserId(studentA.getId()).orElseThrow().getUpdatedAt();
         mvc.perform(get("/api/v1/admin/students").param("search", "UID-A").cookie(adminCookie)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(1)).andExpect(jsonPath("$.content[0].id").value(studentA.getId())).andExpect(jsonPath("$.content[0].profileStatus").value("COMPLETE"));
+                .andExpect(jsonPath("$.totalElements").value(1)).andExpect(jsonPath("$.content[0].id").value(studentA.getId())).andExpect(jsonPath("$.content[0].profileStatus").value("COMPLETE"))
+                .andExpect(jsonPath("$.content[0].profileLastStudentUpdatedAt").value(saved.toString()))
+                .andExpect(jsonPath("$.content[0].onboardingLastStudentUpdatedAt").isEmpty());
+        mvc.perform(get("/api/v1/admin/students").param("profileStatus", "INCOMPLETE").param("page", "0").param("size", "1").cookie(adminCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1)).andExpect(jsonPath("$.content[0].id").value(studentB.getId()))
+                .andExpect(jsonPath("$.content[0].profileLastStudentUpdatedAt").isEmpty())
+                .andExpect(jsonPath("$.content[0].onboardingLastStudentUpdatedAt").isEmpty());
+        assertThat(profiles.findByUserId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(saved);
     }
 
     @Test void adminCanViewStudentDetails() throws Exception {
@@ -76,18 +84,26 @@ class StudentProfileIntegrationTest {
         accounts.save(new StudentAccount(imported, "Imported Student", "23001107", 7));
         Cookie importedCookie = login(imported.getEmail(), "StudentPassword!23");
         mvc.perform(get("/api/v1/student/profile/prefill").cookie(importedCookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.studentName").value("Imported Student")).andExpect(jsonPath("$.semester").value(7))
                 .andExpect(jsonPath("$.uid").value("23001107")).andExpect(jsonPath("$.instituteEmail").value("imported@college.edu"))
-                .andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"));
+                .andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
+                .andExpect(jsonPath("$.readOnlyFields", org.hamcrest.Matchers.containsInAnyOrder("studentName", "uid", "instituteEmail", "branch", "semester")));
 
-        Map<String,Object> submitted = profile("Imported", "changed-uid", "changed@college.edu"); submitted.put("branch", "ELECTRICAL");
+        Map<String,Object> submitted = profile("Imported", "changed-uid", "changed@college.edu"); submitted.put("branch", "ELECTRICAL"); submitted.put("semester", 4);
         mvc.perform(post("/api/v1/student/profile").cookie(importedCookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(submitted)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.uid").value("23001107"))
-                .andExpect(jsonPath("$.instituteEmail").value("imported@college.edu")).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"));
+                .andExpect(jsonPath("$.instituteEmail").value("imported@college.edu")).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
+                .andExpect(jsonPath("$.studentName").value("Imported Student")).andExpect(jsonPath("$.semester").value(7));
 
         submitted.put("uid", "another-uid"); submitted.put("instituteEmail", "another@college.edu"); submitted.put("branch", "MECHANICAL"); submitted.put("aadhaarNumber", "");
+        submitted.put("studentName", "Manipulated Name"); submitted.put("semester", 8); submitted.put("personalEmail", "updated@example.com");
+        submitted.put("phoneNumber", "+91 98765 43219"); submitted.put("currentAddress", "Updated internship address");
         mvc.perform(put("/api/v1/student/profile").cookie(importedCookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(submitted)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.uid").value("23001107"))
-                .andExpect(jsonPath("$.instituteEmail").value("imported@college.edu")).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"));
+                .andExpect(jsonPath("$.instituteEmail").value("imported@college.edu")).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
+                .andExpect(jsonPath("$.studentName").value("Imported Student")).andExpect(jsonPath("$.semester").value(7))
+                .andExpect(jsonPath("$.personalEmail").value("updated@example.com")).andExpect(jsonPath("$.phoneNumber").value("+91 98765 43219"))
+                .andExpect(jsonPath("$.currentAddress").value("Updated internship address"));
 
         String studentBody = mvc.perform(get("/api/v1/student/profile").cookie(importedCookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(studentBody).doesNotContain("123456789012");
@@ -95,6 +111,44 @@ class StudentProfileIntegrationTest {
         mvc.perform(get("/api/v1/admin/students/" + imported.getId()).cookie(adminCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.aadhaarNumber").value("123456789012"));
         User mentor = users.save(new User("mentor@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
         mvc.perform(get("/api/v1/admin/students/" + imported.getId()).cookie(login(mentor.getEmail(), "MentorPassword!23"))).andExpect(status().isForbidden());
+    }
+
+    @Test void bootstrapAccountsKeepUserEditableFieldsWhilePrefilledEmailAndBranchAreProtected() throws Exception {
+        mvc.perform(get("/api/v1/student/profile/prefill").cookie(studentACookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.instituteEmail").value(studentA.getEmail()))
+                .andExpect(jsonPath("$.readOnlyFields", org.hamcrest.Matchers.containsInAnyOrder("instituteEmail", "branch")));
+        Map<String,Object> submitted = profile("A", "LEGACY-UID", "manipulated@college.edu"); submitted.put("branch", "MECHANICAL"); submitted.put("semester", 6);
+        mvc.perform(post("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(submitted)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.uid").value("LEGACY-UID"))
+                .andExpect(jsonPath("$.instituteEmail").value(studentA.getEmail())).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
+                .andExpect(jsonPath("$.studentName").value("Student A")).andExpect(jsonPath("$.semester").value(6));
+        submitted.put("studentName", "Student A Updated"); submitted.put("semester", 8); submitted.put("uid", "CHANGED-UID"); submitted.put("aadhaarNumber", "");
+        mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(submitted)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.studentName").value("Student A Updated")).andExpect(jsonPath("$.semester").value(8))
+                .andExpect(jsonPath("$.uid").value("LEGACY-UID")).andExpect(jsonPath("$.instituteEmail").value(studentA.getEmail()));
+    }
+
+    @Test void existingInstitutionalProfileValuesArePreservedWhenAccountPrefillDiffers() throws Exception {
+        User imported = users.save(new User("imported@college.edu", encoder.encode("StudentPassword!23"), Role.STUDENT, true));
+        accounts.save(new StudentAccount(imported, "Institutional Name", "IMPORTED-UID", 7));
+        Cookie cookie = login(imported.getEmail(), "StudentPassword!23"); create(cookie, profile("Imported", "submitted-uid", "submitted@college.edu"));
+        StudentProfile saved = profiles.findByUserId(imported.getId()).orElseThrow();
+        saved.apply("Existing Name", Branch.MECHANICAL, "EXISTING-UID", saved.getRollNumber(), saved.getPermanentAddress(), saved.getCurrentAddress(),
+                saved.getPersonalEmail(), "existing@college.edu", saved.getPhoneNumber(), saved.getGuardianName(), saved.getGuardianContact(), saved.getEmergencyContact(),
+                saved.getBloodGroup(), saved.getFacultyMentorName(), saved.getFacultyMentorContact(), saved.getInternshipCoordinatorName(), saved.getInternshipCoordinatorContact(),
+                saved.getCdcCoordinatorName(), saved.getCdcCoordinatorContact(), saved.getAcademicYear(), 8);
+        profiles.saveAndFlush(saved);
+        mvc.perform(get("/api/v1/student/profile/prefill").cookie(cookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.studentName").value("Existing Name")).andExpect(jsonPath("$.uid").value("EXISTING-UID"))
+                .andExpect(jsonPath("$.instituteEmail").value("existing@college.edu")).andExpect(jsonPath("$.branch").value("MECHANICAL"))
+                .andExpect(jsonPath("$.semester").value(8));
+        Map<String,Object> update = profile("Replacement", "replacement-uid", "replacement@college.edu"); update.put("phoneNumber", "+91 98765 43219");
+        mvc.perform(put("/api/v1/student/profile").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.studentName").value("Existing Name")).andExpect(jsonPath("$.uid").value("EXISTING-UID"))
+                .andExpect(jsonPath("$.instituteEmail").value("existing@college.edu")).andExpect(jsonPath("$.branch").value("MECHANICAL"))
+                .andExpect(jsonPath("$.semester").value(8)).andExpect(jsonPath("$.phoneNumber").value("+91 98765 43219"));
+        assertThat(users.findById(imported.getId()).orElseThrow().getEmail()).isEqualTo("imported@college.edu");
+        assertThat(accounts.findAll().stream().filter(account -> account.getUser().getId().equals(imported.getId())).findFirst().orElseThrow().getUid()).isEqualTo("IMPORTED-UID");
     }
 
     @Test void studentCannotAccessAdminStudentEndpoint() throws Exception {

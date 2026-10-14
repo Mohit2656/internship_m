@@ -71,7 +71,8 @@ public class InternshipOnboardingService {
             @Override public void afterCompletion(int status) { if (status != STATUS_COMMITTED) storage.delete(newKey); }
         });
         if (documents.countByOnboardingId(onboarding.getId()) == REQUIRED_DOCUMENTS) onboarding.markDocumentsComplete();
-        return response(onboarding);
+        onboarding.markStudentUpdated();
+        return response(onboardings.saveAndFlush(onboarding));
     }
 
     @Transactional public OnboardingResponse confirmDiary(UserPrincipal principal) {
@@ -80,7 +81,8 @@ public class InternshipOnboardingService {
             throw conflict("DOCUMENTS_INCOMPLETE", "All four required documents must be uploaded before confirming the internship diary");
         onboarding.markDocumentsComplete();
         onboarding.confirmDiary();
-        return response(onboarding);
+        onboarding.markStudentUpdated();
+        return response(onboardings.saveAndFlush(onboarding));
     }
 
     @Transactional(readOnly = true) public DocumentDownload downloadOwn(UserPrincipal principal, Long documentId) {
@@ -118,16 +120,22 @@ public class InternshipOnboardingService {
         Map<DocumentType, InternshipDocument> uploaded = documents.findAllByOnboardingIdOrderByDocumentType(onboarding.getId()).stream()
                 .collect(Collectors.toMap(InternshipDocument::getDocumentType, Function.identity()));
         List<DocumentResponse> documentResponses = Arrays.stream(DocumentType.values()).map(type -> documentResponse(type, uploaded.get(type))).toList();
+        // Document replacements have their own student timestamp, including legacy uploads
+        // that did not change the onboarding workflow status.
+        java.time.Instant lastStudentUpdatedAt = java.util.stream.Stream.concat(
+                java.util.stream.Stream.of(onboarding.getUpdatedAt(), onboarding.getCreatedAt()),
+                uploaded.values().stream().map(InternshipDocument::getUploadedAt))
+                .filter(Objects::nonNull).max(java.time.Instant::compareTo).orElse(null);
         return new OnboardingResponse(onboarding.getId(), onboarding.getWorkflowStatus().name(),
                 onboarding.getSource() == null ? null : onboarding.getSource().name(), onboarding.getSource() == null ? null : onboarding.getSource().getLabel(),
                 uploaded.size(), REQUIRED_DOCUMENTS, documentResponses, onboarding.isDiaryIssued(), onboarding.getSecuredAt(),
-                onboarding.getDocumentsCompletedAt(), onboarding.getDiaryIssuedAt(), onboarding.getCreatedAt(), onboarding.getUpdatedAt());
+                onboarding.getDocumentsCompletedAt(), onboarding.getDiaryIssuedAt(), onboarding.getCreatedAt(), onboarding.getUpdatedAt(), lastStudentUpdatedAt);
     }
 
     public static OnboardingResponse notSecuredResponse() {
         List<DocumentResponse> placeholders = Arrays.stream(DocumentType.values()).map(type -> documentResponse(type, null)).toList();
         return new OnboardingResponse(null, WorkflowStatus.NOT_SECURED.name(), null, null, 0, REQUIRED_DOCUMENTS, placeholders, false,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     private InternshipOnboarding ownOnboarding(Long studentId) {

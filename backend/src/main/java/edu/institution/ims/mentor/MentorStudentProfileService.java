@@ -40,7 +40,10 @@ public class MentorStudentProfileService {
                 profile.getBranch().getLabel(), profile.getRollNumber(), profile.getInstituteEmail(), profile.getPersonalEmail(),
                 profile.getPhoneNumber(), profile.getAcademicYear(), profile.getSemester(),
                 professional == null ? null : professional.getHeadline(),
-                professional == null ? null : professional.getCareerInterests(), confirmedSkills);
+                professional == null ? null : professional.getCareerInterests(), confirmedSkills,
+                profile.getUpdatedAt() == null ? profile.getCreatedAt() : profile.getUpdatedAt(),
+                professional == null ? null : professional.getUpdatedAt() == null ? professional.getCreatedAt() : professional.getUpdatedAt(),
+                professional == null ? null : skills.lastStudentUpdateByProfileId(professional.getId()));
     }
 
     private void requireMentor(Long userId) {

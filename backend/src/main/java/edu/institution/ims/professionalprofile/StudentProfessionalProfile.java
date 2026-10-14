@@ -26,6 +26,7 @@ public class StudentProfessionalProfile {
     public void update(String headline, String careerInterests) {
         this.headline = headline;
         this.careerInterests = careerInterests;
+        this.updatedAt = Instant.now();
     }
 
     public Long getId() { return id; }

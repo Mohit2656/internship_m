@@ -20,6 +20,7 @@ export type ProfessionalProfile = {
   resume: StudentResume | null;
   createdAt: string | null;
   updatedAt: string | null;
+  skillsUpdatedAt: string | null;
 };
 
 export type ResumeAnalysis = {

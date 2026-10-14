@@ -117,7 +117,7 @@ public class DashboardReportRepository {
     }
     /** Authorized, one-row-per-student projection shared by institutional report types. */
     String reportStudentsSql(Scope scope) {
-        return "select u.id as sid,coalesce(p.uid,sa.uid) as uid,coalesce(p.student_name,sa.student_name) as studentName,p.branch,mp.name as mentorName,i.id as internshipId,i.company_name as company,coalesce(o.source,'UNRECORDED') as source,i.stipend_per_month as stipend,i.full_time_employment_offered as offer,coalesce(o.workflow_status,'NOT_SECURED') as workflow,o.diary_issued as diary " + FROM + scope.where();
+        return "select u.id as sid,coalesce(p.uid,sa.uid) as uid,coalesce(p.student_name,sa.student_name) as studentName,p.branch,mp.name as mentorName,i.id as internshipId,i.company_name as company,coalesce(o.source,'UNRECORDED') as source,i.stipend_per_month as stipend,i.full_time_employment_offered as offer,coalesce(o.workflow_status,'NOT_SECURED') as workflow,o.diary_issued as diary,coalesce(p.updated_at,p.created_at) as profileLastStudentUpdatedAt,coalesce(i.updated_at,i.created_at) as internshipLastStudentUpdatedAt " + FROM + scope.where();
     }
     public long count(Scope scope) {
         return Objects.requireNonNull(jdbc.queryForObject("select count(*) " + FROM + scope.where(), scope.params(), Long.class));

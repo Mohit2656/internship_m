@@ -78,7 +78,7 @@ public class InstitutionalReportService {
         var f = new ArrayList<>(identity());
         f.add(field("recordId","Monthly record ID",NUMBER));
         f.add(field("monthNumber","Report Month",NUMBER));
-        f.addAll(List.of(field("reviewStatus","Review status",TEXT),field("revision","Revision",NUMBER),field("periodStart","Period start",DATE),field("periodEnd","Period end",DATE),field("workDescription","Work description",TEXT),field("submittedAt","Uploaded at",DATETIME),field("reviewerId","Reviewer ID",NUMBER),field("reviewedAt","Reviewed at",DATETIME),field("rejectionReason","Rejection reason",TEXT),field("imageSha256","Image SHA-256",TEXT)));
+        f.addAll(List.of(field("reviewStatus","Review status",TEXT),field("revision","Revision",NUMBER),field("periodStart","Period start",DATE),field("periodEnd","Period end",DATE),field("workDescription","Work description",TEXT),field("submittedAt","Last updated by student",DATETIME),field("reviewerId","Reviewer ID",NUMBER),field("reviewedAt","Reviewed at",DATETIME),field("rejectionReason","Rejection reason",TEXT),field("imageSha256","Image SHA-256",TEXT)));
         return f;
     }
     private List<DashboardReportCatalog.Field> attendanceFields() {
@@ -87,12 +87,12 @@ public class InstitutionalReportService {
         f.add(field("imageSizeBytes","Camera evidence bytes",NUMBER));
         f.add(field("metadataConsistent","Metadata consistent",BOOLEAN));
         f.addAll(List.of(field("attendanceLatitude","Submission latitude",NUMBER),field("attendanceLongitude","Submission longitude",NUMBER),field("gpsAccuracyMeters","Submission GPS accuracy (m)",NUMBER)));
-        f.addAll(List.of(field("date","Attendance date",DATE),field("submittedAt","Submitted at",DATETIME),field("result","Attendance status",TEXT),field("verification","Liveness status",TEXT),field("submissionType","Submission type",TEXT),field("workMode","Expected work mode",TEXT),field("reason","Liveness reason",TEXT),field("liveness","Current liveness verified",BOOLEAN)));
+        f.addAll(List.of(field("date","Attendance date",DATE),field("submittedAt","Last updated by student",DATETIME),field("result","Attendance status",TEXT),field("verification","Liveness status",TEXT),field("submissionType","Submission type",TEXT),field("workMode","Expected work mode",TEXT),field("reason","Liveness reason",TEXT),field("liveness","Current liveness verified",BOOLEAN)));
         return f;
     }
     private List<DashboardReportCatalog.Field> rosterFields() {
         List<DashboardReportCatalog.Field> f=new ArrayList<>(identity());
-        f.addAll(List.of(field("source","Internship source",TEXT),field("stipend","Monthly stipend (INR)",NUMBER),field("offer","Full-time offer",BOOLEAN)));
+        f.addAll(List.of(field("source","Internship source",TEXT),field("stipend","Monthly stipend (INR)",NUMBER),field("offer","Full-time offer",BOOLEAN),field("profileLastStudentUpdatedAt","Profile last updated by student",DATETIME),field("internshipLastStudentUpdatedAt","Internship last updated by student",DATETIME)));
         return f;
     }
     private List<DashboardReportCatalog.Field> summaryFields() {
@@ -158,7 +158,7 @@ public class InstitutionalReportService {
         String summaryAttendance = "(select ar.*, " + liveness + " as liveness_outcome from attendance_records ar left join attendance_evidence e on e.attendance_id=ar.id where ar.deleted_at is null" + window + ") ar";
         String sql=switch(type.id()) {
             case "MONTHLY_PROGRESS" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,m.id as recordId,m.report_month_number as monthNumber,m.review_status as reviewStatus,m.revision,m.period_start as periodStart,m.period_end as periodEnd,m.work_description as workDescription,m.submitted_at as submittedAt,m.reviewer_id as reviewerId,m.reviewed_at as reviewedAt,m.rejection_reason as rejectionReason,m.image_sha256 as imageSha256 from "+base+" join monthly_progress_reports m on m.student_internship_id=s.internshipId and m.deleted_at is null where 1=1"+monthlyWindow;
-            case "ROSTER" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,s.source,s.stipend,s.offer from "+base;
+            case "ROSTER" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,s.source,s.stipend,s.offer,s.profileLastStudentUpdatedAt,s.internshipLastStudentUpdatedAt from "+base;
             case "OVERALL" -> "select source as category,count(*) as total,cast(cast(count(*) as decimal(18,4))*100/nullif((select count(*) from "+base+"),0) as decimal(12,4)) as percentage from "+base+" group by source";
             case "STIPEND" -> "select source as category,count(*) as total,"+sums()+",sum(case when stipend is null then 1 else 0 end) as \"unknown\" from "+base+" group by source";
             case "STIPEND_DISTRIBUTION" -> "select stipend,count(*) as total from "+base+" where stipend is not null group by stipend";
@@ -205,7 +205,8 @@ public class InstitutionalReportService {
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
     public DashboardReportService.Download export(UserPrincipal user,ReportTableRequest request) throws IOException {
         Query q=query(user,request);
-        String extension=request.format()==DashboardReportRequest.Format.XLSX?"xlsx":"csv";
+        if(request.format()==null) throw new IllegalArgumentException("Choose XLSX, CSV or PDF");
+        String extension=request.format().extension();
         Path file=Files.createTempFile("ims-institutional-report-","."+extension);
         try {
             int count;
@@ -218,7 +219,7 @@ public class InstitutionalReportService {
                 metadata.put("Report definition",q.type().description());metadata.put("Historical reference",q.type().historicalSheet());
                 writer.finish(metadata);
             }
-            return new DashboardReportService.Download(file,q.type().id().toLowerCase(Locale.ROOT)+"-"+LocalDate.now(clock)+"."+extension,extension.equals("xlsx")?"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":"text/csv;charset=UTF-8",count);
+            return new DashboardReportService.Download(file,q.type().id().toLowerCase(Locale.ROOT)+"-"+LocalDate.now(clock)+"."+extension,request.format().contentType(),count);
         }catch(IOException|RuntimeException ex){Files.deleteIfExists(file);throw ex;}
     }
 }

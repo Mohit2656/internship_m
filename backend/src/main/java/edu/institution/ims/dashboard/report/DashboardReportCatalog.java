@@ -30,7 +30,7 @@ public class DashboardReportCatalog {
         add("accountActive", "Account active", "Student Information", Kind.BOOLEAN, "u.active", false, true);
         add("passwordChangeRequired", "Initial password change required", "Student Information", Kind.BOOLEAN, "u.must_change_password", false, true);
         add("accountCreatedAt", "Account created at", "Student Information", Kind.DATETIME, "u.created_at", false, true);
-        add("profileUpdatedAt", "Profile updated at", "Student Information", Kind.DATETIME, "p.updated_at", false, true);
+        add("profileUpdatedAt", "Profile last updated by student", "Student Information", Kind.DATETIME, "coalesce(p.updated_at, p.created_at)", true, false);
         profile("permanentAddress", "Permanent address", "permanent_address", "Personal and Emergency Contacts", true);
         profile("currentAddress", "Current address", "current_address", "Personal and Emergency Contacts", true);
         profile("guardianName", "Guardian name", "guardian_name", "Personal and Emergency Contacts", true);
@@ -75,6 +75,7 @@ public class DashboardReportCatalog {
         internship("supervisorDesignation", "Supervisor designation", "industry_supervisor_designation", "Company Information", Kind.TEXT);
         internship("supervisorContact", "Supervisor contact", "industry_supervisor_contact", "Company Information", Kind.TEXT);
         add("internshipMode", "Internship mode", "Internship", Kind.TEXT, "i.internship_mode", true, false);
+        add("internshipUpdatedAt", "Internship last updated by student", "Internship", Kind.DATETIME, "coalesce(i.updated_at, i.created_at)", true, false);
         internship("startDate", "Internship start date", "start_date", "Internship", Kind.DATE);
         internship("endDate", "Internship end date", "end_date", "Internship", Kind.DATE);
         internship("durationMonths", "Duration (months)", "duration_months", "Internship", Kind.NUMBER);
@@ -86,7 +87,7 @@ public class DashboardReportCatalog {
         add("attendanceStatus", "Attendance on reference date", "Attendance", Kind.TEXT, "coalesce(t.attendance_result, 'NOT_SUBMITTED')", true, false);
         add("verificationStatus", "Liveness on reference date", "Attendance", Kind.TEXT, AttendanceLivenessSql.status("t", "te"), true, false);
         add("submissionType", "Attendance submission type", "Attendance", Kind.TEXT, "t.submission_type", false, false);
-        add("attendanceSubmittedAt", "Attendance submitted at", "Attendance", Kind.DATETIME, "t.server_submitted_at", false, false);
+        add("attendanceSubmittedAt", "Attendance last updated by student", "Attendance", Kind.DATETIME, "t.server_submitted_at", false, false);
         add("todayWorkMode", "Work mode on reference date", "Attendance", Kind.TEXT,
                 "case when i.internship_mode = 'HYBRID' then hs.work_mode when i.internship_mode = 'OFFICE_REPORTING' then 'OFFICE' when i.internship_mode = 'ONLINE' then 'REMOTE' else null end", false, false);
         for (String id : List.of("attendanceCount", "presentCount", "absentCount", "verifiedCount", "unverifiedCount", "notPerformedCount", "historicalCount"))

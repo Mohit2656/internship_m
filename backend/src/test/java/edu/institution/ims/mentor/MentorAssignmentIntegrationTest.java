@@ -33,6 +33,8 @@ class MentorAssignmentIntegrationTest {
     @Autowired MentorProfileRepository mentorProfiles;
     @Autowired MentorStudentAssignmentRepository assignments;
     @Autowired PasswordEncoder encoder;
+    @Autowired edu.institution.ims.professionalprofile.StudentProfessionalProfileRepository professionalProfiles;
+    @Autowired edu.institution.ims.professionalprofile.StudentSkillRepository skills;
 
     User admin;
     User mentorA;
@@ -154,12 +156,20 @@ class MentorAssignmentIntegrationTest {
                 .andExpect(status().isOk());
         assign(adminSession, mentorA, studentA).andExpect(status().isOk());
 
+        var profileTime = studentProfiles.findByUserId(studentA.getId()).orElseThrow().getUpdatedAt();
+        var professional = professionalProfiles.findByStudentId(studentA.getId()).orElseThrow();
+        var professionalTime = professional.getUpdatedAt();
+        var skillTime = skills.lastStudentUpdateByProfileId(professional.getId());
+
         mvc.perform(get("/api/v1/mentor/students/{id}/profile", studentA.getId())
                         .cookie(loginCookie(mentorA.getEmail(), "MentorPassword!23")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.uid").value("UID100"))
                 .andExpect(jsonPath("$.personalEmail").value("personal@example.com"))
                 .andExpect(jsonPath("$.professionalHeadline").value("Backend Developer"))
                 .andExpect(jsonPath("$.confirmedSkills[0]").value("Java"))
+                .andExpect(jsonPath("$.profileUpdatedAt").value(profileTime.toString()))
+                .andExpect(jsonPath("$.professionalUpdatedAt").value(professionalTime.toString()))
+                .andExpect(jsonPath("$.skillsUpdatedAt").value(skillTime.toString()))
                 .andExpect(jsonPath("$.aadhaarNumber").doesNotExist())
                 .andExpect(jsonPath("$.aadhaarEncrypted").doesNotExist())
                 .andExpect(jsonPath("$.maskedAadhaar").doesNotExist())
@@ -168,6 +178,9 @@ class MentorAssignmentIntegrationTest {
         mvc.perform(get("/api/v1/mentor/students/{id}/profile", studentA.getId())
                         .cookie(loginCookie(mentorB.getEmail(), "MentorPassword!24")))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("ASSIGNED_STUDENT_NOT_FOUND"));
+        assertThat(studentProfiles.findByUserId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(profileTime);
+        assertThat(professionalProfiles.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(professionalTime);
+        assertThat(skills.lastStudentUpdateByProfileId(professional.getId())).isEqualTo(skillTime);
     }
 
     private org.springframework.test.web.servlet.ResultActions assign(Cookie adminSession, User mentor, User student) throws Exception {

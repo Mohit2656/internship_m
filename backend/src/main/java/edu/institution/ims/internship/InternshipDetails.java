@@ -45,6 +45,7 @@ public class InternshipDetails {
         this.industrySupervisorDesignation = supervisorDesignation; this.industrySupervisorContact = supervisorContact;
         this.durationMonths = durationMonths; this.startDate = startDate; this.endDate = endDate; this.totalWeeks = totalWeeks;
         this.internshipMode = mode; this.stipendPerMonth = stipend; this.fullTimeEmploymentOffered = fullTimeEmploymentOffered;
+        this.updatedAt = Instant.now();
     }
     @PrePersist void createTimestamps() { var now = Instant.now(); createdAt = now; updatedAt = now; }
     @PreUpdate void updateTimestamp() { updatedAt = Instant.now(); }

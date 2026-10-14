@@ -77,8 +77,9 @@ public class AdminStudentService {
         return new AdminStudentSummaryResponse(user.getId(), user.getEmail(), p == null ? account == null ? null : account.getStudentName() : p.getStudentName(), p == null ? account == null ? null : account.getUid() : p.getUid(),
                 p == null ? null : p.getRollNumber(), p == null ? null : p.getBranch().name(), p == null ? null : p.getBranch().getLabel(),
                 p == null ? null : p.getInstituteEmail(), p == null ? null : p.getPhoneNumber(), p == null ? null : p.getAcademicYear(),
-                p == null ? account == null ? null : account.getSemester() : p.getSemester(), p == null ? ProfileStatus.INCOMPLETE : ProfileStatus.COMPLETE,
+                p == null ? account == null ? null : account.getSemester() : Integer.valueOf(p.getSemester()), p == null ? ProfileStatus.INCOMPLETE : ProfileStatus.COMPLETE,
                 internship.workflowStatus(), internship.source(), internship.sourceLabel(), internship.documentsCompleted(),
-                internship.documentsRequired(), internship.diaryIssued());
+                internship.documentsRequired(), internship.diaryIssued(),
+                p == null ? null : p.getUpdatedAt() == null ? p.getCreatedAt() : p.getUpdatedAt(), internship.lastStudentUpdatedAt());
     }
 }

@@ -31,6 +31,7 @@ public class InternshipOnboarding {
     @PreUpdate void updateTimestamp() { updatedAt = Instant.now(); }
     public void selectSource(InternshipSource source) {
         this.source = source;
+        markStudentUpdated();
         if (workflowStatus == WorkflowStatus.INTERNSHIP_SECURED) workflowStatus = WorkflowStatus.DOCUMENTS_PENDING;
     }
     public void markDocumentsComplete() {
@@ -49,6 +50,7 @@ public class InternshipOnboarding {
             throw new IllegalStateException("Internship details require an issued diary");
         workflowStatus = WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE;
     }
+    public void markStudentUpdated() { updatedAt = Instant.now(); }
     public Long getId() { return id; }
     public User getStudent() { return student; }
     public InternshipSource getSource() { return source; }

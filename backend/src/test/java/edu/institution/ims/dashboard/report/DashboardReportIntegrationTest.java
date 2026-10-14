@@ -12,6 +12,8 @@ import edu.institution.ims.studentprofile.security.AadhaarEncryptionService;
 import edu.institution.ims.user.*;
 import jakarta.servlet.http.Cookie;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -278,7 +280,7 @@ class DashboardReportIntegrationTest {
         preview(admin, List.of("uid"), Map.of("studentId", admin.getId().toString())).andExpect(status().isForbidden());
         preview(admin, List.of("uid"), Map.of("attendanceDate", "not-a-date")).andExpect(status().isBadRequest());
         preview(admin, List.of("uid"), Map.of("historyFrom", "2026-10-06", "historyTo", "2026-10-01")).andExpect(status().isBadRequest());
-        postReport(admin, "export", List.of("uid"), Map.of(), "PDF").andExpect(status().isBadRequest());
+        postReport(admin, "export", List.of("uid"), Map.of(), "TXT").andExpect(status().isBadRequest());
     }
 
     @Test void batchingExportsMoreThanOneStudentPageAndExistingDashboardsStillRespond() throws Exception {
@@ -333,14 +335,17 @@ class DashboardReportIntegrationTest {
         Map<String,Object> body=new LinkedHashMap<>();body.put("reportType",type);body.put("fields",fields);body.put("filters",filters);body.put("studentIds",ids);body.put("page",0);body.put("format",format);
         return mvc.perform(post("/api/v1/"+(user.getRole()==Role.ADMIN?"admin":"mentor")+"/reports/"+action).cookie(cookie(user)).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)));
     }
-    @Test void everyAvailableInstitutionalReportPreviewsAndExportsBothFormats() throws Exception {
+    @Test void everyAvailableInstitutionalReportPreviewsAndExportsAllFormats() throws Exception {
+        // Times New Roman covers these test names; unsupported scripts receive an explicit error.
+        update("update student_profiles set student_name='Ada Student' where user_id=?",studentA.getId());
+        update("update student_accounts set student_name='Ada Student' where user_id=?",studentA.getId());
         var options=mvc.perform(get("/api/v1/admin/reports/types").cookie(cookie(admin))).andExpect(status().isOk()).andReturn();
         var types=json.readTree(options.getResponse().getContentAsString()).get("types");
         for(var type:types) {
             if(!type.get("available").asBoolean())continue;
             List<String> fields=new ArrayList<>();type.get("fields").forEach(f->fields.add(f.get("id").asText()));
             typedReport(admin,"table",type.get("id").asText(),fields,Map.of(),List.of(),"XLSX").andExpect(status().isOk());
-            for(String format:List.of("XLSX","CSV")) {
+            for(String format:List.of("XLSX","CSV","PDF")) {
                 var response=typedReport(admin,"generate",type.get("id").asText(),fields,Map.of(),List.of(),format).andExpect(status().isOk()).andReturn();
                 if(format.equals("XLSX"))try(Workbook book=workbook(response)) {
                     String previewDir=System.getProperty("report.previewDir");
@@ -352,8 +357,45 @@ class DashboardReportIntegrationTest {
                         assertThat(sheet.getRow(4).getCell(fields.indexOf("uid")).getStringCellValue()).isEqualTo("00001");
                         Cell amount=sheet.getRow(4).getCell(fields.indexOf("stipend"));assertThat(amount.getNumericCellValue()).isEqualTo(12345.67);assertThat(amount.getCellStyle().getDataFormatString()).contains("INR");
                     }
+                } else if(format.equals("PDF")) {
+                    assertThat(response.getResponse().getContentType()).isEqualTo("application/pdf");
+                    assertThat(response.getResponse().getHeader("Content-Disposition")).contains(".pdf");
+                    try(PDDocument pdf=PDDocument.load(response.getResponse().getContentAsByteArray())) {
+                        assertThat(new PDFTextStripper().getText(pdf)).contains(type.get("title").asText(),"Report details","Page 1 of");
+                    }
                 } else assertThat(response.getResponse().getContentAsByteArray()).startsWith((byte)0xef,(byte)0xbb,(byte)0xbf);
             }
+        }
+    }
+    @Test void pdfExportsReuseAuthorizedSelectionAndRejectOtherStudentsBeforeGeneration() throws Exception {
+        var response=export(mentorA,List.of("uid","companyName","monthlyReports"),Map.of(),"PDF");
+        assertThat(response.getResponse().getContentType()).isEqualTo("application/pdf");
+        assertThat(response.getResponse().getHeader("Cache-Control")).contains("no-store");
+        try(PDDocument pdf=PDDocument.load(response.getResponse().getContentAsByteArray())) {
+            String text=new PDFTextStripper().getText(pdf);
+            assertThat(text).contains("00001","Alpha, Ltd","Built API","PENDING_MENTOR_REVIEW").doesNotContain("00002","private-photo-key");
+        }
+        postReport(mentorA,"export",List.of("uid"),Map.of("studentId",studentB.getId().toString()),"PDF").andExpect(status().isForbidden());
+        typedReport(mentorA,"generate","MONTHLY_PROGRESS",List.of("uid","workDescription","reviewStatus"),Map.of(),List.of(studentB.getId()),"PDF").andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/admin/reports/generate").cookie(cookie(studentA)).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("reportType","ROSTER","fields",List.of("uid"),"filters",Map.of(),"studentIds",List.of(studentB.getId()),"format","PDF"))))
+                .andExpect(status().isForbidden());
+        postReport(mentorA,"export",List.of("aadhaarNumber"),Map.of(),"PDF").andExpect(status().isBadRequest());
+    }
+    @Test void reportViewsExposeSeparateAuthoritativeStudentUpdateTimesForBothRoles() throws Exception {
+        Instant profileSaved=NOW.minusSeconds(3600), internshipSaved=NOW.minusSeconds(60);
+        update("update student_profiles set updated_at=? where user_id=?",profileSaved,studentA.getId());
+        update("update internship_details set updated_at=? where id=?",internshipSaved,internship.getId());
+        for(User viewer:List.of(admin,mentorA)) {
+            var response=typedReport(viewer,"table","ROSTER",List.of("uid","profileLastStudentUpdatedAt","internshipLastStudentUpdatedAt"),Map.of(),List.of(studentA.getId()),"XLSX")
+                    .andExpect(status().isOk()).andReturn();
+            var row=json.readTree(response.getResponse().getContentAsString()).get("rows").get(0);
+            assertThat(OffsetDateTime.parse(row.get("profileLastStudentUpdatedAt").asText()).toInstant()).isEqualTo(profileSaved);
+            assertThat(OffsetDateTime.parse(row.get("internshipLastStudentUpdatedAt").asText()).toInstant()).isEqualTo(internshipSaved);
+            var monthlyResponse=typedReport(viewer,"table","MONTHLY_PROGRESS",List.of("submittedAt","reviewStatus"),Map.of(),List.of(studentA.getId()),"XLSX")
+                    .andExpect(status().isOk()).andReturn();
+            var monthlyRow=json.readTree(monthlyResponse.getResponse().getContentAsString()).get("rows").get(0);
+            assertThat(OffsetDateTime.parse(monthlyRow.get("submittedAt").asText()).toInstant()).isEqualTo(NOW);
         }
     }
     @Test void typedReportsRejectGuessedIdsUnknownFieldsFiltersAndUnavailableTypes() throws Exception {

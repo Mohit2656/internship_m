@@ -37,8 +37,8 @@ public class DashboardReportService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Download export(UserPrincipal user, DashboardReportRequest request) throws IOException {
         var fields = catalog.selected(user, request.fields()); var scope = repository.scope(user, request.filters());
-        if (request.format() == null) throw new IllegalArgumentException("Choose XLSX or CSV");
-        String extension = request.format() == DashboardReportRequest.Format.XLSX ? "xlsx" : "csv";
+        if (request.format() == null) throw new IllegalArgumentException("Choose XLSX, CSV or PDF");
+        String extension = request.format().extension();
         Path file = Files.createTempFile("ims-dashboard-report-", "." + extension);
         try {
             int total;
@@ -59,11 +59,11 @@ public class DashboardReportService {
                 metadata.put("Applied filters", scope.filters().isEmpty() ? "None" : scope.filters().entrySet().stream().map(e -> e.getKey() + " = " + e.getValue()).collect(Collectors.joining("; ")));
                 metadata.put("Selected categories", fields.stream().map(DashboardReportCatalog.Field::category).distinct().collect(Collectors.joining(", ")));
                 metadata.put("Selected columns (in order)", fields.stream().map(DashboardReportCatalog.Field::label).collect(Collectors.joining(", ")));
-                metadata.put("Reading this report", "One student per row. Related records use separate lines within a cell. Empty cells mean unavailable data. No attendance submission is not an absent record. History filters limit related records, not student membership. AI extraction is not confirmed skill evidence. Timestamps use " + clock.getZone() + ". CSV contains only the selected headers and data rows; metadata is on this sheet in Excel.");
+                metadata.put("Reading this report", "One student per row in Excel and CSV. PDF uses a table for narrow selections and field/value sections for wide selections. Related records use separate lines within each value. Empty values mean unavailable data. No attendance submission is not an absent record. History filters limit related records, not student membership. AI extraction is not confirmed skill evidence. Timestamps use " + clock.getZone() + ". CSV contains only the selected headers and data rows; Excel and PDF include metadata.");
                 writer.finish(metadata);
             }
             String filename = "dashboard-students-" + LocalDate.now(clock) + "." + extension;
-            return new Download(file, filename, extension.equals("xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv;charset=UTF-8", total);
+            return new Download(file, filename, request.format().contentType(), total);
         } catch (IOException | RuntimeException error) { Files.deleteIfExists(file); throw error; }
     }
 }

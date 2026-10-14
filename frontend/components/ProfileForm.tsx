@@ -3,13 +3,14 @@
 import { FormEvent, useEffect, useState } from "react";
 import { AxiosError } from "axios";
 import { api, ApiError } from "@/lib/api";
-import { emptyProfile, ProfileFormData, ProfilePrefill, StudentProfile } from "@/lib/student-profile";
+import { initialProfileForm, profileReadOnlyFields, ProfileFormData, ProfilePrefill, StudentProfile } from "@/lib/student-profile";
 
 type Options = { branches: { value: string; label: string }[]; bloodGroups: string[]; minimumSemester: number; maximumSemester: number };
-type FieldProps = { label: string; name: keyof ProfileFormData; value: string; error?: string; type?: string; optional?: boolean; placeholder?: string; onChange: (name: keyof ProfileFormData, value: string) => void };
-function Field({ label, name, value, error, type = "text", optional, placeholder, onChange }: FieldProps) {
+type FieldProps = { label: string; name: keyof ProfileFormData; value: string; error?: string; type?: string; optional?: boolean; placeholder?: string; readOnly?: boolean; onChange: (name: keyof ProfileFormData, value: string) => void };
+function Field({ label, name, value, error, type = "text", optional, placeholder, readOnly = false, onChange }: FieldProps) {
   return <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">{label}{optional && <span className="ml-1 font-normal text-slate-400">(optional)</span>}</span>
-    <input type={type} value={value} onChange={e => onChange(name, e.target.value)} required={!optional} placeholder={placeholder} className={`w-full rounded-xl border bg-white px-4 py-3 text-sm outline-none transition focus:ring-4 ${error ? "border-red-400 focus:border-red-500 focus:ring-red-100" : "border-slate-300 focus:border-blue-600 focus:ring-blue-100"}`}/>
+    <input name={name} type={type} value={value} readOnly={readOnly} aria-readonly={readOnly || undefined} aria-describedby={readOnly ? `${name}-institutional` : undefined} onChange={readOnly ? undefined : e => onChange(name, e.target.value)} required={!optional} placeholder={placeholder} className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${readOnly ? "bg-slate-50 text-slate-800" : "bg-white"} ${error ? "border-red-400 focus:border-red-500 focus:ring-red-100" : "border-slate-300 focus:border-blue-600 focus:ring-blue-100"}`}/>
+    {readOnly && <span id={`${name}-institutional`} className="mt-1.5 block text-xs text-slate-500">Institution provided · Read-only</span>}
     {error && <span className="mt-1.5 block text-xs text-red-600">{error}</span>}
   </label>;
 }
@@ -18,11 +19,12 @@ function FormSection({ title, description, children }: { title: string; descript
 }
 
 export function ProfileForm({ existing, institutional, onSaved, onCancel }: { existing?: StudentProfile; institutional?: ProfilePrefill; onSaved: (profile: StudentProfile) => void; onCancel?: () => void }) {
-  const [form, setForm] = useState<ProfileFormData>(() => existing ? { ...emptyProfile, ...existing, currentAddress: existing.currentAddress ?? "", semester: String(existing.semester), aadhaarNumber: "" } : { ...emptyProfile, personalEmail: "", aadhaarNumber: "", branch: institutional?.branch ?? "COMPUTER_ENGINEERING", uid: institutional?.uid ?? "", instituteEmail: institutional?.instituteEmail ?? "", semester: institutional?.semester == null ? "" : String(institutional.semester) });
+  const [form, setForm] = useState<ProfileFormData>(() => initialProfileForm(existing, institutional));
+  const readOnlyFields = profileReadOnlyFields(existing, institutional);
   const [options, setOptions] = useState<Options | null>(null); const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState(""); const [saving, setSaving] = useState(false);
   useEffect(() => { api.get<Options>("/student/profile/options").then(r => setOptions(r.data)).catch(() => setMessage("Unable to load profile options.")); }, []);
-  function update(name: keyof ProfileFormData, value: string) { setForm(current => ({ ...current, [name]: value })); setErrors(current => ({ ...current, [name]: "" })); }
+  function update(name: keyof ProfileFormData, value: string) { if (readOnlyFields.has(name)) return; setForm(current => ({ ...current, [name]: value })); setErrors(current => ({ ...current, [name]: "" })); }
   async function submit(event: FormEvent) {
     event.preventDefault(); setSaving(true); setErrors({}); setMessage("");
     try {
@@ -35,17 +37,17 @@ export function ProfileForm({ existing, institutional, onSaved, onCancel }: { ex
   }
   return <form onSubmit={submit} className="space-y-5">
     <FormSection title="Personal Information" description="Your primary contact and identification details.">
-      <Field label="Student Name" name="studentName" value={form.studentName} error={errors.studentName} onChange={update}/>
+      <Field label="Student Name" name="studentName" value={form.studentName} error={errors.studentName} readOnly={readOnlyFields.has("studentName")} onChange={update}/>
       <Field label="Personal Email ID" name="personalEmail" type="email" value={form.personalEmail} error={errors.personalEmail} onChange={update}/>
       <Field label="Phone Number" name="phoneNumber" type="tel" value={form.phoneNumber} error={errors.phoneNumber} placeholder="+91 98765 43210" onChange={update}/>
       <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">Blood Group</span><select required value={form.bloodGroup} onChange={e => update("bloodGroup", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"><option value="">Select blood group</option>{options?.bloodGroups.map(value => <option key={value}>{value}</option>)}</select>{errors.bloodGroup && <span className="mt-1.5 block text-xs text-red-600">{errors.bloodGroup}</span>}</label>
     </FormSection>
     <FormSection title="Academic / Institutional Information" description="Details used by your department and the III Cell.">
-      <InstitutionalValue label="Branch" value="Computer Engineering" description="Department of Computer Science and Engineering"/>
-      <InstitutionalValue label="UID" value={form.uid} description="Institution provided"/><Field label="Roll Number" name="rollNumber" value={form.rollNumber} error={errors.rollNumber} onChange={update}/>
-      <InstitutionalValue label="Institute Email ID" value={form.instituteEmail} description="Institution provided"/>
+      <Field label="Branch" name="branch" value={existing?.branchLabel ?? institutional?.branchLabel ?? "Computer Engineering"} readOnly onChange={update}/>
+      <Field label="UID" name="uid" value={form.uid} error={errors.uid} readOnly={readOnlyFields.has("uid")} onChange={update}/><Field label="Roll Number" name="rollNumber" value={form.rollNumber} error={errors.rollNumber} onChange={update}/>
+      <Field label="Institute Email ID" name="instituteEmail" type="email" value={form.instituteEmail} error={errors.instituteEmail} readOnly onChange={update}/>
       <Field label="Academic Year" name="academicYear" value={form.academicYear} error={errors.academicYear} placeholder="2026-2027" onChange={update}/>
-      <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">Semester</span><select required value={form.semester} onChange={e => update("semester", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"><option value="">Select semester</option>{Array.from({ length: (options?.maximumSemester ?? 8) }, (_, i) => i + 1).map(value => <option key={value} value={value}>{value}</option>)}</select>{errors.semester && <span className="mt-1.5 block text-xs text-red-600">{errors.semester}</span>}</label>
+      {readOnlyFields.has("semester") ? <Field label="Semester" name="semester" value={form.semester} error={errors.semester} readOnly onChange={update}/> : <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">Semester</span><select name="semester" required value={form.semester} onChange={e => update("semester", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"><option value="">Select semester</option>{Array.from({ length: (options?.maximumSemester ?? 8) }, (_, i) => i + 1).map(value => <option key={value} value={value}>{value}</option>)}</select>{errors.semester && <span className="mt-1.5 block text-xs text-red-600">{errors.semester}</span>}</label>}
     </FormSection>
     <FormSection title="Address" description="Current internship address can be added later if it is not yet known.">
       {([['Permanent Address','permanentAddress',false],['Current Address During Internship','currentAddress',true]] as const).map(([label,name,optional]) => <label key={name} className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">{label}{optional && <span className="ml-1 font-normal text-slate-400">(optional)</span>}</span><textarea rows={4} required={!optional} value={form[name]} onChange={e => update(name,e.target.value)} className="w-full resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"/>{errors[name] && <span className="mt-1.5 block text-xs text-red-600">{errors[name]}</span>}</label>)}
@@ -62,8 +64,4 @@ export function ProfileForm({ existing, institutional, onSaved, onCancel }: { ex
     {message && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{message}</p>}
     <div className="flex justify-end gap-3 rounded-2xl border border-slate-200 bg-white p-5">{onCancel && <button data-button-variant="outline" type="button" onClick={onCancel} className="text-sm">Cancel</button>}<button disabled={saving} className="text-sm">{saving ? "Saving…" : existing ? "Save Changes" : "Complete Profile"}</button></div>
   </form>;
-}
-
-function InstitutionalValue({ label, value, description }: { label: string; value: string; description: string }) {
-  return <div className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">{label}</span><div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">{value || "Not available"}</div><span className="mt-1.5 block text-xs text-slate-500">{description}</span></div>;
 }

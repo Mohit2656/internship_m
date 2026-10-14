@@ -17,14 +17,16 @@ public class ProfessionalProfileService {
     private final UserRepository users;
     private final FileStorageService storage;
     private final ResumeFileValidator validator;
+    private final StudentSkillRepository skills;
 
     public ProfessionalProfileService(StudentProfessionalProfileRepository profiles, StudentResumeRepository resumes,
-            UserRepository users, FileStorageService storage, ResumeFileValidator validator) {
+            UserRepository users, FileStorageService storage, ResumeFileValidator validator, StudentSkillRepository skills) {
         this.profiles = profiles;
         this.resumes = resumes;
         this.users = users;
         this.storage = storage;
         this.validator = validator;
+        this.skills = skills;
     }
 
     @Transactional(readOnly = true)
@@ -117,7 +119,7 @@ public class ProfessionalProfileService {
         ResumeResponse resume = resumes.findByProfessionalProfileIdAndActiveTrue(profile.getId())
                 .map(ProfessionalProfileService::resumeResponse).orElse(null);
         return new ProfessionalProfileResponse(profile.getId(), profile.getHeadline(), profile.getCareerInterests(),
-                resume, profile.getCreatedAt(), profile.getUpdatedAt());
+                resume, profile.getCreatedAt(), profile.getUpdatedAt(), skills.lastStudentUpdateByProfileId(profile.getId()));
     }
 
     private ResumeDownload download(StudentResume resume) {

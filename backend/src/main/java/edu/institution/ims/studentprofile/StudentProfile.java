@@ -72,6 +72,7 @@ public class StudentProfile {
         this.facultyMentorName = facultyMentorName; this.facultyMentorContact = facultyMentorContact; this.internshipCoordinatorName = internshipCoordinatorName;
         this.internshipCoordinatorContact = internshipCoordinatorContact; this.cdcCoordinatorName = cdcCoordinatorName; this.cdcCoordinatorContact = cdcCoordinatorContact;
         this.academicYear = academicYear; this.semester = semester;
+        this.updatedAt = Instant.now();
     }
     public void setEncryptedAadhaar(String encrypted, String lastFour) { this.aadhaarEncrypted = encrypted; this.aadhaarLastFour = lastFour; }
 }

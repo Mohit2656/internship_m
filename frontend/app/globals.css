@@ -3,6 +3,7 @@
 :root { --ink: #17202e; --muted: #64748b; --navy: #123052; --blue: #2563eb; }
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--ink); background: #f4f7fb; font-family: Arial, Helvetica, sans-serif; }
+.report-document { font-family: "Times New Roman", Times, serif; }
 button, input { font: inherit; }
 /* Unlayered rules keep every native button (including future screens) on the
    shared theme, above Tailwind's utility layers. Layout utilities still apply. */

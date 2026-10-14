@@ -140,6 +140,35 @@ class StudentSkillIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test void skillRenameAndRemovalKeepTheirOwnStudentTimestampAndFailedWritesDoNotAdvanceIt() throws Exception {
+        mvc.perform(put("/api/v1/student/professional-profile").cookie(studentACookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"headline\":\"Engineer\"}"))
+                .andExpect(status().isOk());
+        var profile = profiles.findByStudentId(studentA.getId()).orElseThrow();
+        var profileTime = profile.getUpdatedAt();
+        var added = mvc.perform(post("/api/v1/student/professional-profile/skills").cookie(studentACookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Java\"}"))
+                .andExpect(status().isOk()).andReturn();
+        long skillId = json.readTree(added.getResponse().getContentAsString()).path("skills").get(0).path("id").asLong();
+        var first = skills.lastStudentUpdateByProfileId(profile.getId());
+        mvc.perform(patch("/api/v1/student/professional-profile/skills/{id}", skillId).cookie(studentACookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Core Java\"}"))
+                .andExpect(status().isOk());
+        var renamed = skills.lastStudentUpdateByProfileId(profile.getId());
+        assertThat(renamed).isAfter(first);
+        mvc.perform(patch("/api/v1/student/professional-profile/skills/{id}", skillId).cookie(studentBCookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Forged\"}"))
+                .andExpect(status().isNotFound());
+        assertThat(skills.lastStudentUpdateByProfileId(profile.getId())).isEqualTo(renamed);
+        mvc.perform(delete("/api/v1/student/professional-profile/skills/{id}", skillId).cookie(studentACookie))
+                .andExpect(status().isOk());
+        var removed = skills.lastStudentUpdateByProfileId(profile.getId());
+        assertThat(removed).isAfter(renamed);
+        mvc.perform(get("/api/v1/student/professional-profile").cookie(studentACookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.skillsUpdatedAt").value(removed.toString()));
+        assertThat(profiles.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(profileTime);
+    }
+
     @Test
     void confirmedSkillsSurviveReuploadAndNewAnalysisOnlySuggestsNewSkills() throws Exception {
         analyze(studentACookie, "v1.pdf");

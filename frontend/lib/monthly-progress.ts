@@ -56,7 +56,12 @@ export type MonthlyProgressOverview = {
 };
 
 export const formatDate = (value: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
-export const formatDateTime = (value: string | null) => value ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Not available";
+export const formatDateTime = (value: string | null) => {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? `${new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }).format(date)} IST`
+    : "Not available";
+};
 
 export async function openPrivateFile(url: string, filename?: string) {
   // Open during the click gesture, before the authenticated fetch loses user activation.

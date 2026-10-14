@@ -59,8 +59,18 @@ class InternshipDetailsIntegrationTest {
 
     @Test void studentUpdatesTheirInternship() throws Exception {
         readyAndCreate(studentACookie, "A", "UID-A", "a@college.edu", "Acme Systems"); Map<String,Object> update = internship("Acme Systems Updated"); update.put("stipendPerMonth", 0);
+        var previous = details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getUpdatedAt();
         mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.companyName").value("Acme Systems Updated")).andExpect(jsonPath("$.stipendPerMonth").value(0));
+        var updated = details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getUpdatedAt();
+        assertThat(updated).isAfter(previous);
+        mvc.perform(get("/api/v1/admin/students/{id}/internship", studentA.getId()).cookie(adminCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.updatedAt").value(updated.toString()));
+        assertThat(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(updated);
+        update.put("endDate", "2020-01-01");
+        mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update)))
+                .andExpect(status().isBadRequest());
+        assertThat(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(updated);
     }
 
     @Test void duplicateInternshipDetailsCannotBeCreated() throws Exception {

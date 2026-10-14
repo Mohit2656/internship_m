@@ -33,6 +33,7 @@ class InternshipOnboardingIntegrationTest {
     @Autowired StudentProfileRepository profiles; @Autowired InternshipOnboardingRepository onboardings;
     @Autowired InternshipDocumentRepository documents; @Autowired InternshipDetailsRepository details; @Autowired PasswordEncoder encoder;
     @Autowired MentorStudentAssignmentRepository assignments;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     User admin; User mentor; User studentA; User studentB; Cookie adminCookie; Cookie mentorCookie; Cookie studentACookie; Cookie studentBCookie;
 
     @BeforeEach void setUp() throws Exception {
@@ -157,6 +158,40 @@ class InternshipOnboardingIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.workflowStatus").value("DOCUMENTS_COMPLETE"))
                 .andExpect(jsonPath("$.documentsCompleted").value(4));
         assertThat(documents.count()).isEqualTo(4);
+    }
+
+    @Test void studentDocumentReplacementAdvancesAuthoritativeTimeAndReviewerReadsPreserveIt() throws Exception {
+        startAndSelect(studentACookie, "A", "UID-A", "a@college.edu"); uploadAll(studentACookie);
+        var before = onboardings.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt();
+        var result = mvc.perform(multipart("/api/v1/student/internship-onboarding/documents/OFFER_LETTER")
+                        .file(pdf("replacement.pdf")).cookie(studentACookie))
+                .andExpect(status().isOk()).andReturn();
+        var payload = json.readTree(result.getResponse().getContentAsString());
+        assertThat(Instant.parse(payload.path("lastStudentUpdatedAt").asText())).isAfter(before);
+        var current = mvc.perform(get("/api/v1/student/internship-onboarding").cookie(studentACookie))
+                .andExpect(status().isOk()).andReturn();
+        var updated = Instant.parse(json.readTree(current.getResponse().getContentAsString()).path("lastStudentUpdatedAt").asText());
+        var saved = onboardings.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt();
+        mvc.perform(get("/api/v1/mentor/students/{studentId}/internship-onboarding", studentA.getId()).cookie(mentorCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.lastStudentUpdatedAt").value(updated.toString()));
+        mvc.perform(get("/api/v1/admin/students/{studentId}", studentA.getId()).cookie(adminCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.internshipOnboarding.lastStudentUpdatedAt").value(updated.toString()));
+        assertThat(onboardings.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(saved);
+        for (var document : documents.findAllByOnboardingIdOrderByDocumentType(payload.path("id").asLong())) {
+            assertThat(document.getUploadedAt()).isNotNull();
+            if (document.getDocumentType() != DocumentType.OFFER_LETTER) assertThat(document.getUploadedAt()).isBefore(updated);
+        }
+        // Legacy document replacements did not always dirty the onboarding workflow.
+        // The directory must still use that document's own submission time.
+        jdbc.update("update internship_onboarding set updated_at=? where id=?", java.sql.Timestamp.from(before), payload.path("id").asLong());
+        var replacementTime = documents.findByOnboardingIdAndDocumentType(payload.path("id").asLong(), DocumentType.OFFER_LETTER)
+                .orElseThrow().getUploadedAt();
+        var profileTime = profiles.findByUserId(studentA.getId()).orElseThrow().getUpdatedAt();
+        mvc.perform(get("/api/v1/admin/students").param("search", "UID-A").cookie(adminCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].profileLastStudentUpdatedAt").value(profileTime.toString()))
+                .andExpect(jsonPath("$.content[0].onboardingLastStudentUpdatedAt").value(replacementTime.toString()));
+        assertThat(onboardings.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(before);
     }
 
     @Test void diaryCannotBeConfirmedBeforeDocumentsComplete() throws Exception {

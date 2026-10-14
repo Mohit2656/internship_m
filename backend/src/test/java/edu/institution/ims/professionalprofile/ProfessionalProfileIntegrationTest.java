@@ -101,6 +101,28 @@ class ProfessionalProfileIntegrationTest {
         mvc.perform(get("/resume.pdf")).andExpect(status().isUnauthorized());
     }
 
+    @Test void profileEditsAndResumeUploadsHaveIndependentStudentTimes() throws Exception {
+        mvc.perform(put("/api/v1/student/professional-profile").cookie(studentACookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"headline\":\"Backend Developer\"}"))
+                .andExpect(status().isOk());
+        var profileTime = profiles.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt();
+        mvc.perform(multipart("/api/v1/student/resume").file(pdf("first.pdf")).cookie(studentACookie))
+                .andExpect(status().isOk());
+        var resumeTime = resumes.findByProfessionalProfileIdAndActiveTrue(profiles.findByStudentId(studentA.getId()).orElseThrow().getId())
+                .orElseThrow().getUploadedAt();
+        assertThat(resumeTime).isAfter(profileTime);
+        assertThat(profiles.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(profileTime);
+        mvc.perform(get("/api/v1/admin/students/{id}/professional-profile", studentA.getId()).cookie(adminCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.updatedAt").value(profileTime.toString()))
+                .andExpect(jsonPath("$.resume.uploadedAt").value(resumeTime.toString()));
+        mvc.perform(put("/api/v1/student/professional-profile").cookie(studentACookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"headline\":\"Platform Engineer\"}"))
+                .andExpect(status().isOk());
+        assertThat(profiles.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isAfter(profileTime);
+        var profile = profiles.findByStudentId(studentA.getId()).orElseThrow();
+        assertThat(resumes.findByProfessionalProfileIdAndActiveTrue(profile.getId()).orElseThrow().getUploadedAt()).isEqualTo(resumeTime);
+    }
+
     @Test
     void validDocxUploadIsAccepted() throws Exception {
         byte[] bytes = docx();
