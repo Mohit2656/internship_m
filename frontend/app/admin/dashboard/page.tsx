@@ -7,6 +7,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { api } from "@/lib/api";
 import { Breakdown, DashboardSummary } from "@/lib/dashboard";
 import { DashboardReportExport } from "@/components/DashboardReportExport";
+import { AttendanceAbsenceOverview } from "@/components/AttendanceAbsenceOverview";
 
 const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 const percentage = (value: number, total: number) => total ? `${Math.round((value / total) * 100)}%` : "0%";
@@ -38,5 +39,6 @@ export default function AdminDashboard() {
       <Section title="Internship outcomes"><div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5"><Metric label="Paid internships" value={summary.stipend.paid} tone="emerald"/><Metric label="Unpaid internships" value={summary.stipend.unpaid}/><Metric label="Average monthly stipend (paid)" value={summary.stipend.averagePaidMonthlyStipend === null ? "—" : currency.format(summary.stipend.averagePaidMonthlyStipend)} tone="blue"/><Metric label="Full-time opportunity — yes" value={summary.fullTimeEmployment.yes} tone="emerald"/><Metric label="Full-time opportunity — no" value={summary.fullTimeEmployment.no}/></div><p className="mt-4 text-xs text-slate-500">Full-time opportunity reflects student-entered company information and does not guarantee placement.</p></Section>
       <div className="grid gap-6 lg:grid-cols-2"><Section title="Top companies by student count"><div className="mt-5 overflow-x-auto"><table className="w-full text-sm"><thead className="border-b text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="pb-3">Company</th><th className="pb-3 text-right">Students</th></tr></thead><tbody>{summary.topCompanies.length ? summary.topCompanies.map(company => <tr key={company.companyName} className="border-b border-slate-100 last:border-0"><td className="py-3 font-medium text-slate-700">{company.companyName}</td><td className="py-3 text-right font-semibold">{company.students}</td></tr>) : <tr><td colSpan={2} className="py-6 text-center text-slate-500">No internship companies recorded yet.</td></tr>}</tbody></table></div></Section><Section title="Students requiring attention"><div className="mt-4 divide-y divide-slate-100">{attention.map(([label, filter, count]) => <Link key={filter} href={`/admin/students?attention=${filter}`} className="flex items-center justify-between gap-4 py-3.5 hover:text-blue-700"><span className="font-medium">{label}</span><span className="rounded-full bg-amber-50 px-3 py-1 text-sm font-bold text-amber-800">{count}</span></Link>)}</div><p className="mt-4 text-xs text-slate-500">Each category opens a server-filtered student list.</p></Section></div>
     </div>}
+    <AttendanceAbsenceOverview role="ADMIN" />
   </main></AppFrame></ProtectedRoute>;
 }

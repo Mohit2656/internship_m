@@ -53,6 +53,7 @@ public class RemoteAttendanceService {
         InternshipDetails internship = policies.eligibleInternship(student.getId());
         LocalDate today = LocalDate.now(clock);
         requireWithinInternship(internship, today);
+        policies.requireSubmissionOpen(today);
         ResolvedAttendancePolicy policy = policies.resolve(internship, today);
         if (policy.verificationMethod() != AttendanceVerificationMethod.REMOTE) {
             throw policy.verificationMethod() == AttendanceVerificationMethod.PHYSICAL

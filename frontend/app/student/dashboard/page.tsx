@@ -7,6 +7,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { StatusBadge } from "@/components/StatusBadge";
 import { WorkflowBadge } from "@/components/WorkflowBadge";
 import { TodayAttendanceCard } from "@/components/TodayAttendanceCard";
+import { DailyAttendanceHistory } from "@/components/DailyAttendanceHistory";
 import { api } from "@/lib/api";
 import { InternshipDetails } from "@/lib/internship-details";
 import { InternshipOnboarding } from "@/lib/internship-onboarding";
@@ -33,5 +34,6 @@ export default function StudentDashboard() {
       <section className="rounded-2xl border border-slate-200 bg-white p-7"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Internship records</p><h2 className="mt-3 text-xl font-bold">Monthly Progress</h2></div><p className="mt-3 text-sm leading-6 text-slate-600">Submit and review your monthly internship progress reports and printable records.</p><Link href="/student/monthly-progress" className="ui-button mt-6 inline-block text-sm">Open Monthly Progress</Link></section>
     </div>
     <TodayAttendanceCard />
+    <DailyAttendanceHistory />
   </main></AppFrame></ProtectedRoute>;
 }

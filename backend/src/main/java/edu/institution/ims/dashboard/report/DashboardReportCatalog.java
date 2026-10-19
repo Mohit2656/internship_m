@@ -87,11 +87,13 @@ public class DashboardReportCatalog {
         add("attendanceStatus", "Attendance on reference date", "Attendance", Kind.TEXT, "coalesce(t.attendance_result, 'NOT_SUBMITTED')", true, false);
         add("verificationStatus", "Liveness on reference date", "Attendance", Kind.TEXT, AttendanceLivenessSql.status("t", "te"), true, false);
         add("submissionType", "Attendance submission type", "Attendance", Kind.TEXT, "t.submission_type", false, false);
-        add("attendanceSubmittedAt", "Attendance last updated by student", "Attendance", Kind.DATETIME, "t.server_submitted_at", false, false);
+        add("automaticAbsent", "Automatically recorded absence", "Attendance", Kind.BOOLEAN, "t.submission_type = 'AUTO_ABSENT'", false, false);
+        add("attendanceSubmittedAt", "Attendance last updated by student", "Attendance", Kind.DATETIME, "case when t.submission_type <> 'AUTO_ABSENT' then t.server_submitted_at end", false, false);
+        add("attendanceGeneratedAt", "Absence automatically recorded at", "Attendance", Kind.DATETIME, "case when t.submission_type = 'AUTO_ABSENT' then t.server_submitted_at end", false, false);
         add("todayWorkMode", "Work mode on reference date", "Attendance", Kind.TEXT,
                 "case when i.internship_mode = 'HYBRID' then hs.work_mode when i.internship_mode = 'OFFICE_REPORTING' then 'OFFICE' when i.internship_mode = 'ONLINE' then 'REMOTE' else null end", false, false);
         for (String id : List.of("attendanceCount", "presentCount", "absentCount", "verifiedCount", "unverifiedCount", "notPerformedCount", "historicalCount"))
-            add(id, switch (id) { case "attendanceCount" -> "Attendance submissions"; case "presentCount" -> "Present records";
+            add(id, switch (id) { case "attendanceCount" -> "Daily attendance records"; case "presentCount" -> "Present records";
                 case "absentCount" -> "Absent records"; case "verifiedCount" -> "Liveness verified records";
                 case "unverifiedCount" -> "Liveness failed records"; case "notPerformedCount" -> "Liveness not performed records";
                 default -> "Historical verification records"; }, "Attendance History", Kind.NUMBER, null, false, true);
@@ -150,7 +152,7 @@ public class DashboardReportCatalog {
         choice(result, "internshipMode", "Internship mode", "OFFICE_REPORTING", "HYBRID", "ONLINE", "COLLEGE_REPORTING");
         choice(result, "internshipSource", "Internship source", "DEPARTMENT", "CDC", "SELF");
         choice(result, "attendanceStatus", "Attendance on reference date", "PRESENT", "ABSENT", "NOT_SUBMITTED");
-        choice(result, "verificationStatus", "Liveness on reference date", "VERIFIED", "FAILED", "NOT_PERFORMED", "HISTORICAL", "NOT_SUBMITTED");
+        choice(result, "verificationStatus", "Liveness on reference date", "VERIFIED", "FAILED", "NOT_PERFORMED", "HISTORICAL", "NOT_APPLICABLE", "NOT_SUBMITTED");
         if (admin) {
             result.add(new Filter("mentorId", "Assigned mentor account ID", "number", List.of(), ""));
             choice(result, "mentorAssignment", "Mentor assignment", "ASSIGNED", "UNASSIGNED");

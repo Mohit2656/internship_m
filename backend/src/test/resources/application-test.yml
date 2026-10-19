@@ -10,6 +10,9 @@ spring:
   flyway:
     enabled: true
 app:
+  attendance:
+    absence:
+      enabled: false
   profile-encryption-key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
   file-storage:
     root: ${java.io.tmpdir}/ims-test-internship-documents

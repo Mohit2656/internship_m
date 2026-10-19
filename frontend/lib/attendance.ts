@@ -1,7 +1,7 @@
 export type AttendanceResult = "PRESENT" | "ABSENT";
 export type VerificationStatus = "UNVERIFIED" | "VERIFIED";
-export type LivenessStatus = "VERIFIED" | "FAILED" | "NOT_PERFORMED" | "HISTORICAL";
-export type AttendanceSubmissionType = "BASIC" | "PHYSICAL_CAPTURE" | "REMOTE_CAPTURE";
+export type LivenessStatus = "VERIFIED" | "FAILED" | "NOT_PERFORMED" | "HISTORICAL" | "NOT_APPLICABLE";
+export type AttendanceSubmissionType = "BASIC" | "PHYSICAL_CAPTURE" | "REMOTE_CAPTURE" | "AUTO_ABSENT";
 
 export type Attendance = {
   id: number;
@@ -10,7 +10,8 @@ export type Attendance = {
   attendanceResult: AttendanceResult;
   verificationStatus: VerificationStatus;
   livenessStatus: LivenessStatus;
-  verificationBasis: "LEGACY" | "LIVENESS";
+  verificationBasis: "LEGACY" | "LIVENESS" | "AUTOMATIC";
+  automaticAbsent?: boolean;
   submissionType: AttendanceSubmissionType;
   serverSubmittedAt: string;
   evidence?: { latitude: number | null; longitude: number | null; gpsAccuracyMeters?: number | null; locationCheckPassed?: boolean | null; expectedLatitude: number | null; expectedLongitude: number | null; distanceMeters: number | null; geofenceRadiusMeters: number | null; workplaceAddress: string | null; verificationReason: string | null } | null;
@@ -21,11 +22,16 @@ export function attendanceLabel(attendance: Attendance) {
   return `Present — ${livenessLabel(attendance.livenessStatus)}`;
 }
 
+export function isAutomaticAbsence(attendance: Attendance) {
+  return attendance.automaticAbsent === true || attendance.submissionType === "AUTO_ABSENT";
+}
+
 export function livenessLabel(status: LivenessStatus | undefined) {
   switch (status) {
     case "VERIFIED": return "Liveness verified";
     case "FAILED": return "Liveness not confirmed";
     case "NOT_PERFORMED": return "Liveness not performed";
+    case "NOT_APPLICABLE": return "Not applicable — automatic absence";
     default: return "Historical attendance — liveness not reassessed";
   }
 }
@@ -33,7 +39,14 @@ export function livenessLabel(status: LivenessStatus | undefined) {
 export type TodayAttendance = {
   attendanceDate: string;
   attendance: Attendance | null;
+  submissionDeadlineAt?: string;
+  submissionOpen?: boolean;
+  attendanceZone?: string;
 };
+
+export function attendanceSubmissionOpen(today: TodayAttendance | null, now = Date.now()) {
+  return today?.submissionOpen !== false && (!today?.submissionDeadlineAt || now < Date.parse(today.submissionDeadlineAt));
+}
 
 export type MentorStudentAttendance = {
   studentUserId: number;

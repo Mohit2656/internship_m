@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AxiosError } from "axios";
 import { api, ApiError } from "@/lib/api";
-import { AiVerificationEvidence, AiVerificationSession, Attendance, AttendancePolicy, HybridSchedule, TodayAttendance, attendanceLabel, livenessLabel } from "@/lib/attendance";
+import { AiVerificationEvidence, AiVerificationSession, Attendance, AttendancePolicy, HybridSchedule, TodayAttendance, attendanceLabel, attendanceSubmissionOpen, isAutomaticAbsence, livenessLabel } from "@/lib/attendance";
 import { challengeLabel, EdgeAiAnalyzer, EdgeAiFrameState, EDGE_AI_MODEL_VERSION } from "@/lib/edge-ai";
 import { AttendanceLocations, validSubmissionCoordinates } from "@/components/AttendanceLocations";
 
@@ -32,6 +32,14 @@ export function TodayAttendanceCard() {
   const aiPassedRef = useRef(false);
   const challengeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationRequestRef = useRef(0);
+  const [windowClosed, setWindowClosed] = useState(false);
+
+  useEffect(() => {
+    setWindowClosed(!attendanceSubmissionOpen(today));
+    if (!today?.submissionDeadlineAt || !attendanceSubmissionOpen(today)) return;
+    const timer = setTimeout(() => { setWindowClosed(true); stopCamera(); setFlowOpen(false); }, Math.min(2_147_483_647, Math.max(0, Date.parse(today.submissionDeadlineAt) - Date.now())));
+    return () => clearTimeout(timer);
+  }, [today]);
 
   useEffect(() => {
     Promise.all([
@@ -78,6 +86,7 @@ export function TodayAttendanceCard() {
   }
 
   async function startCamera() {
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
     locationRequestRef.current += 1; setSubmissionLocation(null); setLocationNotice(""); setLocating(false);
     stopCamera(); setError(""); setAiError(""); setFlowOpen(true); setPhoto(null);
     setAiSession(null); setAiState(null); aiPassedRef.current = false;
@@ -170,6 +179,7 @@ export function TodayAttendanceCard() {
   }
 
   async function submitBasic() {
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
     if (policy?.verificationMethod !== "BASIC" && policy?.verificationMethod !== "UNAVAILABLE") {
       setError("Use today's required attendance evidence flow.");
       return;
@@ -188,6 +198,7 @@ export function TodayAttendanceCard() {
   }
 
   async function submitPhysical() {
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
     if (!photo) return;
     if (!submissionLocation || !validSubmissionCoordinates(submissionLocation.latitude, submissionLocation.longitude)) {
       setError("Capture your submission location before submitting attendance."); return;
@@ -207,6 +218,7 @@ export function TodayAttendanceCard() {
   }
 
   async function submitRemote() {
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
     if (!photo) return;
     const summary = dailyWorkSummary.trim();
     if (summary.length < 20 || summary.length > 1000) {
@@ -233,21 +245,24 @@ export function TodayAttendanceCard() {
   const attendance = today?.attendance;
   const physical = policy?.verificationMethod === "PHYSICAL";
   const remote = policy?.verificationMethod === "REMOTE";
+  const automatic = attendance ? isAutomaticAbsence(attendance) : false;
+  const deadline = today?.submissionDeadlineAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: today.attendanceZone }).format(new Date(today.submissionDeadlineAt)) : null;
   return (
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-7 lg:col-span-2">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Today&apos;s Attendance</p><h2 className="mt-3 text-xl font-bold">{loading ? "Checking attendance…" : attendance ? attendanceLabel(attendance) : "Not submitted"}</h2></div>
         {attendance && attendance.attendanceResult === "PRESENT" && <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${attendance.livenessStatus === "VERIFIED" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{livenessLabel(attendance.livenessStatus)}</span>}
       </div>
-      {!loading && attendance ? <p className="mt-3 text-sm text-slate-600">Submitted at {new Date(attendance.serverSubmittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} using server time.</p> : !loading && <p className="mt-3 text-sm text-slate-600">Attendance can be submitted once today during your registered internship period.</p>}
-      {!loading && attendance && <AttendanceLocations evidence={attendance.evidence} />}
+      {!loading && attendance ? <p className="mt-3 text-sm text-slate-600">{automatic ? "Automatically marked absent for the full working day because attendance was not submitted before the deadline." : <>Submitted at {new Date(attendance.serverSubmittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: today?.attendanceZone })} using server time.</>}</p> : !loading && <p className="mt-3 text-sm text-slate-600">Attendance can be submitted once per working day during your registered internship period.{deadline && <> Submit before {deadline} ({today?.attendanceZone}). Missing attendance is marked absent for the full working day after this deadline.</>}</p>}
+      {!loading && windowClosed && !attendance && <p role="status" className="mt-3 text-sm text-amber-800">Today's submission window has closed. Any missing attendance will be recorded as absent automatically.</p>}
+      {!loading && attendance && !automatic && <AttendanceLocations evidence={attendance.evidence} />}
       {!loading && policy?.todayWorkMode && <p className="mt-3 text-sm font-semibold text-slate-700">Today&apos;s expected work mode: {policy.todayWorkMode === "OFFICE" ? "Office" : "Remote"}</p>}
       {!loading && policy?.internshipMode === "HYBRID" && schedule && <div className="mt-4 flex flex-wrap gap-2">{schedule.entries.map(entry => <span key={entry.dayOfWeek} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-700">{entry.dayOfWeek.slice(0, 3)} · {entry.workMode === "OFFICE" ? "Office" : "Remote"}</span>)}</div>}
       {!loading && !attendance && !policy && <p role="alert" className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s attendance policy could not be confirmed. Reload the dashboard before submitting attendance.</p>}
       {!loading && !attendance && policy && !policy.configurationReady && <p className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s work mode has not been configured. Attendance can be recorded; liveness will be marked as not performed.</p>}
-      {!loading && !attendance && policy && !flowOpen && <button type="button" disabled={submitting || ((!physical && !remote) && (!submissionLocation || locating))} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 text-sm">{submitting ? "Submitting…" : "Mark Today's Attendance"}</button>}
+      {!loading && !attendance && policy && !flowOpen && <button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || ((!physical && !remote) && (!submissionLocation || locating))} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 text-sm">{submitting ? "Submitting…" : "Mark Today's Attendance"}</button>}
       {!loading && !attendance && policy && !physical && !remote && <div className="mt-4 text-sm text-slate-600"><button data-button-variant="text" type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="hover:underline">{locating ? "Capturing submission location..." : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance.</p>{locationNotice && <p role="status" className="mt-2">{locationNotice}</p>}</div>}
-      {!loading && !attendance && flowOpen && <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      {!loading && !attendance && !windowClosed && flowOpen && <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div className="mb-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-950"><p className="font-bold">Edge Verification</p><p className="mt-1">Camera analysis verifies a live attendance capture on this device. Face recognition and identity matching are not performed.</p></div>
         {!photo ? <video ref={videoRef} playsInline muted className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" /> : <img src={photoUrl} alt="Fresh attendance camera capture" className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" />}
         <canvas ref={canvasRef} className="hidden" />
@@ -259,7 +274,7 @@ export function TodayAttendanceCard() {
           {!photo && streamRef.current && <button type="button" disabled={!aiState?.livenessPassed || !aiState.qualityPassed} onClick={() => void capture()} className="text-sm">Capture Attendance</button>}
           {!photo && aiError && <button data-button-variant="outline" type="button" onClick={() => void startCamera()} className="text-sm">Retry Edge Verification</button>}
           {photo && remote && <label className="w-full max-w-xl text-sm font-semibold text-slate-700">Today&apos;s work/activity<textarea value={dailyWorkSummary} onChange={event => setDailyWorkSummary(event.target.value)} minLength={20} maxLength={1000} rows={4} placeholder="Describe the work you completed today (20–1000 characters)." className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"/><span className="mt-1 block text-xs font-normal text-slate-500">{dailyWorkSummary.trim().length} / 1000 characters</span></label>}
-          {photo && <><button type="button" disabled={submitting || locating || !submissionLocation || (remote && dailyWorkSummary.trim().length < 20)} onClick={() => void (remote ? submitRemote() : submitPhysical())} className="text-sm">{submitting ? "Submitting…" : "Submit Attendance"}</button><button data-button-variant="outline" type="button" disabled={submitting} onClick={() => void startCamera()} className="text-sm">Retake</button></>}
+          {photo && <><button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || locating || !submissionLocation || (remote && dailyWorkSummary.trim().length < 20)} onClick={() => void (remote ? submitRemote() : submitPhysical())} className="text-sm">{submitting ? "Submitting…" : "Submit Attendance"}</button><button data-button-variant="outline" type="button" disabled={submitting} onClick={() => void startCamera()} className="text-sm">Retake</button></>}
           <button data-button-variant="text" type="button" onClick={() => { stopCamera(); setFlowOpen(false); setError(""); }} className="text-sm">Cancel</button>
         </div>
       </div>}

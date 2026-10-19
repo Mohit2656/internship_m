@@ -4,5 +4,6 @@ public enum LivenessStatus {
     VERIFIED,
     FAILED,
     NOT_PERFORMED,
-    HISTORICAL
+    HISTORICAL,
+    NOT_APPLICABLE
 }

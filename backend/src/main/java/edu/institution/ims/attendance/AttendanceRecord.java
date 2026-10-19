@@ -94,7 +94,16 @@ public class AttendanceRecord {
     public VerificationStatus getVerificationStatus() { return verificationStatus; }
     public AttendanceVerificationBasis getVerificationBasis() { return verificationBasis; }
     public void useLivenessVerification() { verificationBasis = AttendanceVerificationBasis.LIVENESS; }
+    public boolean isAutomaticAbsent() { return submissionType == AttendanceSubmissionType.AUTO_ABSENT; }
+    public static AttendanceRecord automaticAbsent(User student, InternshipDetails internship,
+            LocalDate date, Instant processedAt) {
+        AttendanceRecord record = new AttendanceRecord(student, internship, date, AttendanceResult.ABSENT,
+                VerificationStatus.UNVERIFIED, AttendanceSubmissionType.AUTO_ABSENT, processedAt);
+        record.verificationBasis = AttendanceVerificationBasis.AUTOMATIC;
+        return record;
+    }
     public LivenessStatus getLivenessStatus() {
+        if (isAutomaticAbsent()) return LivenessStatus.NOT_APPLICABLE;
         if (verificationBasis != AttendanceVerificationBasis.LIVENESS) return LivenessStatus.HISTORICAL;
         if (evidence == null || evidence.getAiVerificationSession() == null || evidence.getAiProcessedAt() == null)
             return LivenessStatus.NOT_PERFORMED;

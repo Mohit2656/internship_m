@@ -42,6 +42,7 @@ public class AttendanceService {
         InternshipDetails internship = eligibleInternship(student.getId());
         LocalDate today = LocalDate.now(clock);
         requireWithinInternship(internship, today);
+        policies.requireSubmissionOpen(today);
         AttendanceVerificationMethod method = policies.resolve(internship, today).verificationMethod();
         if (method == AttendanceVerificationMethod.PHYSICAL || method == AttendanceVerificationMethod.REMOTE) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_EVIDENCE_REQUIRED",
@@ -69,7 +70,9 @@ public class AttendanceService {
         LocalDate today = LocalDate.now(clock);
         return new TodayAttendanceResponse(today,
                 attendance.findByStudentIdAndAttendanceDate(principal.id(), today)
-                        .map(AttendanceService::response).orElse(null));
+                        .map(AttendanceService::response).orElse(null),
+                AttendanceSubmissionWindow.deadline(today, clock),
+                !AttendanceSubmissionWindow.isClosed(today, clock), clock.getZone().getId());
     }
 
     @Transactional(readOnly = true)
@@ -100,7 +103,7 @@ public class AttendanceService {
         return new AttendanceResponse(record.getId(), record.getInternship().getId(), record.getAttendanceDate(),
                 record.getAttendanceResult(), record.getVerificationStatus(), record.getSubmissionType(),
                 record.getServerSubmittedAt(), AttendanceEvidenceResponse.from(record.getEvidence()),
-                record.getVerificationBasis(), record.getLivenessStatus());
+                record.getVerificationBasis(), record.getLivenessStatus(), record.isAutomaticAbsent());
     }
 
     private static AttendanceException duplicate() {

@@ -40,6 +40,13 @@ app:
     max-photo-size-bytes: ${MONTHLY_PROGRESS_MAX_PHOTO_SIZE_BYTES:20971520}
   attendance:
     zone: ${ATTENDANCE_ZONE:Asia/Kolkata}
+    absence:
+      enabled: ${ATTENDANCE_ABSENCE_ENABLED:true}
+      initial-delay-ms: 10000
+      fixed-delay-ms: 300000
+    calendar:
+      holidays: []
+      approved-leave: {}
     default-geofence-radius-meters: ${ATTENDANCE_DEFAULT_GEOFENCE_RADIUS_METERS:200}
     max-gps-accuracy-meters: ${ATTENDANCE_MAX_GPS_ACCURACY_METERS:100}
     max-image-size-bytes: ${ATTENDANCE_MAX_IMAGE_SIZE_BYTES:5242880}

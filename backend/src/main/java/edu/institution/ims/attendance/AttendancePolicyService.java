@@ -49,6 +49,13 @@ public class AttendancePolicyService {
         };
     }
 
+    public void requireSubmissionOpen(LocalDate date) {
+        if (AttendanceSubmissionWindow.isClosed(date, clock)) {
+            throw error(HttpStatus.CONFLICT, "ATTENDANCE_WINDOW_CLOSED",
+                    "Daily attendance submission closes at 12:00 noon in the attendance time zone");
+        }
+    }
+
     InternshipDetails eligibleInternship(Long studentId) {
         InternshipDetails internship = internships.findByOnboardingStudentId(studentId)
                 .orElseThrow(() -> error(HttpStatus.CONFLICT, "ATTENDANCE_NOT_ELIGIBLE",

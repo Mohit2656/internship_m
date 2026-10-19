@@ -43,6 +43,7 @@ public class AiVerificationService {
         InternshipDetails internship = policies.eligibleInternship(student.getId());
         LocalDate today = LocalDate.now(clock);
         requireWithinInternship(internship, today);
+        policies.requireSubmissionOpen(today);
         AttendanceVerificationMethod method = policies.resolve(internship, today).verificationMethod();
         if (method != AttendanceVerificationMethod.PHYSICAL && method != AttendanceVerificationMethod.REMOTE) {
             throw error(HttpStatus.CONFLICT, "EDGE_AI_NOT_APPLICABLE",

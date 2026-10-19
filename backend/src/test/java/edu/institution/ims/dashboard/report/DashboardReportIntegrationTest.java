@@ -418,6 +418,28 @@ class DashboardReportIntegrationTest {
         assertThat(csv.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("2026-10-04","HISTORICAL").doesNotContain("2026-10-05","00002","UNVERIFIED");
         typedReport(mentorB,"table","ATTENDANCE",List.of("uid"),Map.of(),List.of(),"XLSX").andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(0));
     }
+    @Test void automaticAbsencesAppearInAuthorizedDailyReportsAndTotalsWithoutStudentSubmissionOrLiveness() throws Exception {
+        attendance.saveAndFlush(AttendanceRecord.automaticAbsent(studentA, internship, TODAY.minusDays(2), NOW));
+        entities.clear();
+        for (User viewer : List.of(admin, mentorA)) {
+            typedReport(viewer,"table","ATTENDANCE",List.of("date","result","automaticAbsent","generatedAt","submittedAt","verification","reason"),Map.of("studentId",studentA.getId().toString(),"attendanceStatus","ABSENT"),List.of(),"XLSX")
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(1))
+                    .andExpect(jsonPath("$.rows[0].result").value("ABSENT"))
+                    .andExpect(jsonPath("$.rows[0].automaticAbsent").value(true))
+                    .andExpect(jsonPath("$.rows[0].generatedAt").isNotEmpty())
+                    .andExpect(jsonPath("$.rows[0].submittedAt").isEmpty())
+                    .andExpect(jsonPath("$.rows[0].verification").value("NOT_APPLICABLE"))
+                    .andExpect(jsonPath("$.rows[0].reason").value("AUTO_ABSENT_MISSING_SUBMISSION"))
+                    .andExpect(jsonPath("$.summary.absent").value(1)).andExpect(jsonPath("$.summary.historical").value(0));
+            typedReport(viewer,"table","ATTENDANCE_SUMMARY",List.of("total","present","absent","historical"),Map.of("studentId",studentA.getId().toString()),List.of(),"XLSX")
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].total").value(3))
+                    .andExpect(jsonPath("$.rows[0].present").value(2)).andExpect(jsonPath("$.rows[0].absent").value(1))
+                    .andExpect(jsonPath("$.rows[0].historical").value(2));
+        }
+        typedReport(mentorB,"table","ATTENDANCE",List.of("date","result"),Map.of("studentId",studentA.getId().toString()),List.of(),"XLSX")
+                .andExpect(status().isForbidden());
+    }
+
     @Test void summaryUsesStoredRecordsWithoutInventingWorkingDaysOrAbsentSubmissions() throws Exception {
         typedReport(mentorA,"table","ATTENDANCE_SUMMARY",List.of("uid","total","present","absent","percentage"),Map.of(),List.of(studentA.getId()),"XLSX")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.rows[0].total").value(2)).andExpect(jsonPath("$.rows[0].absent").value(0)).andExpect(jsonPath("$.rows[0].percentage").value(100));

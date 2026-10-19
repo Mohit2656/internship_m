@@ -20,6 +20,7 @@ function display(value: unknown): string { return value == null ? "—" : typeof
 function displayCell(field: Field, value: unknown): string {
   if (field.kind === "DATETIME") return value == null ? field.label.toLowerCase().includes("updated by student") ? "Not updated yet" : "Not available" : formatDateTime(String(value));
   if (field.id === "reviewStatus") return monthlyStatusLabel(value as MonthlyProgressStatus | undefined);
+  if (field.id === "submissionType" && value === "AUTO_ABSENT") return "Automatic absence";
   if (["verification", "livenessStatus"].includes(field.id)) {
     if (value === "NOT_SUBMITTED") return "Not submitted";
     return livenessLabel(value as LivenessStatus | undefined);
@@ -28,6 +29,7 @@ function displayCell(field: Field, value: unknown): string {
 }
 function summaryLabel(key: string): string {
   const labels: Record<string, string> = {
+    absent: "Absent days", present: "Present days", records: "Daily records",
     presentRecordPercentage: "Present / stored records (%)",
     verified: "Liveness verified", unverified: "Liveness not confirmed",
     historical: "Historical attendance — liveness not reassessed", notPerformed: "Liveness not performed",

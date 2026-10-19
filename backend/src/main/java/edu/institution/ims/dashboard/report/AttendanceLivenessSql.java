@@ -6,6 +6,7 @@ final class AttendanceLivenessSql {
 
     static String status(String attendance, String evidence) {
         return "case when " + attendance + ".id is null then 'NOT_SUBMITTED'"
+                + " when " + attendance + ".submission_type = 'AUTO_ABSENT' then 'NOT_APPLICABLE'"
                 + " when " + attendance + ".verification_basis <> 'LIVENESS' then 'HISTORICAL'"
                 + " when " + evidence + ".id is null or " + evidence + ".ai_verification_session_id is null or "
                 + evidence + ".ai_processed_at is null then 'NOT_PERFORMED'"
@@ -17,6 +18,7 @@ final class AttendanceLivenessSql {
 
     static String reason(String attendance, String evidence) {
         return "case (" + status(attendance, evidence) + ")"
+                + " when 'NOT_APPLICABLE' then 'AUTO_ABSENT_MISSING_SUBMISSION'"
                 + " when 'HISTORICAL' then 'Historical verification retained; liveness not reassessed'"
                 + " when 'NOT_PERFORMED' then 'EDGE_AI_EVIDENCE_MISSING'"
                 + " when 'VERIFIED' then 'EDGE_AI_VERIFIED'"
