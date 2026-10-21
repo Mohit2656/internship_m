@@ -89,7 +89,7 @@ function LoginContent() {
         </div>
       </section>
 
-      <section className="relative flex items-center justify-center overflow-hidden px-5 py-12 sm:px-10 lg:py-8">
+      <section className="login-panel relative flex items-center justify-center overflow-hidden px-5 py-12 sm:px-10 lg:py-8">
         <div className="absolute -right-40 -top-52 h-[430px] w-[430px] rounded-full bg-blue-100/55 blur-sm" />
         <div className="absolute -bottom-48 left-12 h-[380px] w-[380px] rounded-full bg-white/80" />
         <div className="relative w-full max-w-xl rounded-[1.75rem] border border-white/90 bg-white/80 p-7 shadow-[0_28px_80px_rgba(41,91,160,0.13)] backdrop-blur-xl sm:p-10 lg:p-[clamp(2rem,4vw,3.5rem)]">

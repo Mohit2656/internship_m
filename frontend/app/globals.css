@@ -5,6 +5,12 @@
 body { margin: 0; color: var(--ink); background: #f4f7fb; font-family: Arial, Helvetica, sans-serif; }
 .report-document { font-family: "Times New Roman", Times, serif; }
 button, input { font: inherit; }
+.login-panel {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  --button-blue: #1f1972;
+  --button-hover: #19145c;
+  --button-active: #130f46;
+}
 /* Unlayered rules keep every native button (including future screens) on the
    shared theme, above Tailwind's utility layers. Layout utilities still apply. */
 :root {
