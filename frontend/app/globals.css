@@ -11,6 +11,38 @@ button, input { font: inherit; }
   --button-hover: #19145c;
   --button-active: #130f46;
 }
+.login-panel .login-role-button {
+  display: flex;
+  min-height: 4.65rem;
+  padding: .6rem 1.35rem;
+  border: 0;
+  border-radius: 1rem;
+  background: linear-gradient(100deg, #0872c8 0%, #07599f 52%, #074a8a 100%);
+  box-shadow: 0 12px 24px rgb(10 79 145 / .18);
+  color: white;
+  transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+.login-panel .login-role-button:hover {
+  border-color: transparent;
+  background: linear-gradient(100deg, #087bd7 0%, #0764b4 52%, #07539b 100%);
+  box-shadow: 0 16px 30px rgb(10 79 145 / .27);
+  color: white;
+  transform: translateY(-2px);
+}
+.login-panel .login-role-button:active { transform: translateY(0); }
+.login-role-icon { display: grid; width: 3.35rem; flex: 0 0 3.35rem; place-items: center; }
+.login-role-icon svg { width: 2.35rem; height: 2.35rem; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.login-role-divider { width: 1px; height: 2.8rem; margin-inline: .5rem 1.35rem; background: rgb(255 255 255 / .36); }
+.login-role-label { flex: 1; text-align: left; font-family: Georgia, "Times New Roman", Times, serif; font-size: 1.12rem; font-weight: 700; }
+.login-role-chevron { width: 1.35rem; height: 1.35rem; margin-left: 1rem; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .18s ease; }
+.login-panel .login-role-button:hover .login-role-chevron { transform: translateX(3px); }
+@media (max-width: 480px) {
+  .login-panel .login-role-button { min-height: 4.25rem; padding-inline: .8rem; }
+  .login-role-icon { width: 2.7rem; flex-basis: 2.7rem; }
+  .login-role-icon svg { width: 2rem; height: 2rem; }
+  .login-role-divider { margin-inline: .35rem .8rem; }
+  .login-role-label { font-size: 1rem; }
+}
 /* Unlayered rules keep every native button (including future screens) on the
    shared theme, above Tailwind's utility layers. Layout utilities still apply. */
 :root {
@@ -27,7 +59,7 @@ button, input { font: inherit; }
   padding: .625rem 1rem;
   border: 1px solid var(--button-blue);
   border-radius: var(--button-radius);
-  background: var(--button-blue);
+  background: #114f87;
   color: white;
   font-size: .875rem;
   font-weight: 600;
