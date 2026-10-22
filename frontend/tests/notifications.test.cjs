@@ -17,7 +17,7 @@ function browser(t) { const previous = global.window; global.window = { setInter
 const item = { id: 12, type: "REPORT_REJECTED", title: "Month 2 rejected", message: "Correct and resubmit", rejectionReason: "Explain your actual contribution <script>", mentorName: "Faculty A", actionUrl: "/student/monthly-progress#report-7", createdAt: "2026-10-22T07:00:00Z", readAt: null };
 test("exact rejection reason is visible and opening marks the selected notification read", async t => {
   browser(t); const calls = [];
-  const h = harness("app/student/notifications/page.tsx", "NotificationsContent", { async get() { return { data: { content: [item], page: 0, totalPages: 1, unreadCount: 1 } }; }, async patch(url) { calls.push(url); return { data: { unreadCount: 0 } }; } });
+  const h = harness("components/NotificationsContent.tsx", "NotificationsContent", { async get() { return { data: { content: [item], page: 0, totalPages: 1, unreadCount: 1 } }; }, async patch(url) { calls.push(url); return { data: { unreadCount: 0 } }; } });
   const cleanup = await h.mount();
   assert.match(h.html(), /Explain your actual contribution &lt;script&gt;/); assert.match(h.html(), /Faculty A/); assert.match(h.html(), /Unread/);
   h.button("Open report").props.onClick(); await flush();
@@ -25,7 +25,7 @@ test("exact rejection reason is visible and opening marks the selected notificat
 });
 test("mark all uses owner-scoped API and an empty inbox has a clear state", async t => {
   browser(t); const calls = [];
-  const h = harness("app/student/notifications/page.tsx", "NotificationsContent", { async get() { return { data: { content: [], page: 0, totalPages: 0, unreadCount: 1 } }; }, async patch(url) { calls.push(url); return { data: { unreadCount: 0 } }; } });
+  const h = harness("components/NotificationsContent.tsx", "NotificationsContent", { async get() { return { data: { content: [], page: 0, totalPages: 0, unreadCount: 1 } }; }, async patch(url) { calls.push(url); return { data: { unreadCount: 0 } }; } });
   const cleanup = await h.mount(); assert.match(h.html(), /No notifications yet/);
   h.button("Mark all as read").props.onClick(); await flush(); assert.deepEqual(calls, ["/student/notifications/read-all"]); cleanup();
 });
