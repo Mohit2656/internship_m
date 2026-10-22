@@ -25,13 +25,14 @@ public class AdminStudentService {
         int safePage = Math.max(page, 0); int safeSize = Math.min(Math.max(size, 1), 100);
         Specification<User> spec = (root, query, cb) -> {
             var profile = root.<User, StudentProfile>join("studentProfile", JoinType.LEFT);
+            var account = root.<User, StudentAccount>join("studentAccount", JoinType.LEFT);
             var onboarding = root.<User, InternshipOnboarding>join("internshipOnboarding", JoinType.LEFT);
             var details = onboarding.<InternshipOnboarding, InternshipDetails>join("internshipDetails", JoinType.LEFT);
             var predicate = cb.equal(root.get("role"), Role.STUDENT);
             if (search != null && !search.isBlank()) {
                 String value = "%" + search.trim().toLowerCase() + "%";
                 predicate = cb.and(predicate, cb.or(cb.like(cb.lower(profile.get("studentName")), value), cb.like(cb.lower(profile.get("uid")), value),
-                        cb.like(cb.lower(profile.get("rollNumber")), value), cb.like(cb.lower(profile.get("instituteEmail")), value)));
+                        cb.like(cb.lower(account.get("studentName")), value), cb.like(cb.lower(account.get("uid")), value), cb.like(cb.lower(root.get("email")), value), cb.like(cb.lower(profile.get("rollNumber")), value), cb.like(cb.lower(profile.get("instituteEmail")), value)));
             }
             if (branch != null) predicate = cb.and(predicate, cb.equal(profile.get("branch"), branch));
             if (academicYear != null && !academicYear.isBlank()) predicate = cb.and(predicate, cb.equal(profile.get("academicYear"), academicYear.trim()));

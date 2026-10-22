@@ -3,32 +3,63 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { Attendance, isAutomaticAbsence, livenessLabel } from "@/lib/attendance";
+import { MentorRecordDelete } from "@/components/MentorRecordDelete";
 
-type Row = { recordId: number; studentName: string | null; uid: string | null; date: string; result: string; automaticAbsent: boolean };
+export type AttendanceTotals = { presentDays: number; absentDays: number; totalDays: number; percentage: number | null };
+export type StudentAttendanceSummary = { studentUserId: number; uid: string | null; studentName: string | null; branch: string | null; facultyMentor: string | null; company: string | null; workflowStatus: string; attendance: AttendanceTotals };
+export const formatAttendancePercentage = (value: number | null) => value == null ? "?" : `${value.toFixed(1)}%`;
+
+type History = { studentUserId: number; attendanceZone: string; totals: AttendanceTotals; records: Attendance[] };
+export function StudentAttendanceHistory({ role, studentId, name, onBack, onChanged }: { role: "ADMIN" | "MENTOR"; studentId: number; name: string; onBack: () => void; onChanged?: () => void }) {
+  const [history, setHistory] = useState<History | null>(null);
+  const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const abort = new AbortController(); setHistory(null); setError("");
+    api.get<History>(`/${role.toLowerCase()}/attendance/students/${studentId}`, { signal: abort.signal })
+      .then(({ data }) => { if (!abort.signal.aborted) setHistory(data); })
+      .catch(() => { if (!abort.signal.aborted) setError("Attendance history could not be loaded. Access may have changed."); });
+    return () => abort.abort();
+  }, [role, studentId, revision]);
+  return <section className="mt-5 rounded-xl border border-blue-200 bg-white p-5" aria-label={`Attendance history for ${name}`}>
+    <button type="button" data-button-variant="outline" onClick={onBack} className="text-sm">Back to student list</button>
+    <h3 className="mt-4 text-lg font-bold">Attendance history: {name}</h3>
+    {error ? <p role="alert" className="mt-4 text-red-700">{error}</p> : !history ? <p className="mt-4">Loading attendance history...</p> : <>
+      <p className="mt-3 font-semibold">{history.totals.presentDays} present ? {history.totals.absentDays} absent ? {history.totals.totalDays} applicable recorded days ? {formatAttendancePercentage(history.totals.percentage)}</p>
+      <p className="mt-2 text-xs text-slate-500">Totals exclude future dates, weekends, configured holidays, approved leave and unscheduled days. Times use {history.attendanceZone}.</p>
+      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead><tr>{["Date", "Status", "Submission time", "Liveness", "Late submission", ...(role === "MENTOR" ? ["Actions"] : [])].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
+        <tbody>{history.records.map(record => <tr key={record.id} className="border-t border-slate-100"><td className="p-3">{record.attendanceDate}</td><td className="p-3 font-semibold">{record.attendanceResult}</td><td className="p-3">{isAutomaticAbsence(record) ? "? (automatic absence)" : record.serverSubmittedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: history.attendanceZone }).format(new Date(record.serverSubmittedAt)) : "?"}</td><td className="p-3">{livenessLabel(record.livenessStatus)}</td><td className="p-3">{record.submittedLate ? "Yes ? mentor permission" : "?"}</td>{role === "MENTOR" && <td className="p-3"><MentorRecordDelete kind="attendance" id={record.id} description={`${name} ? ${record.attendanceDate}`} onDeleted={() => { setRevision(value => value + 1); onChanged?.(); }} /></td>}</tr>)}</tbody>
+      </table>{!history.records.length && <p className="p-3 text-slate-500">No attendance records yet.</p>}</div>
+    </>}
+  </section>;
+}
 
 export function AttendanceAbsenceOverview({ role }: { role: "ADMIN" | "MENTOR" }) {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [total, setTotal] = useState(0);
+  const [rows, setRows] = useState<StudentAttendanceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<StudentAttendanceSummary | null>(null);
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     const abort = new AbortController();
-    const base = `/${role.toLowerCase()}/reports`;
-    api.get<{ date: string }>(`${base}/types`, { signal: abort.signal }).then(({ data }) => {
-      const from = new Date(`${data.date}T00:00:00Z`); from.setUTCDate(from.getUTCDate() - 30);
-      return api.post<{ rows: Row[]; totalRows: number }>(`${base}/table`, { reportType: "ATTENDANCE", fields: ["recordId", "studentName", "uid", "date", "result", "automaticAbsent"], filters: { attendanceStatus: "ABSENT", historyFrom: from.toISOString().slice(0, 10), historyTo: data.date }, studentIds: [], page: 0, format: "XLSX" }, { signal: abort.signal });
-    }).then(({ data }) => { setRows(data.rows); setTotal(data.totalRows); })
-      .catch(() => { if (!abort.signal.aborted) setError("Daily absences could not be loaded."); })
+    api.get<StudentAttendanceSummary[]>(`/${role.toLowerCase()}/attendance/students`, { signal: abort.signal })
+      .then(({ data }) => { if (!abort.signal.aborted) setRows(data); })
+      .catch(() => { if (!abort.signal.aborted) setError("Student attendance summaries could not be loaded."); })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
-  }, [role]);
+  }, [role, revision]);
+  const query = search.trim().toLowerCase();
+  const filtered = rows.filter(row => `${row.studentName ?? ""} ${row.uid ?? ""}`.toLowerCase().includes(query));
   return <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-bold">Daily Absences</h2><Link href={`/${role.toLowerCase()}/attendance`} className="text-sm font-semibold text-blue-700 hover:underline">View attendance records and summaries</Link></div>
-    <p className="mt-2 text-sm text-slate-600">Absent working days in the past 30 days{role === "MENTOR" ? " for your currently assigned students" : " within your authorized student scope"}.</p>
-    {loading ? <p className="mt-4 text-sm text-slate-500">Loading daily absences…</p> : error ? <p role="alert" className="mt-4 text-sm text-red-700">{error}</p> : <>
-      <p className="mt-4 text-sm font-semibold">{total} absent daily records</p>
-      <div className="mt-3 max-h-80 overflow-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="p-3">Student</th><th className="p-3">Date</th><th className="p-3">Status</th><th className="p-3">Source</th></tr></thead><tbody>{rows.map(row => <tr key={row.recordId} className="border-b border-slate-100"><td className="p-3">{row.studentName || row.uid || "Student"}</td><td className="p-3">{row.date}</td><td className="p-3 font-semibold text-red-700">Absent</td><td className="p-3">{row.automaticAbsent ? "Automatic — no submission before deadline" : "Existing attendance record"}</td></tr>)}</tbody></table>{!rows.length && <p className="p-3 text-slate-500">No absent working days recorded in this period.</p>}</div>
-      {total > rows.length && <p className="mt-3 text-xs text-slate-500">Showing {rows.length} records. Open attendance records to view all days.</p>}
+    <h2 className="text-xl font-bold">{role === "MENTOR" ? "Assigned Students" : "Student Attendance"}</h2>
+    <p className="mt-2 text-sm text-slate-600">One row per student account. Attendance percentage uses present and absent records on applicable working days.</p>
+    {selected ? <StudentAttendanceHistory key={selected.studentUserId} role={role} studentId={selected.studentUserId} name={selected.studentName || selected.uid || "Student"} onBack={() => setSelected(null)} onChanged={() => setRevision(value => value + 1)} /> : <>
+      <label className="mt-4 block text-sm font-semibold">Search by name or enrollment number<input value={search} onChange={event => setSearch(event.target.value)} className="mt-2 block w-full rounded-xl border border-slate-300 px-4 py-2.5 font-normal sm:max-w-md" /></label>
+      {loading ? <p className="mt-4">Loading students...</p> : error ? <p role="alert" className="mt-4 text-red-700">{error}</p> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1000px] table-fixed text-left text-sm"><thead><tr>{["Student Account ID", "UID / Enrollment", "Student Name", "Branch", "Faculty Mentor", "Company", "Attendance Percentage", "Workflow Status"].map(label => <th key={label} className="break-words p-3">{label}</th>)}</tr></thead>
+        <tbody>{filtered.map(row => <tr key={row.studentUserId} className="border-t border-slate-100 align-top"><td className="break-words p-3">{row.studentUserId}</td><td className="break-words p-3">{row.uid || "?"}</td><td className="break-words p-3"><button type="button" data-button-variant="text" className="text-left font-semibold text-blue-700 hover:underline" onClick={() => setSelected(row)}>{row.studentName || "View Attendance"}</button><Link className="mt-2 block text-xs text-blue-700 hover:underline" href={`/${role.toLowerCase()}/students/${row.studentUserId}`}>View student profile</Link></td><td className="break-words p-3">{row.branch || "?"}</td><td className="break-words p-3">{row.facultyMentor || "?"}</td><td className="break-words p-3">{row.company || "?"}</td><td className="p-3 font-semibold text-blue-700">{formatAttendancePercentage(row.attendance.percentage)}</td><td className="break-words p-3">{row.workflowStatus.replaceAll("_", " ")}</td></tr>)}</tbody>
+      </table>{!filtered.length && <p className="p-3 text-slate-500">No matching students.</p>}</div>}
     </>}
   </section>;
 }

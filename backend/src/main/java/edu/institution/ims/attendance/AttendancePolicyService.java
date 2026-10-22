@@ -13,13 +13,16 @@ public class AttendancePolicyService {
     private final InternshipDetailsRepository internships;
     private final AttendanceRepository attendance;
     private final Clock clock;
+    private final LateAttendancePermissionService permissions;
 
     public AttendancePolicyService(HybridWorkScheduleRepository schedules,
-            InternshipDetailsRepository internships, AttendanceRepository attendance, Clock clock) {
+            InternshipDetailsRepository internships, AttendanceRepository attendance, Clock clock,
+            LateAttendancePermissionService permissions) {
         this.schedules = schedules;
         this.internships = internships;
         this.attendance = attendance;
         this.clock = clock;
+        this.permissions = permissions;
     }
 
     @Transactional(readOnly = true)
@@ -28,7 +31,8 @@ public class AttendancePolicyService {
         LocalDate today = LocalDate.now(clock);
         ResolvedAttendancePolicy policy = resolve(internship, today);
         return new AttendancePolicyResponse(internship.getInternshipMode(), policy.todayWorkMode(),
-                policy.verificationMethod(), attendance.findByStudentIdAndAttendanceDate(principal.id(), today).isPresent(),
+                policy.verificationMethod(), attendance.findByStudentIdAndAttendanceDate(principal.id(), today)
+                        .map(record -> !canReplaceAutomaticAbsence(record, principal.id(), today)).orElse(false),
                 policy.configurationReady(), today);
     }
 
@@ -54,6 +58,21 @@ public class AttendancePolicyService {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_WINDOW_CLOSED",
                     "Daily attendance submission closes at 12:00 noon in the attendance time zone");
         }
+    }
+
+    public void requireSubmissionOpen(Long studentId, LocalDate date) {
+        if (!date.equals(LocalDate.now(clock))) {
+            throw error(HttpStatus.CONFLICT, "ATTENDANCE_DATE_CHANGED",
+                    "The attendance date has changed. Refresh today's attendance and try again");
+        }
+        if (AttendanceSubmissionWindow.isClosed(date, clock) && !permissions.isEnabled(studentId, date)) {
+            requireSubmissionOpen(date);
+        }
+    }
+
+    boolean canReplaceAutomaticAbsence(AttendanceRecord record, Long studentId, LocalDate date) {
+        return record.isAutomaticAbsent() && record.getEvidence() == null
+                && date.equals(record.getAttendanceDate()) && permissions.isEnabled(studentId, date);
     }
 
     InternshipDetails eligibleInternship(Long studentId) {

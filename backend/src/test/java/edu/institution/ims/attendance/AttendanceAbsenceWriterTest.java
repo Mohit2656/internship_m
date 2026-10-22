@@ -124,7 +124,7 @@ class AttendanceAbsenceWriterTest {
     private AttendanceAbsenceWriter writer(Instant instant) {
         Clock clock = Clock.fixed(instant, ZONE);
         AttendancePolicyService policies = new AttendancePolicyService(
-                mock(HybridWorkScheduleRepository.class), internships, attendance, clock);
+                mock(HybridWorkScheduleRepository.class), internships, attendance, clock, mock(LateAttendancePermissionService.class));
         return new AttendanceAbsenceWriter(attendance, internships, policies, calendar, clock);
     }
 }

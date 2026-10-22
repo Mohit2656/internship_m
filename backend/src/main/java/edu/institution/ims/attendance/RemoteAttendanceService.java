@@ -3,7 +3,6 @@ package edu.institution.ims.attendance;
 import edu.institution.ims.internship.InternshipDetails;
 import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.user.*;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,10 +22,11 @@ public class RemoteAttendanceService {
     private final CameraImageValidator imageValidator;
     private final AiVerificationService aiVerification;
     private final Clock clock;
+    private final AttendanceSubmissionService submissions;
 
     public RemoteAttendanceService(AttendanceRepository attendance, AttendanceEvidenceRepository evidence,
             AttendancePolicyService policies, UserRepository users, CameraImageValidator imageValidator,
-            AiVerificationService aiVerification, Clock clock) {
+            AiVerificationService aiVerification, Clock clock, AttendanceSubmissionService submissions) {
         this.attendance = attendance;
         this.evidence = evidence;
         this.policies = policies;
@@ -34,6 +34,7 @@ public class RemoteAttendanceService {
         this.imageValidator = imageValidator;
         this.aiVerification = aiVerification;
         this.clock = clock;
+        this.submissions = submissions;
     }
 
     @Transactional
@@ -48,12 +49,12 @@ public class RemoteAttendanceService {
             BigDecimal latitude, BigDecimal longitude, BigDecimal accuracy) {
         String summary = validateSummary(workSummary);
         ValidatedCameraImage image = imageValidator.validate(photo);
-        User student = users.findById(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
+        User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
         InternshipDetails internship = policies.eligibleInternship(student.getId());
         LocalDate today = LocalDate.now(clock);
         requireWithinInternship(internship, today);
-        policies.requireSubmissionOpen(today);
+        policies.requireSubmissionOpen(student.getId(), today);
         ResolvedAttendancePolicy policy = policies.resolve(internship, today);
         if (policy.verificationMethod() != AttendanceVerificationMethod.REMOTE) {
             throw policy.verificationMethod() == AttendanceVerificationMethod.PHYSICAL
@@ -63,19 +64,12 @@ public class RemoteAttendanceService {
         }
         SubmissionLocation submitted = SubmissionLocation.require(latitude, longitude, accuracy);
         AiVerificationDecision aiDecision = aiVerification.evaluate(principal, internship, today, aiEvidence);
-        if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today).isPresent()) throw duplicate();
 
         Instant serverTime = clock.instant();
         VerificationStatus status = aiDecision.accepted() ? VerificationStatus.VERIFIED : VerificationStatus.UNVERIFIED;
         VerificationReason reason = aiDecision.reason();
-        AttendanceRecord record = new AttendanceRecord(student, internship, today, AttendanceResult.PRESENT,
-                status, AttendanceSubmissionType.REMOTE_CAPTURE, serverTime);
-        record.useLivenessVerification();
-        try {
-            attendance.saveAndFlush(record);
-        } catch (DataIntegrityViolationException exception) {
-            throw duplicate();
-        }
+        AttendanceRecord record = submissions.record(student, internship, today,
+                status, AttendanceSubmissionType.REMOTE_CAPTURE);
         AttendanceEvidence captured = new AttendanceEvidence(record, image, summary, null, reason, aiDecision, serverTime);
         captured.recordSubmissionLocation(submitted.latitude(), submitted.longitude(), submitted.accuracyMeters());
         evidence.saveAndFlush(captured);
@@ -96,10 +90,6 @@ public class RemoteAttendanceService {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_OUTSIDE_INTERNSHIP_PERIOD",
                     "Attendance is available only during the registered internship period");
         }
-    }
-
-    private static AttendanceException duplicate() {
-        return error(HttpStatus.CONFLICT, "ATTENDANCE_ALREADY_SUBMITTED", "Today's attendance has already been submitted");
     }
 
     private static AttendanceException error(HttpStatus status, String code, String message) {

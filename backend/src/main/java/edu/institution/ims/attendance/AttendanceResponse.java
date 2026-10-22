@@ -11,5 +11,5 @@ public record AttendanceResponse(
         AttendanceSubmissionType submissionType,
         Instant serverSubmittedAt, AttendanceEvidenceResponse evidence,
         AttendanceVerificationBasis verificationBasis, LivenessStatus livenessStatus,
-        boolean automaticAbsent
+        boolean automaticAbsent, boolean submittedLate
 ) {}

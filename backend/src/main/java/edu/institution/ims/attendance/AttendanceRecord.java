@@ -51,8 +51,18 @@ public class AttendanceRecord {
     @Column(name = "submission_type", nullable = false, length = 30)
     private AttendanceSubmissionType submissionType;
 
-    @Column(name = "server_submitted_at", nullable = false, updatable = false)
+    @Column(name = "server_submitted_at", nullable = false)
     private Instant serverSubmittedAt;
+
+    @Column(name = "submitted_late", nullable = false)
+    private boolean submittedLate;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "late_authorized_by")
+    private User lateAuthorizedBy;
+    @Column(name = "late_authorized_at")
+    private Instant lateAuthorizedAt;
+    @Column(name = "automatic_absent_at")
+    private Instant automaticAbsentAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -95,6 +105,25 @@ public class AttendanceRecord {
     public AttendanceVerificationBasis getVerificationBasis() { return verificationBasis; }
     public void useLivenessVerification() { verificationBasis = AttendanceVerificationBasis.LIVENESS; }
     public boolean isAutomaticAbsent() { return submissionType == AttendanceSubmissionType.AUTO_ABSENT; }
+    public boolean isSubmittedLate() { return submittedLate; }
+    public User getLateAuthorizedBy() { return lateAuthorizedBy; }
+    public Instant getLateAuthorizedAt() { return lateAuthorizedAt; }
+    public Instant getAutomaticAbsentAt() { return automaticAbsentAt; }
+
+    void replaceAutomaticAbsence(VerificationStatus status, AttendanceSubmissionType type, Instant submittedAt) {
+        if (!isAutomaticAbsent() || evidence != null) throw new IllegalStateException("Only an automatic absence can be replaced");
+        automaticAbsentAt = serverSubmittedAt;
+        attendanceResult = AttendanceResult.PRESENT;
+        verificationStatus = status;
+        submissionType = type;
+        serverSubmittedAt = submittedAt;
+    }
+
+    void recordLatePermission(User authorizedBy, Instant authorizedAt) {
+        submittedLate = true;
+        lateAuthorizedBy = authorizedBy;
+        lateAuthorizedAt = authorizedAt;
+    }
     public static AttendanceRecord automaticAbsent(User student, InternshipDetails internship,
             LocalDate date, Instant processedAt) {
         AttendanceRecord record = new AttendanceRecord(student, internship, date, AttendanceResult.ABSENT,

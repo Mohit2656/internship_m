@@ -3,7 +3,6 @@ package edu.institution.ims.attendance;
 import edu.institution.ims.internship.*;
 import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.user.*;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,15 +18,20 @@ public class AttendanceService {
     private final AttendancePolicyService policies;
     private final Clock clock;
     private final AttendanceEvidenceRepository evidence;
+    private final AttendanceSubmissionService submissions;
+    private final LateAttendancePermissionService permissions;
 
     public AttendanceService(AttendanceRepository attendance, InternshipDetailsRepository internships,
-            UserRepository users, AttendancePolicyService policies, Clock clock, AttendanceEvidenceRepository evidence) {
+            UserRepository users, AttendancePolicyService policies, Clock clock, AttendanceEvidenceRepository evidence,
+            AttendanceSubmissionService submissions, LateAttendancePermissionService permissions) {
         this.attendance = attendance;
         this.internships = internships;
         this.users = users;
         this.policies = policies;
         this.clock = clock;
         this.evidence = evidence;
+        this.submissions = submissions;
+        this.permissions = permissions;
     }
 
     @Transactional
@@ -37,42 +41,34 @@ public class AttendanceService {
 
     @Transactional
     public AttendanceResponse submitToday(UserPrincipal principal, BigDecimal latitude, BigDecimal longitude, BigDecimal accuracy) {
-        User student = users.findById(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
+        User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
         InternshipDetails internship = eligibleInternship(student.getId());
         LocalDate today = LocalDate.now(clock);
         requireWithinInternship(internship, today);
-        policies.requireSubmissionOpen(today);
+        policies.requireSubmissionOpen(student.getId(), today);
         AttendanceVerificationMethod method = policies.resolve(internship, today).verificationMethod();
         if (method == AttendanceVerificationMethod.PHYSICAL || method == AttendanceVerificationMethod.REMOTE) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_EVIDENCE_REQUIRED",
                     "Use today's required attendance evidence flow");
         }
-        if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today).isPresent()) {
-            throw duplicate();
-        }
         SubmissionLocation location = SubmissionLocation.require(latitude, longitude, accuracy);
-        AttendanceRecord record = new AttendanceRecord(student, internship, today,
-                AttendanceResult.PRESENT, VerificationStatus.UNVERIFIED,
-                AttendanceSubmissionType.BASIC, clock.instant());
-        record.useLivenessVerification();
-        try {
-            attendance.saveAndFlush(record);
-            evidence.saveAndFlush(new AttendanceEvidence(record, location, clock.instant()));
-            return response(record);
-        } catch (DataIntegrityViolationException exception) {
-            throw duplicate();
-        }
+        AttendanceRecord record = submissions.record(student, internship, today,
+                VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC);
+        evidence.saveAndFlush(new AttendanceEvidence(record, location, clock.instant()));
+        return response(record);
     }
 
     @Transactional(readOnly = true)
     public TodayAttendanceResponse today(UserPrincipal principal) {
         LocalDate today = LocalDate.now(clock);
+        boolean latePermission = permissions.isEnabled(principal.id(), today);
         return new TodayAttendanceResponse(today,
                 attendance.findByStudentIdAndAttendanceDate(principal.id(), today)
                         .map(AttendanceService::response).orElse(null),
                 AttendanceSubmissionWindow.deadline(today, clock),
-                !AttendanceSubmissionWindow.isClosed(today, clock), clock.getZone().getId());
+                !AttendanceSubmissionWindow.isClosed(today, clock) || latePermission,
+                clock.getZone().getId(), latePermission);
     }
 
     @Transactional(readOnly = true)
@@ -103,12 +99,8 @@ public class AttendanceService {
         return new AttendanceResponse(record.getId(), record.getInternship().getId(), record.getAttendanceDate(),
                 record.getAttendanceResult(), record.getVerificationStatus(), record.getSubmissionType(),
                 record.getServerSubmittedAt(), AttendanceEvidenceResponse.from(record.getEvidence()),
-                record.getVerificationBasis(), record.getLivenessStatus(), record.isAutomaticAbsent());
-    }
-
-    private static AttendanceException duplicate() {
-        return error(HttpStatus.CONFLICT, "ATTENDANCE_ALREADY_SUBMITTED",
-                "Today's attendance has already been submitted");
+                record.getVerificationBasis(), record.getLivenessStatus(), record.isAutomaticAbsent(),
+                record.isSubmittedLate());
     }
 
     static AttendanceException error(HttpStatus status, String code, String message) {

@@ -7,6 +7,8 @@ import java.time.LocalDate;
 import java.util.*;
 
 public interface AttendanceRepository extends JpaRepository<AttendanceRecord, Long> {
+    @EntityGraph(attributePaths = {"internship", "internship.onboarding"})
+    List<AttendanceRecord> findAllByStudentIdInOrderByAttendanceDateAscIdAsc(Collection<Long> studentIds);
     // Native queries intentionally include soft-deleted history: a mentor's deletion must not become an absence.
     @Query(value = "select attendance_date from attendance_records where internship_id = :internshipId", nativeQuery = true)
     List<java.sql.Date> findRecordedDatesIncludingDeleted(Long internshipId);

@@ -12,6 +12,7 @@ export type Attendance = {
   livenessStatus: LivenessStatus;
   verificationBasis: "LEGACY" | "LIVENESS" | "AUTOMATIC";
   automaticAbsent?: boolean;
+  submittedLate?: boolean;
   submissionType: AttendanceSubmissionType;
   serverSubmittedAt: string;
   evidence?: { latitude: number | null; longitude: number | null; gpsAccuracyMeters?: number | null; locationCheckPassed?: boolean | null; expectedLatitude: number | null; expectedLongitude: number | null; distanceMeters: number | null; geofenceRadiusMeters: number | null; workplaceAddress: string | null; verificationReason: string | null } | null;
@@ -42,11 +43,29 @@ export type TodayAttendance = {
   submissionDeadlineAt?: string;
   submissionOpen?: boolean;
   attendanceZone?: string;
+  latePermissionEnabled?: boolean;
 };
 
 export function attendanceSubmissionOpen(today: TodayAttendance | null, now = Date.now()) {
-  return today?.submissionOpen !== false && (!today?.submissionDeadlineAt || now < Date.parse(today.submissionDeadlineAt));
+  if (today?.submissionOpen === false) return false;
+  if (today?.latePermissionEnabled) {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: today.attendanceZone ?? "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(now));
+    const part = (type: string) => parts.find(value => value.type === type)?.value;
+    return `${part("year")}-${part("month")}-${part("day")}` === today.attendanceDate;
+  }
+  return !today?.submissionDeadlineAt || now < Date.parse(today.submissionDeadlineAt);
 }
+
+export type LateAttendancePermission = {
+  studentUserId: number;
+  studentName: string | null;
+  uid: string | null;
+  attendanceDate: string;
+  enabled: boolean;
+  authorizedBy: number | null;
+  authorizedAt: string | null;
+  attendanceZone: string;
+};
 
 export type MentorStudentAttendance = {
   studentUserId: number;

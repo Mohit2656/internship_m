@@ -98,6 +98,15 @@ test("the noon submission deadline closes at the exact server timestamp", () => 
   assert.equal(attendance.attendanceSubmissionOpen({ ...today, submissionOpen: false }, Date.parse("2026-10-19T06:00:00Z")), false);
 });
 
+test("late permission overrides noon only on the attendance date in the configured time zone", () => {
+  const today = { attendanceDate: "2026-10-19", attendance: null, submissionOpen: true, latePermissionEnabled: true, submissionDeadlineAt: "2026-10-19T06:30:00Z", attendanceZone: "Asia/Kolkata" };
+  assert.equal(attendance.attendanceSubmissionOpen(today, Date.parse("2026-10-19T07:00:00Z")), true);
+  assert.equal(attendance.attendanceSubmissionOpen(today, Date.parse("2026-10-19T18:29:59.999Z")), true);
+  assert.equal(attendance.attendanceSubmissionOpen(today, Date.parse("2026-10-19T18:30:00Z")), false);
+  assert.equal(attendance.attendanceSubmissionOpen({ ...today, latePermissionEnabled: false }, Date.parse("2026-10-19T07:00:00Z")), false);
+  assert.equal(attendance.attendanceSubmissionOpen({ ...today, submissionOpen: false }, Date.parse("2026-10-19T07:00:00Z")), false);
+});
+
 function cameraHarness({ liveness = true, method = "PHYSICAL", today = {} } = {}) {
   const states = [], refs = [], effects = []; let stateIndex = 0, refIndex = 0, effectIndex = 0;
   const pendingEffects = [], calls = [];
@@ -110,7 +119,7 @@ function cameraHarness({ liveness = true, method = "PHYSICAL", today = {} } = {}
   };
   const api = {
     async get(url) { return { data: url.endsWith("/policy") ? { internshipMode: "OFFICE_REPORTING", verificationMethod: method, configurationReady: true } : { attendanceDate: "2026-10-11", attendance: null, ...today } }; },
-    async post(url, body, config) { calls.push({ url, body, config }); return { data: url.endsWith("verification-session") ? { sessionId: "issued-by-server", challenge: "BLINK" } : record(method === "BASIC" ? "NOT_PERFORMED" : "VERIFIED") }; }
+    async post(url, body, config) { calls.push({ url, body, config }); return { data: url.endsWith("verification-session") ? { sessionId: "issued-by-server", challenge: "BLINK" } : { ...record(method === "BASIC" ? "NOT_PERFORMED" : "VERIFIED"), submittedLate: today.latePermissionEnabled === true } }; }
   };
   class Analyzer { async initialize() {} start(video, challenge, update) { if (liveness !== null) update({ faceCount: 1, faceDetected: true, singleFace: true, qualityPassed: true, livenessPassed: liveness }); } close() {} }
   const { TodayAttendanceCard } = load("components/TodayAttendanceCard.tsx", { react: hooks, "@/lib/api": { api },
@@ -228,4 +237,53 @@ for (const method of ["PHYSICAL", "REMOTE"]) test(`${method}: denied required lo
   if (method === "REMOTE") h.summary("Completed implementation and tested the attendance flow.");
   h.button("Submit Attendance").props.onClick(); await flush();
   assert.equal(h.calls.filter(call => call.url.endsWith("/physical") || call.url.endsWith("/remote")).length, 0); h.cancel();
+});
+
+test("same-day late permission lets an automatically absent student complete the existing liveness flow", async t => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-10-19T07:00:00Z");
+  t.after(() => { Date.now = originalNow; });
+  const original = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+    mediaDevices: { async getUserMedia() { return { getTracks: () => [{ stop() {} }] }; } },
+    geolocation: { getCurrentPosition(success) { success({ coords: { latitude: 18.5204, longitude: 73.8567, accuracy: 12 } }); } }
+  }});
+  t.after(() => { if (original) Object.defineProperty(globalThis, "navigator", original); else delete globalThis.navigator; });
+  const today = {
+    attendanceDate: "2026-10-19", submissionOpen: true, latePermissionEnabled: true,
+    submissionDeadlineAt: "2026-10-19T06:30:00Z", attendanceZone: "Asia/Kolkata",
+    attendance: { ...record("NOT_APPLICABLE"), attendanceDate: "2026-10-19", attendanceResult: "ABSENT", automaticAbsent: true, submissionType: "AUTO_ABSENT", evidence: null }
+  };
+  const h = cameraHarness({ today }); await h.mount();
+  assert.match(h.html(), /mentor has enabled late attendance submission/);
+  assert.match(h.html(), /valid submission will update today&#x27;s automatic absence/);
+  assert.equal(h.button("Mark Today's Attendance").props.disabled, false);
+  assert.equal(h.calls.length, 0);
+  h.button("Mark Today's Attendance").props.onClick(); await flush();
+  assert.equal(h.calls[0].url, "/student/attendance/verification-session");
+  assert.equal(h.button("Capture Attendance").props.disabled, false);
+  await h.button("Capture Attendance").props.onClick(); await flush();
+  h.button("Capture submission location (required)").props.onClick(); await flush();
+  h.button("Submit Attendance").props.onClick(); await flush();
+  const submitted = h.calls.find(call => call.url.endsWith("/physical"));
+  assert.equal(JSON.parse(await submitted.body.get("aiEvidence").text()).livenessPassed, true);
+  assert.match(h.html(), /Submitted late with faculty mentor permission/);
+  assert.equal(h.button("Mark Today's Attendance"), undefined);
+  h.cancel();
+});
+
+test("late permission leaves failed liveness blocked", async t => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-10-19T07:00:00Z");
+  t.after(() => { Date.now = originalNow; });
+  navigatorWithoutLocation(t);
+  const h = cameraHarness({ liveness: false, today: {
+    attendanceDate: "2026-10-19", submissionOpen: true, latePermissionEnabled: true,
+    submissionDeadlineAt: "2026-10-19T06:30:00Z", attendanceZone: "Asia/Kolkata"
+  }});
+  await h.mount(); h.button("Mark Today's Attendance").props.onClick(); await flush();
+  assert.equal(h.button("Capture Attendance").props.disabled, true);
+  h.button("Capture Attendance").props.onClick(); await flush();
+  assert.equal(h.calls.filter(call => !call.url.endsWith("verification-session")).length, 0);
+  h.cancel();
 });
