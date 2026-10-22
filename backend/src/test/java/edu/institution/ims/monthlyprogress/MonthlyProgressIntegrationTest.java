@@ -118,6 +118,13 @@ class MonthlyProgressIntegrationTest {
         decision(mentor,id,false,1,null).andExpect(status().isBadRequest());
         decision(mentor,id,false,1,"  Explain your contribution  ").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("REJECTED"))
             .andExpect(jsonPath("$.rejectionReason").value("Explain your contribution"));
+        mvc.perform(get("/api/v1/student/notifications").cookie(student)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.unreadCount").value(1)).andExpect(jsonPath("$.content[0].rejectionReason").value("Explain your contribution"))
+            .andExpect(jsonPath("$.content[0].mentorName").value("Mentor A"))
+            .andExpect(jsonPath("$.content[0].actionUrl").value("/student/monthly-progress#report-"+id));
+        mvc.perform(get("/api/v1/student/notifications/unread-count").cookie(loginCookie(studentB.getEmail(),"StudentPassword!24")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.unreadCount").value(0));
+        mvc.perform(get("/api/v1/student/notifications").cookie(mentor)).andExpect(status().isForbidden());
         assertThat(pdfText(student,id)).contains("REJECTED","Explain your contribution").doesNotContain("GPS","EXIF");
         mvc.perform(get("/api/v1/student/monthly-progress").cookie(student)).andExpect(status().isOk()).andExpect(jsonPath("$.periods[0].report.rejectionReason").value("Explain your contribution"));
         resubmit(loginCookie(studentB.getEmail(),"StudentPassword!24"),id,1).andExpect(status().isNotFound());

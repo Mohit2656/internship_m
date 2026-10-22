@@ -28,6 +28,7 @@ public class MonthlyProgressService {
     private final ProgressPhotoValidator photos;
     private final MonthlyProgressPdfService pdfs;
     private final Clock clock;
+    @org.springframework.beans.factory.annotation.Autowired private edu.institution.ims.notification.NotificationService notifications;
 
     public MonthlyProgressService(MonthlyProgressReportRepository reports, InternshipDetailsRepository internships,
             MentorStudentAssignmentRepository assignments, FileStorageService storage, ProgressPhotoValidator photos,
@@ -114,6 +115,7 @@ public class MonthlyProgressService {
         report.decide(reviewer,approved,clean,clock.instant());
         reports.saveAndFlush(report);
         reviewEvents.saveAndFlush(new MonthlyProgressReviewEvent(report,reviewer,approved?"APPROVED":"REJECTED",clean,clock.instant()));
+        if (!approved) notifications.reportRejected(report, reviewer);
         return response(report);
     }
 
