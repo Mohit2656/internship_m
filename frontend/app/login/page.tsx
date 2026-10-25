@@ -7,6 +7,7 @@ import { AxiosError } from "axios";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError, AuthUser } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const loginOptions = [
   { role: "STUDENT", label: "Student Login", icon: "student" },
@@ -65,6 +66,7 @@ function LoginContent() {
           <Image src="/branding/college-wordmark.png" alt="St. Vincent Pallotti College of Engineering and Technology, Nagpur — An Autonomous Institution" width={650} height={128} priority className="h-auto min-w-0 flex-1 object-contain object-left sm:max-w-[560px]" />
         </div>
         <div className="hidden items-center gap-8 lg:flex"><span className="h-12 w-px bg-blue-200"/><p className="whitespace-nowrap text-sm font-semibold uppercase tracking-[0.32em] text-[#405b82]">Arise &amp; Shine</p></div>
+        <ThemeToggle />
       </div>
     </header>
 

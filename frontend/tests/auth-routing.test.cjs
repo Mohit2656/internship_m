@@ -24,6 +24,7 @@ for (const [role, destination] of [["STUDENT", "/student/dashboard"], ["MENTOR",
     const { default: Page } = load("app/login/page.tsx", {
       react: { Suspense: React.Suspense, useEffect() {}, useState(initial) { const index = cursor++; return [index in slots ? slots[index] : initial, value => { slots[index] = value; }]; } },
       "next/link": { default: () => null }, "next/image": { default: () => null },
+      "@/components/ThemeToggle": { ThemeToggle: () => null },
       "next/navigation": { usePathname: () => "/login", useSearchParams: () => ({ get: () => role }), useRouter: () => ({ replace: url => redirects.push(url) }) },
       "@/lib/auth": { useAuth: () => ({ user: null, loading: false, refresh: async () => null }) },
       "@/lib/api": { api: { post: async (url, body) => { calls.push([url, body]); return { data: { role, mustChangePassword: false } }; } } }
