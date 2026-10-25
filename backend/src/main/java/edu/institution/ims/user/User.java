@@ -35,6 +35,9 @@ public class User {
     public String getPasswordHash() { return passwordHash; }
     public Role getRole() { return role; }
     public boolean isActive() { return active; }
+    public void deactivate() {
+        if (active) { this.active = false; this.tokenVersion++; }
+    }
     public boolean isMustChangePassword() { return mustChangePassword; }
     public void requirePasswordChange() { this.mustChangePassword = true; }
     public long getTokenVersion() { return tokenVersion; }

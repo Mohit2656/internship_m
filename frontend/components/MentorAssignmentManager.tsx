@@ -57,7 +57,7 @@ export function MentorAssignmentManager({ mentor, onClose, onCountChanged }: Pro
   }
 
   async function assignSelected() {
-    if (selected.length === 0) return;
+    if (!mentor.active || selected.length === 0) return;
     setSaving(true); setError(""); setSuccess("");
     try {
       const { data } = await api.post<MentorAssignmentWorkspace>(`/admin/mentors/${mentor.userId}/students`, { studentUserIds: selected });
@@ -84,6 +84,7 @@ export function MentorAssignmentManager({ mentor, onClose, onCountChanged }: Pro
         <div><p className="text-sm font-semibold text-blue-700">Student assignment</p><h2 className="mt-1 text-2xl font-bold">{mentor.name}</h2><p className="mt-1 text-sm text-slate-600">{mentor.department} · {mentor.designation}</p></div>
         <button data-button-variant="outline" type="button" onClick={onClose} className="text-sm">Close</button>
       </div>
+      {!mentor.active && <p className="mt-5 rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-800">This mentor is deactivated and cannot receive new student assignments. Current assignments are retained. Remove them here or explicitly reassign students through an active mentor.</p>}
       {loading ? <p className="mt-6 text-sm text-slate-500">Loading assignments…</p> : workspace && (
         <>
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -100,9 +101,9 @@ export function MentorAssignmentManager({ mentor, onClose, onCountChanged }: Pro
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <h3 className="font-bold">Available for assignment</h3>
-              <p className="mt-1 text-xs text-slate-500">Students assigned elsewhere may be selected to reassign them transactionally.</p>
+              {mentor.active ? <><p className="mt-1 text-xs text-slate-500">Students assigned elsewhere may be selected to reassign them transactionally.</p>
               {workspace.availableStudents.length === 0 ? <p className="mt-4 text-sm text-slate-500">No other students are available.</p> : <ul className="mt-4 max-h-96 divide-y divide-slate-100 overflow-y-auto pr-1">{workspace.availableStudents.map(student => <li key={student.userId} className="py-4 first:pt-0 last:pb-0"><label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={selected.includes(student.userId)} onChange={() => toggle(student.userId)} className="mt-1 h-4 w-4" /><span><span className="font-semibold">{identity(student)}</span><StudentFacts student={student} />{student.currentMentorName && <span className="mt-1 block text-xs font-medium text-amber-700">Currently assigned to {student.currentMentorName}</span>}</span></label></li>)}</ul>}
-              <button type="button" disabled={saving || selected.length === 0} onClick={() => void assignSelected()} className="mt-5 w-full">{saving ? "Saving…" : `Assign Selected (${selected.length})`}</button>
+              <button type="button" disabled={saving || selected.length === 0} onClick={() => void assignSelected()} className="mt-5 w-full">{saving ? "Saving…" : `Assign Selected (${selected.length})`}</button></> : <p className="mt-4 text-sm text-slate-500">New assignments are unavailable for a deactivated mentor.</p>}
             </div>
           </div>
         </>

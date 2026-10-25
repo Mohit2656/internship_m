@@ -52,6 +52,12 @@ public class MentorAssignmentService {
 
     @Transactional
     public MentorAssignmentWorkspaceResponse assign(Long mentorUserId, AssignStudentsRequest request, UserPrincipal principal) {
+        User account = users.findByIdForPasswordUpdate(mentorUserId)
+                .filter(user -> user.getRole() == Role.MENTOR)
+                .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "MENTOR_NOT_FOUND", "Mentor was not found"));
+        if (!account.isActive()) {
+            throw error(HttpStatus.CONFLICT, "MENTOR_ACCOUNT_INACTIVE", "Students cannot be assigned to a deactivated mentor account");
+        }
         MentorProfile mentorProfile = requireMentor(mentorUserId);
         User admin = requireRole(principal.id(), Role.ADMIN, "Assignment owner is not an ADMIN");
         List<Long> requestedIds = request.studentUserIds();
@@ -132,7 +138,7 @@ public class MentorAssignmentService {
                 profile == null ? account == null ? null : account.getUid() : profile.getUid(),
                 profile == null ? null : profile.getBranch().name(),
                 profile == null ? null : profile.getBranch().getLabel(),
-                profile == null ? account == null ? null : account.getSemester() : profile.getSemester(),
+                profile == null ? account == null ? null : account.getSemester() : Integer.valueOf(profile.getSemester()),
                 profile == null ? ProfileStatus.INCOMPLETE : ProfileStatus.COMPLETE,
                 mentorId, mentorId == null ? null : mentorNames.get(mentorId));
     }

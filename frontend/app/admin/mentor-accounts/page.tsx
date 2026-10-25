@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
+import { DeleteMentorAccountButton } from "@/components/DeleteMentorAccountButton";
 import { MentorAssignmentManager } from "@/components/MentorAssignmentManager";
 import { ResetPasswordButton } from "@/components/ResetPasswordButton";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -52,6 +53,11 @@ function MentorAccountsContent() {
     setSelectedMentor(current => current?.userId === mentorUserId ? { ...current, assignedStudentCount: count } : current);
   }
 
+  function updateAccount(updated: MentorAccount) {
+    setMentors(current => current.map(mentor => mentor.userId === updated.userId ? updated : mentor));
+    setSelectedMentor(current => current?.userId === updated.userId ? updated : current);
+  }
+
   const fields: Array<[keyof MentorAccountInput, string, string]> = [
     ["name", "Name", "text"], ["employeeId", "Employee ID", "text"], ["instituteEmail", "Institute Email", "email"],
     ["department", "Department", "text"], ["designation", "Designation", "text"], ["phone", "Phone", "tel"]
@@ -76,7 +82,16 @@ function MentorAccountsContent() {
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="text-xl font-bold">Existing Mentors</h2>
-          {loading ? <p className="mt-6 text-slate-500">Loading mentors…</p> : mentors.length === 0 ? <p className="mt-6 text-slate-500">No mentor accounts have been created.</p> : <div className="mt-5 space-y-3">{mentors.map(mentor => <article key={mentor.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-semibold text-slate-900">{mentor.name}</p><p className="mt-1 text-xs text-slate-500">{mentor.department} · {mentor.designation}</p></div><div className="text-right"><p className="text-xs uppercase tracking-wide text-slate-500">Assigned students</p><p className="text-xl font-bold">{mentor.assignedStudentCount}</p></div></div><button type="button" onClick={() => setSelectedMentor(mentor)} className="mt-4 text-sm">Manage Students</button> <ResetPasswordButton userId={mentor.userId} name={mentor.name} email={mentor.instituteEmail} disabled={!mentor.active} /></article>)}</div>}
+          {loading ? <p className="mt-6 text-slate-500">Loading mentors…</p> : mentors.length === 0 ? <p className="mt-6 text-slate-500">No mentor accounts have been created.</p> : <div className="mt-5 space-y-3">{mentors.map(mentor => <article key={mentor.id} className="rounded-xl border border-slate-200 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-slate-900">{mentor.name}</p><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{mentor.active ? "Active" : "Deactivated"}</span></div><p className="mt-1 break-words text-xs text-slate-500">{mentor.instituteEmail}</p><p className="mt-1 text-xs text-slate-500">{mentor.department} · {mentor.designation}</p></div>
+              <div className="text-right"><p className="text-xs uppercase tracking-wide text-slate-500">Assigned students</p><p className="text-xl font-bold">{mentor.assignedStudentCount}</p></div>
+            </div>
+            {!mentor.active && <p className="mt-3 text-sm text-slate-600">Login disabled. Assignments and historical records are retained; review current assignments below.</p>}
+            <button type="button" onClick={() => setSelectedMentor(mentor)} className="mt-4 text-sm">Manage Students</button>{" "}
+            {mentor.active && <ResetPasswordButton userId={mentor.userId} name={mentor.name} email={mentor.instituteEmail} />}{" "}
+            <DeleteMentorAccountButton mentor={mentor} onDeactivated={updateAccount} />
+          </article>)}</div>}
         </section>
       </div>
       {selectedMentor && <MentorAssignmentManager mentor={selectedMentor} onClose={() => setSelectedMentor(null)} onCountChanged={updateCount} />}

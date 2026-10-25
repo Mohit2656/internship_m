@@ -3,6 +3,8 @@ package edu.institution.ims.mentor;
 import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.user.*;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +38,30 @@ public class MentorAccountService {
 
     @Transactional(readOnly = true)
     public List<MentorAccountResponse> list() { return mentors.findAllByOrderByNameAsc().stream().map(this::response).toList(); }
+
+    @Transactional
+    public MentorAccountResponse deactivate(Long userId, UserPrincipal principal) {
+        if (principal == null || !principal.isEnabled() || !Role.ADMIN.name().equals(principal.role())) {
+            throw new AccessDeniedException("Only an active IIIC Coordinator may delete mentor accounts");
+        }
+        users.findById(principal.id())
+                .filter(user -> user.isActive() && user.getRole() == Role.ADMIN && user.getTokenVersion() == principal.tokenVersion())
+                .orElseThrow(() -> new AccessDeniedException("Only an active IIIC Coordinator may delete mentor accounts"));
+        if (principal.id().equals(userId)) {
+            throw new MentorAssignmentException(HttpStatus.BAD_REQUEST, "PROTECTED_ACCOUNT", "Your own account cannot be deleted");
+        }
+        User target = users.findByIdForPasswordUpdate(userId)
+                .orElseThrow(() -> new MentorAssignmentException(HttpStatus.NOT_FOUND, "MENTOR_NOT_FOUND", "Mentor account was not found"));
+        if (target.getRole() != Role.MENTOR) {
+            throw new MentorAssignmentException(HttpStatus.BAD_REQUEST, "INVALID_MENTOR_ACCOUNT", "Only faculty mentor accounts may be deleted; administrative and student accounts are protected");
+        }
+        MentorProfile profile = mentors.findByUserId(userId)
+                .orElseThrow(() -> new MentorAssignmentException(HttpStatus.NOT_FOUND, "MENTOR_NOT_FOUND", "Mentor profile was not found"));
+        // Retain identity and every assignment/review/audit reference, including accounts without current students.
+        target.deactivate();
+        users.saveAndFlush(target);
+        return response(profile);
+    }
 
     @Transactional(readOnly = true)
     public MentorAccountResponse own(UserPrincipal principal) {
