@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 @Service
 public class MentorAccountService {
@@ -23,7 +24,8 @@ public class MentorAccountService {
     @Transactional
     public MentorAccountResponse create(MentorAccountRequest request) {
         String email = email(request.instituteEmail()); String employeeId = employeeId(request.employeeId());
-        if (users.existsByEmailIgnoreCase(email)) throw conflict("DUPLICATE_EMAIL", "An account with this email already exists");
+        Optional<User> existing = users.findByEmailForPasswordUpdate(email);
+        if (existing.isPresent()) return recreate(request, existing.get(), employeeId);
         if (mentors.existsByEmployeeIdIgnoreCase(employeeId)) throw conflict("DUPLICATE_EMPLOYEE_ID", "Employee ID is already assigned to another mentor");
         try {
             User user = users.saveAndFlush(new User(email, encoder.encode(employeeId), Role.MENTOR, true));
@@ -36,8 +38,27 @@ public class MentorAccountService {
         }
     }
 
+    private MentorAccountResponse recreate(MentorAccountRequest request, User user, String employeeId) {
+        if (user.getRole() != Role.MENTOR || user.isActive()) {
+            throw conflict("DUPLICATE_EMAIL", "An account with this email already exists");
+        }
+        MentorProfile profile = mentors.findByUserId(user.getId()).orElseThrow(() ->
+                conflict("MENTOR_IDENTITY_CONFLICT", "The retained mentor profile could not be verified"));
+        if (!profile.getEmployeeId().equalsIgnoreCase(employeeId) || !profile.getName().equals(clean(request.name()))) {
+            throw conflict("MENTOR_IDENTITY_CONFLICT", "To create this mentor account again, use the same name, institute email and Employee ID as the retained account");
+        }
+        // Reuse the retained identity so student assignments and historical reviewer/actor links never change.
+        user.recreateMentorAccount(encoder.encode(employeeId));
+        profile.updateAccountDetails(clean(request.department()), clean(request.designation()), clean(request.phone()));
+        users.saveAndFlush(user);
+        mentors.saveAndFlush(profile);
+        return response(profile);
+    }
+
     @Transactional(readOnly = true)
-    public List<MentorAccountResponse> list() { return mentors.findAllByOrderByNameAsc().stream().map(this::response).toList(); }
+    public List<MentorAccountResponse> list() {
+        return mentors.findAllByOrderByNameAsc().stream().filter(profile -> profile.getUser().isActive()).map(this::response).toList();
+    }
 
     @Transactional
     public MentorAccountResponse deactivate(Long userId, UserPrincipal principal) {

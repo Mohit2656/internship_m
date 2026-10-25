@@ -32,6 +32,9 @@ public class MentorProfile {
     }
     @PrePersist void createTimestamps() { var now = Instant.now(); createdAt = now; updatedAt = now; }
     @PreUpdate void updateTimestamp() { updatedAt = Instant.now(); }
+    public void updateAccountDetails(String department, String designation, String phone) {
+        this.department = department; this.designation = designation; this.phone = phone;
+    }
     public Long getId() { return id; }
     public User getUser() { return user; }
     public String getName() { return name; }

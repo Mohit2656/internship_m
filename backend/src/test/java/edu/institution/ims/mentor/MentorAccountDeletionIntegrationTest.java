@@ -81,12 +81,26 @@ class MentorAccountDeletionIntegrationTest {
                     .andExpect(jsonPath("$.code").value("INVALID_MENTOR_ACCOUNT"));
             assertThat(users.findById(protectedUser.getId()).orElseThrow().isActive()).isTrue();
         }
-        User withoutProfile = user("unprofiled-mentor", Role.MENTOR);
-        mvc.perform(delete(endpoint(withoutProfile)).cookie(adminSession)).andExpect(status().isNotFound());
-        mvc.perform(delete("/api/v1/admin/mentor-accounts/9223372036854775807").cookie(adminSession)).andExpect(status().isNotFound());
         assertThat(users.findById(mentor.getId()).orElseThrow().isActive()).isTrue();
         assertThat(users.findById(admin.getId()).orElseThrow().isActive()).isTrue();
+    }
+
+    @Test void missingAccountsAndProfilesAreDistinctFromAnUnmappedDeletionEndpoint() throws Exception {
+        Cookie adminSession = session(admin);
+        User withoutProfile = user("unprofiled-mentor", Role.MENTOR);
+        Map<String, List<Map<String, Object>>> before = retainedRecords();
+        mvc.perform(delete("/api/v1/admin/mentor-accounts/9223372036854775807").cookie(adminSession))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("MENTOR_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Mentor account was not found"));
+        mvc.perform(delete(endpoint(withoutProfile)).cookie(adminSession))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("MENTOR_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Mentor profile was not found"));
+        mvc.perform(delete("/api/v1/admin/mentor-accounts/unmapped/17").cookie(adminSession))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Resource was not found"));
         assertThat(users.findById(withoutProfile.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(users.findById(mentor.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(retainedRecords()).isEqualTo(before);
     }
 
     @Test void serviceBoundaryRejectsMissingForgedAndInactiveCoordinators() {
@@ -102,21 +116,34 @@ class MentorAccountDeletionIntegrationTest {
     }
 
     @Test void deletingUnusedMentorDeactivatesIdempotentlyAndRevokesLoginAndExistingSession() throws Exception {
+        MentorProfile profile = mentors.findByUserId(mentor.getId()).orElseThrow();
+        assertThat(profile.getId()).isNotEqualTo(mentor.getId());
+        User otherMentor = user("other-mentor", Role.MENTOR);
+        MentorProfile otherProfile = mentors.saveAndFlush(new MentorProfile(otherMentor, "Dr. Zed", "FAC" + otherMentor.getId(),
+                "Computer Engineering", "Professor", "9876543210"));
         Cookie mentorSession = session(mentor);
         Cookie adminSession = session(admin);
+        mvc.perform(get("/api/v1/admin/mentor-accounts").cookie(adminSession)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(profile.getId())).andExpect(jsonPath("$[0].userId").value(mentor.getId()));
         mvc.perform(delete(endpoint(mentor)).cookie(adminSession)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(profile.getId()))
                 .andExpect(jsonPath("$.userId").value(mentor.getId())).andExpect(jsonPath("$.active").value(false))
                 .andExpect(jsonPath("$.assignedStudentCount").value(0));
         mvc.perform(delete(endpoint(mentor)).cookie(adminSession)).andExpect(status().isOk()).andExpect(jsonPath("$.active").value(false));
         assertThat(users.findById(mentor.getId()).orElseThrow().getTokenVersion()).isEqualTo(1);
-        assertThat(mentors.findByUserId(mentor.getId())).isPresent();
+        assertThat(mentors.findByUserId(mentor.getId()).orElseThrow().getId()).isEqualTo(profile.getId());
+        assertThat(users.findById(otherMentor.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(mentors.findByUserId(otherMentor.getId()).orElseThrow().getId()).isEqualTo(otherProfile.getId());
+        assertThat(users.findById(student.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(users.findById(admin.getId()).orElseThrow().isActive()).isTrue();
         mvc.perform(get("/api/v1/admin/mentor-accounts").cookie(adminSession)).andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].userId").value(mentor.getId())).andExpect(jsonPath("$[0].active").value(false));
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].userId").value(otherMentor.getId())).andExpect(jsonPath("$[0].active").value(true));
         mvc.perform(get("/api/v1/mentor/profile").cookie(mentorSession)).andExpect(status().isUnauthorized());
         login(mentor).andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCOUNT_INACTIVE"));
     }
 
-    @Test void deletingAssignedMentorPreservesStudentsAttendanceApprovedReportsAndAuditAttribution() throws Exception {
+    @Test void deletingAndRecreatingAssignedMentorPreservesStudentsAttendanceApprovedReportsAndAuditAttribution() throws Exception {
         assignments.saveAndFlush(new MentorStudentAssignment(mentor, student, admin, NOW));
         InternshipOnboarding onboarding = onboardings.saveAndFlush(new InternshipOnboarding(student));
         InternshipDetails internship = new InternshipDetails(onboarding);
@@ -144,6 +171,84 @@ class MentorAccountDeletionIntegrationTest {
         assertThat(jdbc.queryForObject("select actor_id from monthly_progress_review_events where report_id=?", Long.class, report.getId())).isEqualTo(mentor.getId());
         mvc.perform(get("/api/v1/admin/mentors/{id}/students", mentor.getId()).cookie(adminSession)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.mentor.active").value(false)).andExpect(jsonPath("$.assignedStudents[0].userId").value(student.getId()));
+        mvc.perform(post("/api/v1/admin/mentor-accounts").cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(request(mentor.getEmail(), "FAC" + mentor.getId(), "Dr. Asha Mehta"))))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.userId").value(mentor.getId()))
+                .andExpect(jsonPath("$.active").value(true)).andExpect(jsonPath("$.assignedStudentCount").value(1));
+        assertThat(retainedRecords()).isEqualTo(before);
+    }
+
+    @Test void deletedMentorRequiresCompleteCreationFormAndReceivesFreshTemporaryCredentials() throws Exception {
+        MentorProfile profile = mentors.findByUserId(mentor.getId()).orElseThrow();
+        long userCount = users.count();
+        long profileCount = mentors.count();
+        Cookie oldSession = session(mentor);
+        Cookie adminSession = session(admin);
+        mvc.perform(delete(endpoint(mentor)).cookie(adminSession)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/admin/mentor-accounts").cookie(adminSession)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(post("/api/v1/admin/mentor-accounts").cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("instituteEmail", mentor.getEmail(), "employeeId", profile.getEmployeeId()))))
+                .andExpect(status().isBadRequest());
+        assertThat(users.findById(mentor.getId()).orElseThrow().isActive()).isFalse();
+
+        MentorAccountRequest request = new MentorAccountRequest(profile.getName(), " fac" + mentor.getId() + " ",
+                " " + mentor.getEmail().toUpperCase() + " ", "Electronics", "Associate Professor", "9123456780");
+        mvc.perform(post("/api/v1/admin/mentor-accounts").cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(request)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(profile.getId()))
+                .andExpect(jsonPath("$.userId").value(mentor.getId())).andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.mustChangePassword").value(true)).andExpect(jsonPath("$.department").value("Electronics"))
+                .andExpect(jsonPath("$.designation").value("Associate Professor")).andExpect(jsonPath("$.phone").value("9123456780"));
+        assertThat(users.count()).isEqualTo(userCount);
+        assertThat(mentors.count()).isEqualTo(profileCount);
+        User recreated = users.findById(mentor.getId()).orElseThrow();
+        assertThat(recreated.getTokenVersion()).isEqualTo(2);
+        assertThat(encoder.matches(profile.getEmployeeId(), recreated.getPasswordHash())).isTrue();
+        mvc.perform(get("/api/v1/auth/me").cookie(oldSession)).andExpect(status().isUnauthorized());
+        login(mentor).andExpect(status().isUnauthorized());
+        Cookie temporarySession = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(new LoginRequest(mentor.getEmail(), profile.getEmployeeId()))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.mustChangePassword").value(true))
+                .andReturn().getResponse().getCookie("ims_auth");
+        mvc.perform(get("/api/v1/mentor/profile").cookie(temporarySession)).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PASSWORD_CHANGE_REQUIRED"));
+        mvc.perform(get("/api/v1/admin/mentor-accounts").cookie(adminSession)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].userId").value(mentor.getId()));
+    }
+
+    @Test void recreationRejectsMismatchedIdentityAndProtectedOrUnprofiledAccounts() throws Exception {
+        Cookie adminSession = session(admin);
+        mvc.perform(delete(endpoint(mentor)).cookie(adminSession)).andExpect(status().isOk());
+        User unprofiled = user("unprofiled", Role.MENTOR);
+        unprofiled.deactivate();
+        users.saveAndFlush(unprofiled);
+        User inactiveAdmin = user("inactive-admin", Role.ADMIN);
+        inactiveAdmin.deactivate();
+        users.saveAndFlush(inactiveAdmin);
+        student.deactivate();
+        users.saveAndFlush(student);
+        Map<String, List<Map<String, Object>>> before = retainedRecords();
+        for (MentorAccountRequest mismatch : List.of(
+                request(mentor.getEmail(), "OTHER" + mentor.getId(), "Dr. Asha Mehta"),
+                request(mentor.getEmail(), "FAC" + mentor.getId(), "Different Person"),
+                request(unprofiled.getEmail(), "NEW123", "Dr. Asha Mehta"))) {
+            mvc.perform(post("/api/v1/admin/mentor-accounts").cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(mismatch))).andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("MENTOR_IDENTITY_CONFLICT"));
+        }
+        mvc.perform(post("/api/v1/admin/mentor-accounts").cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(request("different@example.edu", "FAC" + mentor.getId(), "Dr. Asha Mehta"))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DUPLICATE_EMPLOYEE_ID"));
+        for (User protectedUser : List.of(student, inactiveAdmin, admin)) {
+            mvc.perform(post("/api/v1/admin/mentor-accounts").cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(request(protectedUser.getEmail(), "OTHER123", "Dr. Asha Mehta"))))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DUPLICATE_EMAIL"));
+        }
+        assertThat(users.findById(mentor.getId()).orElseThrow().isActive()).isFalse();
+        assertThat(users.findById(unprofiled.getId()).orElseThrow().isActive()).isFalse();
+        assertThat(users.findById(inactiveAdmin.getId()).orElseThrow().isActive()).isFalse();
+        assertThat(retainedRecords()).isEqualTo(before);
     }
 
     @Test void deactivatedMentorCannotReceiveAssignmentsAndAdminCanExplicitlyRemoveOrReassignStudents() throws Exception {
@@ -167,11 +272,16 @@ class MentorAccountDeletionIntegrationTest {
 
     private Map<String, List<Map<String, Object>>> retainedRecords() {
         Map<String, List<Map<String, Object>>> rows = new LinkedHashMap<>();
-        for (String table : List.of("student_accounts", "mentor_profiles", "mentor_student_assignments", "attendance_records",
-                "monthly_progress_reports", "monthly_progress_review_events", "mentor_record_deletion_audit")) {
+        for (String table : List.of("student_accounts", "student_profiles", "internship_onboarding", "internship_details",
+                "mentor_profiles", "mentor_student_assignments", "attendance_records", "monthly_progress_reports",
+                "monthly_progress_review_events", "mentor_record_deletion_audit")) {
             rows.put(table, jdbc.queryForList("select * from " + table + " order by id"));
         }
+        rows.put("student_users", jdbc.queryForList("select * from users where role='STUDENT' order by id"));
         return rows;
+    }
+    private MentorAccountRequest request(String email, String employeeId, String name) {
+        return new MentorAccountRequest(name, employeeId, email, "Computer Engineering", "Professor", "9876543210");
     }
     private User user(String name, Role role) {
         return users.saveAndFlush(new User(name + "." + UUID.randomUUID() + "@example.edu", encoder.encode(PASSWORD), role, true));

@@ -3,7 +3,9 @@
 The existing Mentor Accounts page offers **Delete** for active faculty mentors.
 The confirmation identifies the mentor by name/email and explains that deletion
 deactivates login while retaining the account, current student assignments, and
-historical records. Completed operations keep the row visible as **Deactivated**.
+historical records. Completed operations immediately remove the row from the
+mentor list, including after a page refresh. The list API returns active mentors
+only; there is no deactivated-account view or Restore button.
 
 ## API and authorization
 
@@ -26,24 +28,42 @@ active and historical assignments, attendance, monthly reports, evaluations,
 approval/review events, workplace decisions, and audit attribution. No cascading
 delete, record reassignment, or file removal occurs.
 
-Administrators can use **Manage Students** on a deactivated mentor to inspect or
-remove current assignments. To transfer students, explicitly assign them from
-an active mentor's existing assignment manager. New assignments to deactivated
-mentors are rejected in the UI and backend. Assignment creation and deactivation
-lock the same mentor row so a competing request cannot add students after the
-account has been deactivated. Existing assignment-history behavior is preserved.
+Student assignments stay unchanged when the mentor is deleted or created again.
+Explicit reassignment through an active mentor's existing assignment manager is
+still available when an administrator chooses it. New assignments to deactivated
+mentors remain prohibited. Assignment creation and deactivation lock the same
+mentor row so competing requests cannot add students to a deactivated account.
 
-No reactivation endpoint or retention/purge policy is introduced.
+## Creating a deleted account again
+
+The administrator must complete the normal **Create Mentor** form again. For a
+retained inactive mentor, the original name, institute email, and Employee ID
+must match. Active accounts, protected roles, missing profiles, and mismatched
+identities are rejected instead of being overwritten.
+
+After a valid form submission, the server reuses the retained user/profile IDs
+and preserves the original name/email/Employee ID so historical attribution
+stays unchanged. Department, designation, and phone use the newly submitted
+values. The temporary password is reset to the uppercase Employee ID, password
+change is required, and token version is incremented again. Old sessions remain
+invalid. No student account, attendance, report, review, audit, or assignment row
+is changed during this operation.
+
+There is no separate reactivation endpoint, physical deletion, schema migration,
+or new retention/purge policy.
 
 ## Focused checks performed
 
-- `MentorAccountDeletionIntegrationTest`: 5 passed against isolated H2 data.
+- `MentorAccountDeletionIntegrationTest`: 8 passed against isolated H2 data.
   Covers anonymous/student/mentor/HOD rejection, active administrator checks,
   protected targets, idempotence, revoked login/sessions, unchanged historical
-  rows, and explicit assignment removal/reassignment.
-- `node --test tests/mentor-account-delete.test.cjs`: 7 passed.
+  rows, explicit assignment removal/reassignment, active-only listing, and full-form
+  recreation with reset credentials and unchanged student/history rows.
+- `MentorAccountIntegrationTest`: 3 passed for existing creation, login, duplicate,
+  and role-boundary behavior.
+- `node --test tests/mentor-account-delete.test.cjs`: 8 passed.
   Covers confirmation/cancel, pending guards, safe errors, retained account state,
-  and inactive mentor assignment controls.
+  immediate list removal, full-form recreation, and inactive mentor assignment controls.
 - Frontend typecheck, local Mentor Accounts route compilation, and diff check
   passed. No full test suite or live-account deletion was performed.
 

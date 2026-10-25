@@ -82,6 +82,16 @@ test("authorization errors retain confirmation for retry without exposing backen
   assert.equal(h.button("Confirm deletion").props.disabled, false); assert.equal(nodes(h.render(), "dialog").length, 1);
 });
 
+test("missing route is distinguished from a genuinely missing mentor account", async () => {
+  for (const [code, expected] of [["NOT_FOUND", /Mentor deletion is unavailable on the server/], ["MENTOR_NOT_FOUND", /mentor account or its profile could not be found/]]) {
+    let changed = 0;
+    const h = deletionHarness(async () => { throw { response: { status: 404, data: { code, message: "private backend detail" } } }; }, () => { changed++; });
+    h.button("Delete").props.onClick(); h.button("Confirm deletion").props.onClick(); await flush();
+    assert.match(h.html(), expected); assert.doesNotMatch(h.html(), /private backend detail/);
+    assert.equal(changed, 0); assert.equal(nodes(h.render(), "dialog").length, 1);
+  }
+});
+
 test("network ambiguity advises refresh and deactivated accounts expose no delete action", async () => {
   const h = deletionHarness(async () => { throw Error("private network data"); });
   h.button("Delete").props.onClick(); h.button("Confirm deletion").props.onClick(); await flush();
@@ -96,10 +106,16 @@ test("late deletion response after navigation does not update an unmounted page"
   complete({ data: { ...mentor, active: false } }); await flush(); assert.equal(changed, 0);
 });
 
-test("account page keeps deactivated mentor, assignments, and explicit management while hiding delete/reset controls", async () => {
+test("account page hides deleted mentors and recreates them through the full create form", async () => {
   const h = hooksHarness(); const DeleteButton = () => null; const AssignmentManager = () => null; const ResetButton = () => null;
+  const archived = { ...mentor, id: 8, userId: 43, name: "Previously Deleted Mentor", active: false };
+  const submitted = { name: mentor.name, employeeId: mentor.employeeId, instituteEmail: mentor.instituteEmail, department: mentor.department, designation: mentor.designation, phone: mentor.phone };
+  let creations = 0;
   const { MentorAccountsContent } = load("app/admin/mentor-accounts/page.tsx", {
-    react: h.hooks, "@/lib/api": { api: { get: async () => ({ data: [mentor] }) } },
+    react: h.hooks, "@/lib/api": { api: {
+      get: async () => ({ data: [mentor, archived] }),
+      post: async (url, body) => { creations++; assert.equal(url, "/admin/mentor-accounts"); assert.deepEqual(body, submitted); return { data: { ...mentor, active: true, mustChangePassword: true } }; },
+    } },
     "@/components/DeleteMentorAccountButton": { DeleteMentorAccountButton: DeleteButton },
     "@/components/MentorAssignmentManager": { MentorAssignmentManager: AssignmentManager },
     "@/components/ResetPasswordButton": { ResetPasswordButton: ResetButton },
@@ -107,15 +123,24 @@ test("account page keeps deactivated mentor, assignments, and explicit managemen
   }, "\nexport { MentorAccountsContent };\n");
   const render = () => h.render(MentorAccountsContent);
   render(); await flush();
+  assert.equal(nodes(render(), "article").length, 1);
+  assert.doesNotMatch(renderToStaticMarkup(render()), /Previously Deleted Mentor/);
   nodes(render(), "button").find(node => node.props.children === "Manage Students").props.onClick();
   assert.equal(nodes(render(), AssignmentManager)[0].props.mentor.active, true);
   nodes(render(), DeleteButton)[0].props.onDeactivated({ ...mentor, active: false });
   const tree = render(); const html = renderToStaticMarkup(tree);
-  assert.match(html, /Faculty Example/); assert.match(html, /faculty@example.edu/); assert.match(html, /Deactivated/); assert.match(html, /Login disabled/);
-  assert.equal(nodes(tree, ResetButton).length, 0); assert.equal(nodes(tree, DeleteButton)[0].props.mentor.active, false);
-  assert.equal(nodes(tree, AssignmentManager)[0].props.mentor.active, false);
-  assert.equal(nodes(tree, AssignmentManager)[0].props.mentor.assignedStudentCount, 2);
-  assert.ok(nodes(tree, "button").some(node => node.props.children === "Manage Students"));
+  assert.match(html, /No active mentor accounts/); assert.match(html, /account was deleted from the active list/);
+  assert.equal(nodes(tree, "article").length, 0); assert.equal(nodes(tree, DeleteButton).length, 0);
+  assert.equal(nodes(tree, ResetButton).length, 0); assert.equal(nodes(tree, AssignmentManager).length, 0);
+  assert.equal(nodes(tree, "select").length, 0); assert.equal(creations, 0);
+  Object.values(submitted).forEach((value, index) => nodes(render(), "input")[index].props.onChange({ target: { value } }));
+  await nodes(render(), "form")[0].props.onSubmit({ preventDefault() {} });
+  const recreated = render();
+  assert.equal(creations, 1); assert.equal(nodes(recreated, "article").length, 1);
+  assert.equal(nodes(recreated, DeleteButton)[0].props.mentor.userId, mentor.userId);
+  assert.equal(nodes(recreated, DeleteButton)[0].props.mentor.assignedStudentCount, 2);
+  assert.match(renderToStaticMarkup(recreated), /Mentor account created/);
+  assert.doesNotMatch(renderToStaticMarkup(recreated), /Previously Deleted Mentor|account was deleted from the active list/);
 });
 
 test("inactive mentor assignment workspace preserves removal but offers no new assignment", async () => {

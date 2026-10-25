@@ -7,10 +7,13 @@ import { MentorAccount } from "@/lib/mentor-accounts";
 type Props = { mentor: MentorAccount; onDeactivated: (mentor: MentorAccount) => void };
 
 function deletionError(cause: unknown) {
-  const status = (cause as { response?: { status?: number } })?.response?.status;
+  const response = (cause as { response?: { status?: number; data?: { code?: string } } })?.response;
+  const status = response?.status;
   if (status === 401) return "Your session has expired. Sign in again.";
   if (status === 403) return "You do not have permission to delete mentor accounts.";
-  if (status === 404) return "This mentor account no longer exists. Refresh the list.";
+  if (status === 404) return response?.data?.code === "MENTOR_NOT_FOUND"
+    ? "This mentor account or its profile could not be found. Refresh the list."
+    : "Mentor deletion is unavailable on the server. Please contact your system administrator.";
   if (status === 409) return "This account cannot be deleted. Refresh the list before trying again.";
   return "Unable to confirm deletion. Refresh the list before trying again; the account may already be deactivated.";
 }
@@ -66,8 +69,8 @@ export function DeleteMentorAccountButton({ mentor, onDeactivated }: Props) {
       <p className="mt-3 break-words font-semibold">{mentor.name}</p>
       <p className="break-words text-sm text-slate-600">{mentor.instituteEmail}</p>
       <div id={descriptionId} className="mt-4 space-y-3 text-sm text-slate-600">
-        <p>Deleting this account will deactivate it and prevent future login. The account will remain listed as Deactivated.</p>
-        <p>This may affect student assignments and access to report reviews. {mentor.assignedStudentCount} student{mentor.assignedStudentCount === 1 ? " is" : "s are"} currently assigned. These assignments will remain in place; use Manage Students to review or change them explicitly.</p>
+        <p>Deleting this account will deactivate it, prevent future login, and remove it from the mentor list. Creating it again requires completing the Create Mentor form.</p>
+        <p>The mentor will no longer be able to review reports. {mentor.assignedStudentCount} student{mentor.assignedStudentCount === 1 ? " is" : "s are"} currently assigned. These assignments will remain in place and student data will stay unchanged.</p>
         <p>Student accounts, attendance, reports, approval history, audit records, and historical mentor attribution will be preserved.</p>
       </div>
       {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}

@@ -42,6 +42,11 @@ public class User {
     public void requirePasswordChange() { this.mustChangePassword = true; }
     public long getTokenVersion() { return tokenVersion; }
     public void resetPassword(String passwordHash) { this.passwordHash = passwordHash; this.mustChangePassword = true; this.tokenVersion++; }
+    public void recreateMentorAccount(String passwordHash) {
+        if (role != Role.MENTOR || active) throw new IllegalStateException("Only inactive mentor accounts may be created again");
+        resetPassword(passwordHash);
+        this.active = true;
+    }
     public void changePassword(String passwordHash) { this.passwordHash = passwordHash; this.mustChangePassword = false; this.tokenVersion++; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
