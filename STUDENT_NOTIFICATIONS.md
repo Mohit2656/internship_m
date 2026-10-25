@@ -13,6 +13,27 @@ commits. The event key includes the report revision, so a subsequent rejection
 after correction has its own notification. Report links target the relevant
 report in the existing monthly progress page. Existing review history is retained.
 
+## New opportunity publication
+
+Publishing a valid draft now adds an `OPPORTUNITY_PUBLISHED` entry to the same
+persistent student inbox. It contains the opportunity title, company, a short
+description, the publication timestamp, and a link to its student detail page.
+The publication and all notification writes share one transaction, so a failed
+publication leaves no alerts. The existing database uniqueness constraint and a
+stable opportunity event key prevent duplicates on retries, edits, or restarts.
+
+Recipients follow the current feed visibility: active students can see published,
+unexpired opportunities. Branch, semester, and CGPA criteria remain matching
+information and do not change access permissions. Drafts, closed opportunities,
+and expired opportunities do not generate new-publication alerts. No additional
+table, migration, email service, or historical backfill is introduced.
+
+The inbox labels publication dates and includes a **View opportunity** action.
+The existing owner-scoped read controls, unread badge, and 30-second/focus refresh
+remain in use. The shared navbar is sticky across all three roles, with a compact
+mobile menu and reduced-motion-aware styling. Restart a running backend to load
+the new publication hook.
+
 ## Deadlines
 
 The backend scheduler runs 10 seconds after startup and every 15 minutes.
@@ -71,7 +92,7 @@ and configuration properties, V33, monthly review integration, student navigatio
 new notification page/menu/types, monthly report anchors, focused tests and this
 document.
 
-## Checks
+## Original notification checks
 
 - `NotificationIntegrationTest`: 4 passed.
 - Only `MonthlyProgressIntegrationTest#rejectionRequiresReasonAndResubmissionRetainsAllRevisionsAndEvidence`: 1 passed.
@@ -81,3 +102,17 @@ document.
 
 No full suite, PostgreSQL suite, application-database migration, commit, push or
 deployment was performed. Browser interaction was not exercised.
+
+## Publication and shared UI update checks
+
+- Focused notification UI tests: 6 passed.
+- Frontend typecheck: passed.
+- Role navigation, mobile menu controls, and sign-out render checks: passed.
+- Final code review and diff whitespace check: passed.
+- Backend Maven reached test compilation, then failed with a compiler error
+  referencing the cached `accessors-smart-2.5.2.jar`. The three targeted backend
+  test classes were not executed; production compilation completed.
+- Browser verification was unavailable after two browser-tool timeouts.
+
+No application-database changes, full test suite, commit, push, or deployment
+was performed for this update.

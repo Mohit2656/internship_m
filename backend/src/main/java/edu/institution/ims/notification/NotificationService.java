@@ -1,6 +1,8 @@
 package edu.institution.ims.notification;
 
 import edu.institution.ims.monthlyprogress.MonthlyProgressReport;
+import edu.institution.ims.opportunity.Opportunity;
+import edu.institution.ims.opportunity.OpportunityStatus;
 import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.user.User;
 import org.springframework.http.HttpStatus;
@@ -21,6 +23,24 @@ public class NotificationService {
             String mentorName, String actionUrl, Instant createdAt, Instant readAt) {}
     public record Inbox(List<Notification> content, int page, long totalElements, int totalPages, long unreadCount) {}
     public record Count(long unreadCount) {}
+
+    @Transactional
+    public void opportunityPublished(Opportunity opportunity) {
+        // Match the existing student feed's visibility: published, nonexpired opportunities.
+        if (opportunity.getStatus() != OpportunityStatus.PUBLISHED || opportunity.getPublishedAt() == null
+                || (opportunity.getApplicationDeadline() != null && opportunity.getApplicationDeadline().isBefore(LocalDate.now()))) return;
+        String description = opportunity.getDescription();
+        String summary = description == null ? "" : description.strip().replaceAll("\\s+", " ");
+        if (summary.length() > 240) summary = summary.substring(0, 237).stripTrailing() + "...";
+        String message = opportunity.getCompanyName() + (summary.isBlank() ? " has posted a new opportunity." : ": " + summary);
+        // Use the same persistent inbox and unique event key as existing notifications.
+        // The caller's publication transaction commits or rolls back all recipient rows together.
+        for (Long studentId : jdbc.queryForList("select id from users where role='STUDENT' and active=true", Long.class)) {
+            create(studentId, "opportunity-published:" + opportunity.getId(), "OPPORTUNITY_PUBLISHED",
+                    opportunity.getTitle(), message, null, null,
+                    "/student/opportunities/" + opportunity.getId(), opportunity.getPublishedAt());
+        }
+    }
 
     @Transactional
     public void reportRejected(MonthlyProgressReport report, User reviewer) {

@@ -1,19 +1,39 @@
 "use client";
 
 import Link from "next/link";
+import { useRef, useState } from "react";
 import { NotificationMenu } from "@/components/NotificationMenu";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
 export function AppFrame({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth(); const router = useRouter();
+  const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
   async function signOut() { await logout(); router.replace("/login"); }
   const home = user?.role === "ADMIN" ? "/admin/dashboard" : user?.role === "MENTOR" ? "/mentor/dashboard" : "/student/dashboard";
-  return <div className="min-h-screen bg-slate-50">
-    <header className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
-      <Link href={home} className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-700 text-xs font-bold text-white">IMS</span><span><span className="block font-semibold text-slate-900">Internship Management System</span><span className="block text-xs text-slate-500">{user?.roleLabel}</span></span></Link>
-      <div className="flex flex-wrap items-center justify-end gap-3">{user?.role === "STUDENT" && <NotificationMenu key={user.id} />}{user?.role === "ADMIN" && <><Link href="/admin/monthly-progress" className="text-sm font-semibold text-blue-700 hover:text-blue-900">Monthly progress</Link><Link href="/admin/opportunities" className="text-sm font-semibold text-blue-700 hover:text-blue-900">Opportunities</Link><Link href="/admin/student-accounts" className="text-sm font-semibold text-blue-700 hover:text-blue-900">Student accounts</Link><Link href="/admin/mentor-accounts" className="text-sm font-semibold text-blue-700 hover:text-blue-900">Mentor accounts</Link></>}{user?.role === "MENTOR" && <Link href="/mentor/monthly-progress" className="text-sm font-semibold text-blue-700 hover:text-blue-900">Monthly progress</Link>}{user?.role === "STUDENT" && <Link href="/student/monthly-progress" className="text-sm font-semibold text-blue-700 hover:text-blue-900">Monthly progress</Link>}{(user?.role === "ADMIN" || user?.role === "MENTOR") && <><Link href={`/${user.role.toLowerCase()}/reports`} className="text-sm font-semibold text-blue-700 hover:text-blue-900">Reports</Link><Link href={`/${user.role.toLowerCase()}/attendance`} className="text-sm font-semibold text-blue-700 hover:text-blue-900">Attendance</Link></>}<button data-button-variant="outline" onClick={signOut} className="text-sm">Sign out</button></div>
+  const links = user?.role === "ADMIN" ? [
+    ["/admin/monthly-progress", "Monthly progress"], ["/admin/opportunities", "Opportunities"],
+    ["/admin/student-accounts", "Student accounts"], ["/admin/mentor-accounts", "Mentor accounts"],
+    ["/admin/reports", "Reports"], ["/admin/attendance", "Attendance"],
+  ] : user?.role === "MENTOR" ? [
+    ["/mentor/monthly-progress", "Monthly progress"], ["/mentor/reports", "Reports"], ["/mentor/attendance", "Attendance"],
+  ] : user?.role === "STUDENT" ? [["/student/monthly-progress", "Monthly progress"]] : [];
+  return <div className="app-frame min-h-screen">
+    <header className="app-topbar"><div className="app-topbar-inner">
+      <Link href={home} className="app-brand" onClick={() => setMenuOpen(false)}><span className="app-brand-mark">IMS</span><span className="app-brand-copy"><span className="app-brand-name">Internship Management System</span><span className="app-brand-role">{user?.roleLabel}</span></span></Link>
+      <div className="app-topbar-actions">
+        {user?.role === "STUDENT" && <NotificationMenu key={user.id} />}
+        <button ref={menuButton} type="button" data-button-variant="outline" className="app-menu-toggle" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} aria-controls="app-navigation" onClick={() => setMenuOpen(open => !open)}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20"><path strokeLinecap="round" d={menuOpen ? "M6 6l12 12M6 18L18 6" : "M4 6h16M4 12h16M4 18h16"}/></svg><span className="app-menu-label">Menu</span>
+        </button>
+      </div>
+      <nav id="app-navigation" aria-label="Primary navigation" className="app-navigation" data-open={menuOpen} onKeyDown={event => { if (event.key === "Escape") { setMenuOpen(false); menuButton.current?.focus(); } }}>
+        {links.map(([href, label]) => <Link key={href} href={href} className="app-nav-link" aria-current={pathname === href || pathname.startsWith(`${href}/`) ? "page" : undefined} onClick={() => setMenuOpen(false)}>{label}</Link>)}
+        <button type="button" data-button-variant="outline" onClick={signOut} className="app-sign-out">Sign out</button>
+      </nav>
     </div></header>
-    {children}
+    <div className="app-page-content">{children}</div>
   </div>;
 }

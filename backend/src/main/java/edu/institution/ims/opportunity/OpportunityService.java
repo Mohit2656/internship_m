@@ -1,5 +1,6 @@
 package edu.institution.ims.opportunity;
 
+import edu.institution.ims.notification.NotificationService;
 import edu.institution.ims.professionalprofile.*;
 import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.user.*;
@@ -16,10 +17,12 @@ public class OpportunityService {
     private final OpportunitySkillRepository skills;
     private final UserRepository users;
     private final SkillNormalizer normalizer;
+    private final NotificationService notifications;
 
     public OpportunityService(OpportunityRepository opportunities, OpportunitySkillRepository skills,
-            UserRepository users, SkillNormalizer normalizer) {
+            UserRepository users, SkillNormalizer normalizer, NotificationService notifications) {
         this.opportunities = opportunities; this.skills = skills; this.users = users; this.normalizer = normalizer;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -60,6 +63,7 @@ public class OpportunityService {
             throw error(HttpStatus.CONFLICT, "INVALID_OPPORTUNITY_TRANSITION", "A closed opportunity cannot be published");
         if (opportunity.getStatus() == OpportunityStatus.DRAFT) {
             validatePublishable(opportunity); opportunity.publish(); opportunities.saveAndFlush(opportunity);
+            notifications.opportunityPublished(opportunity);
         }
         return response(opportunity);
     }

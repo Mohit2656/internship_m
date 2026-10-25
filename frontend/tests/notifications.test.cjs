@@ -7,7 +7,7 @@ function harness(file, name, api) {
   const states = [], effects = [], paths = []; let cursor = 0;
   const hooks = { useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === "function" ? value(states[i]) : value; }]; }, useEffect(effect) { if (!effects.length) effects.push(effect); } };
   const m = { exports: {} };
-  const imports = { react: hooks, "@/lib/api": { api }, "next/navigation": { useRouter: () => ({ push: url => paths.push(url) }) }, "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) }, "@/components/AppFrame": { AppFrame: () => null }, "@/components/ProtectedRoute": { ProtectedRoute: () => null }, "@/lib/monthly-progress": { formatDateTime: value => value }, "@/lib/notifications": { NOTIFICATIONS_CHANGED: "changed", syncNotificationCount() {} } };
+  const imports = { react: hooks, "@/lib/api": { api }, "next/navigation": { useRouter: () => ({ push: url => paths.push(url) }), usePathname: () => "/student/notifications" }, "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) }, "@/components/AppFrame": { AppFrame: () => null }, "@/components/ProtectedRoute": { ProtectedRoute: () => null }, "@/lib/monthly-progress": { formatDateTime: value => value }, "@/lib/notifications": { NOTIFICATIONS_CHANGED: "changed", syncNotificationCount() {} } };
   new Function("require", "module", "exports", ts.transpileModule(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText)(key => imports[key] || require(key), m, m.exports);
   function tree() { cursor = 0; return m.exports[name](); }
   function find(node, label) { if (!node || typeof node !== "object") return; if (node.type === "button" && node.props.children === label) return node; for (const child of React.Children.toArray(node.props?.children)) { const result = find(child, label); if (result) return result; } }
@@ -34,4 +34,33 @@ test("navigation badge displays the backend unread count", async t => {
   const h = harness("components/NotificationMenu.tsx", "NotificationMenu", { async get(url) { calls.push(url); return { data: { unreadCount: 4 } }; } });
   const cleanup = await h.mount(); assert.deepEqual(calls, ["/student/notifications/unread-count"]);
   assert.match(h.html(), /4 unread notifications/); assert.ok(h.html().includes('href="/student/notifications"')); cleanup();
+});
+
+test("published opportunity shows publication details and opens its exact detail route", async t => {
+  browser(t); const calls = [];
+  const opportunity = { ...item, id: 13, type: "OPPORTUNITY_PUBLISHED", title: "Software internship", message: "Example Company\nBuild accessible applications.", rejectionReason: null, mentorName: null, actionUrl: "/student/opportunities/42" };
+  const h = harness("components/NotificationsContent.tsx", "NotificationsContent", { async get() { return { data: { content: [opportunity], totalPages: 1, unreadCount: 1 } }; }, async patch(url) { calls.push(url); return { data: { unreadCount: 0 } }; } });
+  const cleanup = await h.mount();
+  assert.match(h.html(), /New opportunity/); assert.match(h.html(), /Example Company/); assert.match(h.html(), /Build accessible applications/); assert.match(h.html(), /Published: /);
+  h.button("View opportunity").props.onClick(); await flush();
+  assert.deepEqual(calls, ["/student/notifications/13/read"]); assert.deepEqual(h.paths, ["/student/opportunities/42"]); cleanup();
+});
+
+test("opening a read opportunity keeps its read timestamp and skips another update", async t => {
+  browser(t); const calls = [];
+  const opportunity = { ...item, type: "OPPORTUNITY_PUBLISHED", readAt: "2026-10-22T08:00:00Z", actionUrl: "/student/opportunities/42" };
+  const h = harness("components/NotificationsContent.tsx", "NotificationsContent", { async get() { return { data: { content: [opportunity], totalPages: 1, unreadCount: 0 } }; }, async patch(url) { calls.push(url); } });
+  const cleanup = await h.mount(); h.button("View opportunity").props.onClick(); await flush();
+  assert.deepEqual(calls, []); assert.deepEqual(h.paths, ["/student/opportunities/42"]); cleanup();
+});
+
+test("badge refreshes after read actions and removes the count at zero", async t => {
+  browser(t); const events = new Map(); let count = 2;
+  global.window.addEventListener = (name, callback) => events.set(name, callback);
+  global.window.removeEventListener = name => events.delete(name);
+  const h = harness("components/NotificationMenu.tsx", "NotificationMenu", { async get() { return { data: { unreadCount: count } }; } });
+  const cleanup = await h.mount(); assert.match(h.html(), /notification-badge/);
+  count = 0; events.get("changed")(); await flush();
+  assert.doesNotMatch(h.html(), /notification-badge/); assert.match(h.html(), /0 unread notifications/);
+  cleanup(); assert.equal(events.size, 0);
 });
