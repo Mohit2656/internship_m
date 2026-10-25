@@ -20,7 +20,7 @@ export function WelcomeScreen() {
     <div className="college-welcome-content">
       <Image src="/branding/college-logo.png" alt="St. Vincent Pallotti College logo" width={150} height={150} priority className="college-welcome-logo" />
       <p className="college-welcome-heading">Welcome to the Department of Computer Engineering.</p>
-      <p className="college-welcome-brand">IIIC CELL</p>
+      <p className="college-welcome-brand">III CELL</p>
     </div>
   </div>;
 }
