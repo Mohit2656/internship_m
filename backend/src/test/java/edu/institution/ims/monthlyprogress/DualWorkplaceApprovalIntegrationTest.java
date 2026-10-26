@@ -15,7 +15,7 @@ class DualWorkplaceApprovalIntegrationTest extends SharedWorkplaceIntegrationTes
   // Seed a retained legacy snapshot; current uploads never perform workplace verification.
   jdbc.update("update monthly_progress_reports set workplace_radius_meters=200,workplace_verification_status='WITHIN_RADIUS' where id=?",reportId);
   var before=locationService.getForAdmin(studentA.getId());
-  var same=locationService.radiusForAdmin(studentA.getId(),UserPrincipal.from(admin),new BigDecimal("200.00"));
+  var same=locationService.radiusForAdmin(studentA.getId(),UserPrincipal.from(admin),new BigDecimal("100.00"));
   assertThat(same.status()).isEqualTo(InternshipLocationStatus.APPROVED);
   assertThat(same.revision()).isEqualTo(before.revision());
   var changed=locationService.radiusForAdmin(studentA.getId(),UserPrincipal.from(admin),new BigDecimal("250"));
@@ -47,7 +47,7 @@ class DualWorkplaceApprovalIntegrationTest extends SharedWorkplaceIntegrationTes
   assertThat(locationService.getForAdmin(studentA.getId()).status()).isEqualTo(InternshipLocationStatus.PENDING);
   register(studentA,"19","72","Changed branch");
   assertThat(jdbc.queryForObject("select min(latitude) from workplace_review_audit",BigDecimal.class)).isEqualByComparingTo("21.125");
-  assertThat(jdbc.queryForObject("select count(*) from workplace_review_audit where radius_meters=200",Integer.class)).isEqualTo(2);
+  assertThat(jdbc.queryForObject("select count(*) from workplace_review_audit where radius_meters=100",Integer.class)).isEqualTo(2);
  }
  @Test void oneApprovalIsInsufficientAndChangedCoordinatesInvalidateBoth() throws Exception {
   register(studentA,"21.125","79.0875","Branch A");var p=UserPrincipal.from(admin);

@@ -15,6 +15,7 @@ function load(file, imports = {}) {
 const attendance = load("lib/attendance.ts");
 const submissionMaps = load("components/LocationMapLink.tsx");
 const submissionLocations = load("components/AttendanceLocations.tsx", {"@/components/LocationMapLink": submissionMaps});
+const locationVerification = load("components/LocationVerificationResult.tsx");
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const record = status => ({ id: 42, attendanceDate: "2026-10-11", attendanceResult: "PRESENT", verificationStatus: "VERIFIED",
@@ -39,42 +40,22 @@ function renderStudent(item) {
     return [index === 0 ? { attendance: item } : index === 3 ? false : initial, () => {}];
   }};
   const { TodayAttendanceCard } = load("components/TodayAttendanceCard.tsx", {
-    react: hooks, "@/lib/api": {}, "@/components/AttendanceLocations": submissionLocations, "@/lib/attendance": attendance, "@/lib/edge-ai": {}
+    react: hooks, "@/lib/api": {}, "@/components/AttendanceLocations": submissionLocations, "@/components/LocationVerificationResult": locationVerification, "@/lib/attendance": attendance, "@/lib/edge-ai": {}
   });
   return renderToStaticMarkup(React.createElement(TodayAttendanceCard));
 }
-function renderMentor(item) {
-  let cursor = 0;
-  const student = { studentUserId: 1, name: "Assigned Student", todayAttendance: item };
-  const hooks = { useEffect() {}, useState(initial) {
-    const index = cursor++;
-    return [index === 1 ? { name: "Mentor" } : index === 2 ? [student] : index === 3 ? false : initial, () => {}];
-  }};
-  const children = ({ children }) => children;
-  const empty = () => null;
-  const { default: Page } = load("app/mentor/dashboard/page.tsx", {
-    react: hooks, "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
-    "@/lib/api": {}, "@/components/AttendanceLocations": submissionLocations, "@/lib/attendance": attendance,
-    "@/components/AppFrame": { AppFrame: children }, "@/components/ProtectedRoute": { ProtectedRoute: children },
-    "@/components/MentorRecordDelete": { MentorRecordDelete: empty },
-    "@/components/MonthlyProgressReportList": { MonthlyProgressReportList: empty },
-    "@/components/AttendanceAbsenceOverview": { AttendanceAbsenceOverview: empty },
-    "@/components/LastStudentUpdate": { LastStudentUpdate: empty },
-    "@/components/DashboardReportExport": { DashboardReportExport: empty }
-  });
-  return renderToStaticMarkup(React.createElement(Page));
-}
+// Mentor/admin attendance reports are exercised in liveness-reports.test.cjs.
 for (const [status, expected] of [["VERIFIED", "Liveness verified"], ["FAILED", "Liveness not confirmed"],
   ["NOT_PERFORMED", "Liveness not performed"], ["HISTORICAL", "Historical attendance — liveness not reassessed"]]) {
-  test(`student and mentor consistently display ${status} without location reasons`, () => {
-    for (const html of [renderStudent(record(status)), renderMentor(record(status))]) {
+  test(`student consistently display ${status} without location reasons`, () => {
+    for (const html of [renderStudent(record(status))]) {
       assert.ok(html.includes(expected));
       assert.doesNotMatch(html, /Attendance unverified|Attendance verified|Private historical workplace|GPS_ACCURACY|Registered workplace|Attendance GPS map/);
     }
   });
 }
-test("student and mentor render ABSENT separately from liveness verification", () => {
-  for (const html of [renderStudent({ ...record("VERIFIED"), attendanceResult: "ABSENT" }), renderMentor({ ...record("VERIFIED"), attendanceResult: "ABSENT" })]) {
+test("student render ABSENT separately from liveness verification", () => {
+  for (const html of [renderStudent({ ...record("VERIFIED"), attendanceResult: "ABSENT" })]) {
     assert.match(html, />Absent</); assert.doesNotMatch(html, /Present|Liveness verified/);
   }
 });
@@ -83,7 +64,7 @@ test("automatic daily absences have no student submission or verification eviden
   const item = { ...record("NOT_APPLICABLE"), attendanceResult: "ABSENT", submissionType: "AUTO_ABSENT", automaticAbsent: true, evidence: null };
   assert.equal(attendance.isAutomaticAbsence(item), true);
   assert.equal(attendance.isAutomaticAbsence({ ...item, automaticAbsent: undefined }), true);
-  for (const html of [renderStudent(item), renderMentor(item)]) {
+  for (const html of [renderStudent(item)]) {
     assert.match(html, />Absent</);
     assert.match(html, /[Aa]utomatically/);
     assert.doesNotMatch(html, /Submitted at|Last updated by student|Submission location unavailable|Liveness verified|Historical attendance/);
@@ -107,7 +88,7 @@ test("late permission overrides noon only on the attendance date in the configur
   assert.equal(attendance.attendanceSubmissionOpen({ ...today, submissionOpen: false }, Date.parse("2026-10-19T07:00:00Z")), false);
 });
 
-function cameraHarness({ liveness = true, method = "PHYSICAL", today = {} } = {}) {
+function cameraHarness({ liveness = true, method = "PHYSICAL", today = {}, locationOutcome } = {}) {
   const states = [], refs = [], effects = []; let stateIndex = 0, refIndex = 0, effectIndex = 0;
   const pendingEffects = [], calls = [];
   const video = { videoWidth: 640, videoHeight: 480, async play() {} };
@@ -119,11 +100,11 @@ function cameraHarness({ liveness = true, method = "PHYSICAL", today = {} } = {}
   };
   const api = {
     async get(url) { return { data: url.endsWith("/policy") ? { internshipMode: "OFFICE_REPORTING", verificationMethod: method, configurationReady: true } : { attendanceDate: "2026-10-11", attendance: null, ...today } }; },
-    async post(url, body, config) { calls.push({ url, body, config }); return { data: url.endsWith("verification-session") ? { sessionId: "issued-by-server", challenge: "BLINK" } : { ...record(method === "BASIC" ? "NOT_PERFORMED" : "VERIFIED"), submittedLate: today.latePermissionEnabled === true } }; }
+    async post(url, body, config) { calls.push({ url, body, config }); return { data: url.endsWith("verification-session") ? { sessionId: "issued-by-server", challenge: "BLINK" } : { ...record(method === "BASIC" ? "NOT_PERFORMED" : "VERIFIED"), submittedLate: today.latePermissionEnabled === true, ...(locationOutcome ? { evidence: { locationVerificationStatus: locationOutcome, distanceMeters: 200, geofenceRadiusMeters: 100 } } : {}) } }; }
   };
   class Analyzer { async initialize() {} start(video, challenge, update) { if (liveness !== null) update({ faceCount: 1, faceDetected: true, singleFace: true, qualityPassed: true, livenessPassed: liveness }); } close() {} }
   const { TodayAttendanceCard } = load("components/TodayAttendanceCard.tsx", { react: hooks, "@/lib/api": { api },
-    "@/components/AttendanceLocations": submissionLocations, "@/lib/attendance": attendance, "@/lib/edge-ai": { EdgeAiAnalyzer: Analyzer, challengeLabel: () => "Blink", EDGE_AI_MODEL_VERSION: "existing-model" } });
+    "@/components/AttendanceLocations": submissionLocations, "@/components/LocationVerificationResult": locationVerification, "@/lib/attendance": attendance, "@/lib/edge-ai": { EdgeAiAnalyzer: Analyzer, challengeLabel: () => "Blink", EDGE_AI_MODEL_VERSION: "existing-model" } });
   function render() { stateIndex = refIndex = effectIndex = 0; return TodayAttendanceCard(); }
   function nodes(type) { const result = []; function walk(node) { if (!node || typeof node !== "object") return; if (node.type === type) result.push(node); React.Children.forEach(node.props?.children, walk); } walk(render()); return result; }
   return { calls, button: label => nodes("button").find(node => node.props.children === label),
@@ -188,10 +169,10 @@ test("basic attendance requires location and still records liveness not performe
   assert.match(h.html(), /Liveness not performed/); assert.doesNotMatch(h.html(), /Liveness verified/);
 });
 
-test("student and mentor display the same stored submission coordinates without requesting permission", t => {
+test("student display the same stored submission coordinates without requesting permission", t => {
   const requests = navigatorWithoutLocation(t);
   const item = { ...record("FAILED"), evidence: { latitude: 18.5204, longitude: 73.8567, gpsAccuracyMeters: 106, workplaceAddress: "Unrelated company address" } };
-  for (const html of [renderStudent(item), renderMentor(item)]) {
+  for (const html of [renderStudent(item)]) {
     assert.match(html, /Latitude: 18[.]5204/); assert.match(html, /Longitude: 73[.]8567/); assert.match(html, /Reported GPS accuracy: 106 m/);
     assert.match(html, /query=18[.]5204%2C73[.]8567/); assert.match(html, /Open submission location in Google Maps/);
     assert.match(html, /target="_blank"/); assert.match(html, /noopener noreferrer/); assert.match(html, /Liveness not confirmed/);
@@ -203,11 +184,11 @@ test("student and mentor display the same stored submission coordinates without 
 test("missing, partial, invalid and nonnumeric stored coordinates are neutral; zero coordinates remain valid", () => {
   for (const evidence of [null, { latitude: null, longitude: null }, { latitude: 18, longitude: null }, { latitude: 91, longitude: 73 }, { latitude: 18, longitude: Infinity }, { latitude: "18", longitude: 73 }]) {
     const item = { ...record("VERIFIED"), evidence };
-    for (const html of [renderStudent(item), renderMentor(item)]) {
+    for (const html of [renderStudent(item)]) {
       assert.match(html, /Submission location unavailable/); assert.doesNotMatch(html, /google[.]com\/maps/); assert.match(html, /Liveness verified/);
     }
   }
-  for (const html of [renderStudent({ ...record("HISTORICAL"), evidence: { latitude: 0, longitude: 0, gpsAccuracyMeters: -1 } }), renderMentor({ ...record("HISTORICAL"), evidence: { latitude: 0, longitude: 0, gpsAccuracyMeters: -1 } })]) {
+  for (const html of [renderStudent({ ...record("HISTORICAL"), evidence: { latitude: 0, longitude: 0, gpsAccuracyMeters: -1 } })]) {
     assert.match(html, /query=0%2C0/); assert.doesNotMatch(html, /Reported GPS accuracy/); assert.match(html, /Historical attendance/);
   }
 });
@@ -285,5 +266,38 @@ test("late permission leaves failed liveness blocked", async t => {
   assert.equal(h.button("Capture Attendance").props.disabled, true);
   h.button("Capture Attendance").props.onClick(); await flush();
   assert.equal(h.calls.filter(call => !call.url.endsWith("verification-session")).length, 0);
+  h.cancel();
+});
+
+test("GPS verification is displayed from the server independently of liveness, and legacy evidence is neutral", () => {
+  for (const [status, label] of [["VERIFIED", "Workplace location verified"], ["OUTSIDE_RADIUS", "outside the permitted"],
+    ["INSUFFICIENT_ACCURACY", "GPS accuracy is insufficient"], ["LOCATION_UNAVAILABLE", "Location could not be verified"],
+    ["WORKPLACE_NOT_APPROVED", "Workplace approval is required"], ["STALE_LOCATION", "GPS capture is too old"]]) {
+    const html = renderStudent({ ...record("VERIFIED"), evidence: { locationVerificationStatus: status, distanceMeters: 120, geofenceRadiusMeters: 100 } });
+    assert.ok(html.includes(label)); assert.match(html, /Liveness verified/); assert.match(html, /Distance: 120 m/);
+  }
+  for (const evidence of [{ latitude: 18, longitude: 73, locationCheckPassed: true }, { locationVerificationStatus: "NOT_APPLICABLE" }, null]) {
+    assert.doesNotMatch(renderStudent({ ...record("VERIFIED"), evidence }), /Workplace location verified|manual review required/);
+  }
+});
+
+test("capture timestamp accompanies GPS and the result appears only after the backend responds", async t => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const timestamp = Date.now();
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+    mediaDevices: { async getUserMedia() { return { getTracks: () => [{ stop() {} }] }; } },
+    geolocation: { getCurrentPosition(success) { success({ timestamp, coords: { latitude: 18.52, longitude: 73.85, accuracy: 12 } }); } }
+  }});
+  t.after(() => { if (original) Object.defineProperty(globalThis, "navigator", original); else delete globalThis.navigator; });
+  const h = cameraHarness({ locationOutcome: "OUTSIDE_RADIUS" });
+  await h.mount(); h.button("Mark Today's Attendance").props.onClick(); await flush();
+  await h.button("Capture Attendance").props.onClick(); await flush();
+  h.button("Capture submission location (required)").props.onClick(); await flush();
+  assert.doesNotMatch(h.html(), /Workplace location verified|outside the permitted/);
+  h.button("Submit Attendance").props.onClick(); await flush();
+  const body = h.calls.find(call => call.url.endsWith("/physical")).body;
+  assert.equal(body.get("locationCapturedAt"), new Date(timestamp).toISOString());
+  for (const forbidden of ["studentId", "internshipId", "distanceMeters", "locationVerificationStatus"]) assert.equal(body.has(forbidden), false);
+  assert.match(h.html(), /outside the permitted workplace radius/); assert.match(h.html(), /Liveness verified/);
   h.cancel();
 });

@@ -47,8 +47,9 @@ app:
     calendar:
       holidays: []
       approved-leave: {}
-    default-geofence-radius-meters: ${ATTENDANCE_DEFAULT_GEOFENCE_RADIUS_METERS:200}
+    default-geofence-radius-meters: ${ATTENDANCE_DEFAULT_GEOFENCE_RADIUS_METERS:100}
     max-gps-accuracy-meters: ${ATTENDANCE_MAX_GPS_ACCURACY_METERS:100}
+    max-location-age-seconds: ${ATTENDANCE_MAX_LOCATION_AGE_SECONDS:300}
     max-image-size-bytes: ${ATTENDANCE_MAX_IMAGE_SIZE_BYTES:5242880}
     max-metadata-location-difference-meters: ${ATTENDANCE_MAX_METADATA_LOCATION_DIFFERENCE_METERS:100}
     max-metadata-age-seconds: ${ATTENDANCE_MAX_METADATA_AGE_SECONDS:600}

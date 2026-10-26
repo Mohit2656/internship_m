@@ -103,32 +103,31 @@ test('mentor professional view keeps independent student profile, professional p
   assert.equal((html.match(/Last updated by student:/g) || []).length, 3);
 });
 
-test('mentor dashboard shows the authoritative timestamp only for submitted attendance', () => {
+test('mentor attendance history shows the authoritative timestamp only for student submissions', () => {
   let index = 0;
-  const states = ['', { name: 'Mentor' }, [
-    { studentUserId: 1, name: 'Submitted Student', todayAttendance: { id: 1, serverSubmittedAt: timestamp, attendanceDate: '2026-10-01' } },
-    { studentUserId: 2, name: 'Unsubmitted Student', todayAttendance: null },
-  ], false, ''];
+  const automaticAt = '2026-10-02T08:00:00Z';
+  const states = [{ studentUserId: 1, attendanceZone: 'Asia/Kolkata',
+    totals: { presentDays: 1, absentDays: 1, totalDays: 2, percentage: 50 }, records: [
+      { id: 1, serverSubmittedAt: timestamp, attendanceDate: '2026-10-01', attendanceResult: 'PRESENT', submissionType: 'PHYSICAL_CAPTURE', livenessStatus: 'VERIFIED' },
+      { id: 2, serverSubmittedAt: automaticAt, attendanceDate: '2026-10-02', attendanceResult: 'ABSENT', submissionType: 'AUTO_ABSENT', livenessStatus: 'NOT_APPLICABLE' },
+    ] }, '', 0];
   const wrap = ({ children }) => children;
-  const { default: MentorDashboardPage } = load('app/mentor/dashboard/page.tsx', {
+  const { StudentAttendanceHistory } = load('components/AttendanceAbsenceOverview.tsx', {
     ...imports, react: { useEffect() {}, useState: () => [states[index++], () => {}] }, 'next/link': { default: wrap },
-    '@/lib/api': {}, '@/lib/attendance': { attendanceLabel: () => 'Present' },
-    '@/components/AppFrame': { AppFrame: wrap }, '@/components/ProtectedRoute': { ProtectedRoute: wrap },
+    '@/lib/api': {}, '@/lib/attendance': load('lib/attendance.ts'),
     '@/components/MentorRecordDelete': { MentorRecordDelete: () => null },
-    '@/components/MonthlyProgressReportList': { MonthlyProgressReportList: () => null },
-    '@/components/DashboardReportExport': { DashboardReportExport: () => null },
-    '@/components/AttendanceLocations': { AttendanceLocations: () => null },
   });
-  const html = renderToStaticMarkup(React.createElement(MentorDashboardPage));
-  assert.ok(html.includes(`dateTime="${timestamp}"`));
-  assert.equal((html.match(/Last updated by student:/g) || []).length, 1);
-  assert.match(html, /Not Submitted/);
+  const html = renderToStaticMarkup(React.createElement(StudentAttendanceHistory, { role: 'MENTOR', studentId: 1, name: 'Assigned student', onBack() {} }));
+  const date = value => new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(value));
+  assert.ok(html.includes(date(timestamp)));
+  assert.ok(!html.includes(date(automaticAt)));
+  assert.match(html, /automatic absence/);
 });
 
 test('admin directory keeps profile and onboarding dates independent with missing-record fallbacks', () => {
   let index = 0;
   const filters = { search: '' };
-  const states = [{ totalPages: 1, content: [
+  const states = [{}, '', null, { totalPages: 1, content: [
     { id: 1, studentName: 'Submitted Student', profileLastStudentUpdatedAt: timestamp, onboardingLastStudentUpdatedAt: '2026-10-02T08:00:00Z' },
     { id: 2, studentName: 'No submissions', profileLastStudentUpdatedAt: null, onboardingLastStudentUpdatedAt: null },
   ] }, false, '', [], filters, filters];
@@ -137,6 +136,7 @@ test('admin directory keeps profile and onboarding dates independent with missin
     ...imports, react: { ...React, useEffect() {}, useCallback: value => value, useState: () => [states[index++], () => {}] },
     'next/navigation': { useSearchParams: () => new URLSearchParams() }, 'next/link': { default: wrap },
     '@/lib/api': {}, '@/components/AppFrame': { AppFrame: wrap }, '@/components/ProtectedRoute': { ProtectedRoute: wrap },
+    '@/components/AttendanceAbsenceOverview': { StudentAttendanceHistory: () => null, formatAttendancePercentage: () => '?' },
     '@/components/ResetPasswordButton': { ResetPasswordButton: () => null },
     '@/components/StatusBadge': { StatusBadge: () => null }, '@/components/WorkflowBadge': { WorkflowBadge: () => null },
   });

@@ -21,11 +21,13 @@ public class PhysicalAttendanceService {
     private final AiVerificationService aiVerification;
     private final Clock clock;
     private final AttendanceSubmissionService submissions;
+    private final AttendanceLocationVerificationService locationVerification;
 
     public PhysicalAttendanceService(AttendanceRepository attendance, AttendanceEvidenceRepository evidence,
             InternshipDetailsRepository internships, UserRepository users, CameraImageValidator imageValidator,
             AttendancePolicyService policies,
-            AiVerificationService aiVerification, Clock clock, AttendanceSubmissionService submissions) {
+            AiVerificationService aiVerification, Clock clock, AttendanceSubmissionService submissions,
+            AttendanceLocationVerificationService locationVerification) {
         this.attendance = attendance;
         this.evidence = evidence;
         this.internships = internships;
@@ -35,13 +37,20 @@ public class PhysicalAttendanceService {
         this.aiVerification = aiVerification;
         this.clock = clock;
         this.submissions = submissions;
+        this.locationVerification = locationVerification;
     }
 
     @Transactional
     public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
             AiVerificationEvidenceRequest aiEvidence,
             BigDecimal latitude, BigDecimal longitude, BigDecimal accuracyMeters) {
-        // Required submission coordinates are evidence only, never a liveness or workplace check.
+        return submitToday(principal, photo, aiEvidence, latitude, longitude, accuracyMeters, null);
+    }
+
+    @Transactional
+    public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
+            AiVerificationEvidenceRequest aiEvidence, BigDecimal latitude, BigDecimal longitude,
+            BigDecimal accuracyMeters, Instant locationCapturedAt) {
         ValidatedCameraImage image = imageValidator.validate(photo);
         User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
@@ -57,6 +66,7 @@ public class PhysicalAttendanceService {
                             "Today's hybrid work mode has not been configured");
         }
         SubmissionLocation submitted = SubmissionLocation.require(latitude, longitude, accuracyMeters);
+        locationVerification.validateCaptureTime(locationCapturedAt);
         AiVerificationDecision aiDecision = aiVerification.evaluate(principal, internship, today, aiEvidence);
 
         Instant serverTime = clock.instant();
@@ -66,7 +76,8 @@ public class PhysicalAttendanceService {
                 aiDecision.reason(), null, null, null);
         AttendanceRecord record = submissions.record(student, internship, today,
                 decision.status(), AttendanceSubmissionType.PHYSICAL_CAPTURE);
-        evidence.saveAndFlush(new AttendanceEvidence(record, input, null, decision, aiDecision, serverTime));
+        locationVerification.save(new AttendanceEvidence(record, input, null, decision, aiDecision, serverTime),
+                internship, submitted, locationCapturedAt, true);
         return AttendanceService.response(record);
     }
 

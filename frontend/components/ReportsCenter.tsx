@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { api } from "@/lib/api";
-import { LivenessStatus, livenessLabel } from "@/lib/attendance";
+import { LivenessStatus, livenessLabel, LocationVerificationStatus, locationVerificationLabel } from "@/lib/attendance";
 import { AttendanceLocations } from "@/components/AttendanceLocations";
 import { MonthlyProgressStatus, monthlyStatusLabel, formatDateTime } from "@/lib/monthly-progress";
 import { MentorRecordDelete } from "@/components/MentorRecordDelete";
@@ -20,6 +20,7 @@ function display(value: unknown): string { return value == null ? "—" : typeof
 function displayCell(field: Field, value: unknown): string {
   if (field.kind === "DATETIME") return value == null ? field.label.toLowerCase().includes("updated by student") ? "Not updated yet" : "Not available" : formatDateTime(String(value));
   if (field.id === "reviewStatus") return monthlyStatusLabel(value as MonthlyProgressStatus | undefined);
+  if (field.id === "locationVerificationStatus") return locationVerificationLabel(value as LocationVerificationStatus | null);
   if (field.id === "submissionType" && value === "AUTO_ABSENT") return "Automatic absence";
   if (["verification", "livenessStatus"].includes(field.id)) {
     if (value === "NOT_SUBMITTED") return "Not submitted";

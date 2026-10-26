@@ -49,3 +49,30 @@ for (const role of ["ADMIN", "MENTOR"]) test(`${role} attendance records use liv
   assert.match(html, /Attendance Records|Liveness status/);
   assert.doesNotMatch(html, /Unverified|GPS|workplace|geofence|radius/i);
 });
+
+for (const role of ["ADMIN", "MENTOR"]) test(`${role} selected GPS report column shows backend location outcomes independently of liveness`, () => {
+  const fields = [{ id: "locationVerificationStatus", label: "GPS location verification" }, { id: "verification", label: "Liveness status" }];
+  const selected = fields.map(field => field.id);
+  const config = JSON.stringify({ reportType: "ATTENDANCE", fields: role === "MENTOR" ? [...new Set([...selected, "recordId", "studentName", "uid", "date"])] : selected,
+    filters: {}, studentIds: [], page: 0, format: "XLSX" });
+  const options = { types: [{ id: "ATTENDANCE", title: "Attendance", available: true, fields }], filters: [] };
+  const table = { fields, rows: [
+    { locationVerificationStatus: "VERIFIED", verification: "FAILED" },
+    { locationVerificationStatus: "OUTSIDE_RADIUS", verification: "VERIFIED" },
+    { locationVerificationStatus: null, verification: "HISTORICAL" },
+  ], summary: {}, totalRows: 3 };
+  let cursor = 0;
+  const values = { 0: options, 1: "ATTENDANCE", 4: selected, 5: table, 12: config };
+  const empty = () => null;
+  const { ReportsCenter } = load("components/ReportsCenter.tsx", {
+    react: { useEffect() {}, useState(initial) { const i = cursor++; return [i in values ? values[i] : initial, () => {}]; } },
+    "@/lib/api": {}, "@/lib/attendance": attendance, "@/lib/monthly-progress": load("lib/monthly-progress.ts", { "@/lib/api": {} }),
+    "@/components/AttendanceLocations": submissionLocations,
+    "@/components/MentorRecordDelete": { MentorRecordDelete: empty }, "@/components/DashboardReportExport": { DashboardReportExport: empty }
+  });
+  const html = renderToStaticMarkup(React.createElement(ReportsCenter, { role, attendanceOnly: true }));
+  assert.match(html, /Workplace location verified<\/td><td[^>]*>Liveness not confirmed/);
+  assert.match(html, /Outside permitted workplace radius<\/td><td[^>]*>Liveness verified/);
+  assert.match(html, /Not assessed<\/td><td[^>]*>Historical attendance/);
+  assert.doesNotMatch(html, />OUTSIDE_RADIUS</);
+});

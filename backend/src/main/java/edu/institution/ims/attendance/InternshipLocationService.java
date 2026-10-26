@@ -23,7 +23,7 @@ public class InternshipLocationService {
 
     public InternshipLocationService(InternshipLocationRepository locations,
             InternshipDetailsRepository internships, UserRepository users, Clock clock,
-            @Value("${app.attendance.default-geofence-radius-meters:200}") BigDecimal defaultRadius) {
+            @Value("${app.attendance.default-geofence-radius-meters:100}") BigDecimal defaultRadius) {
         this.locations = locations;
         this.internships = internships;
         this.users = users;
@@ -78,6 +78,22 @@ public class InternshipLocationService {
         location.name(place.name());
         internship.attachWorkplace(location);
         locations.saveAndFlush(location);
+    }
+
+    /** Company edits cannot silently retain approval of a different workplace. */
+    @Transactional
+    public void invalidateForCompanyChange(InternshipDetails internship, boolean addressChanged,
+            boolean selectedPlaceProvided) {
+        locations.findByInternshipId(internship.getId()).ifPresent(location -> {
+            location.updateProposal(location.getLatitude(), location.getLongitude(),
+                    location.getGeofenceRadiusMeters(), clock.instant());
+            if (addressChanged && !selectedPlaceProvided) {
+                // A changed free-text address needs a fresh confirmed map selection before review.
+                location.selectedPlace(null, null);
+                location.name(null);
+            }
+            locations.saveAndFlush(location);
+        });
     }
 
     @Transactional(readOnly=true)

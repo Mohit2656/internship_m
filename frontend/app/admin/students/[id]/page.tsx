@@ -7,6 +7,7 @@ import { AdminProfessionalProfile } from "@/components/AdminProfessionalProfile"
 import { AppFrame } from "@/components/AppFrame";
 import { HybridScheduleManager } from "@/components/HybridScheduleManager";
 import { InternshipDetailsView } from "@/components/InternshipDetailsView";
+import { InternshipLocationManager } from "@/components/InternshipLocationManager";
 import { InternshipOnboardingDetails } from "@/components/InternshipOnboardingDetails";
 import { ProfileDetails } from "@/components/ProfileDetails";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -33,7 +34,7 @@ export default function StudentDetailPage() {
         {student.profile ? <ProfileDetails profile={student.profile} fullAadhaar={student.aadhaarNumber}/> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center"><h2 className="font-bold">No student profile yet</h2><p className="mt-2 text-sm text-slate-500">This student has not submitted their institutional information.</p></section>}
         <AdminProfessionalProfile studentId={student.id}/>
         <InternshipOnboardingDetails onboarding={student.internshipOnboarding} studentId={student.id}/>
-        {student.internshipDetails ? <><InternshipDetailsView details={student.internshipDetails}/> {student.internshipDetails.internshipMode === "HYBRID" && <HybridScheduleManager studentId={student.id}/>}</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8"><p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Internship Details</p><h2 className="mt-2 font-bold">Pending</h2><p className="mt-2 text-sm text-slate-600">The student has not completed their internship information.</p></section>}
+        {student.internshipDetails ? <><InternshipDetailsView details={student.internshipDetails}/><InternshipLocationManager studentId={student.id}/> {student.internshipDetails.internshipMode === "HYBRID" && <HybridScheduleManager studentId={student.id}/>}</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8"><p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Internship Details</p><h2 className="mt-2 font-bold">Pending</h2><p className="mt-2 text-sm text-slate-600">The student has not completed their internship information.</p></section>}
       </div>
     </>}
   </main></AppFrame></ProtectedRoute>;

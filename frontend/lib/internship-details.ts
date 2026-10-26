@@ -13,6 +13,7 @@ export type InternshipDetails = {
 };
 
 export type InternshipDetailsFormData = {
+  workplace?: RegisteredWorkplace | null;
   companyName: string; companyType: CompanyType | ""; otherCompanyType: string; companyAddress: string; companyPhone: string;
   industrySupervisorName: string; industrySupervisorDesignation: string; industrySupervisorContact: string;
   durationMonths: string; startDate: string; endDate: string; totalWeeks: string; internshipMode: InternshipMode | "";
@@ -26,7 +27,7 @@ export const emptyInternshipDetails: InternshipDetailsFormData = {
 };
 
 export function toFormData(details: InternshipDetails): InternshipDetailsFormData {
-  return { companyName: details.companyName, companyType: details.companyType, otherCompanyType: details.otherCompanyType ?? "",
+  return { workplace: details.workplace ?? null, companyName: details.companyName, companyType: details.companyType, otherCompanyType: details.otherCompanyType ?? "",
     companyAddress: details.companyAddress, companyPhone: details.companyPhone, industrySupervisorName: details.industrySupervisorName,
     industrySupervisorDesignation: details.industrySupervisorDesignation, industrySupervisorContact: details.industrySupervisorContact,
     durationMonths: String(details.durationMonths), startDate: details.startDate, endDate: details.endDate,

@@ -42,7 +42,12 @@ public class InternshipDetailsService {
         WorkflowStatus status = entity.getOnboarding().getWorkflowStatus();
         if (status != WorkflowStatus.DIARY_ISSUED && status != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE)
             throw conflict("INVALID_WORKFLOW_STATE", "Internship details cannot be updated in the current workflow state");
-        validate(request); apply(entity, request); entity.getOnboarding().markInternshipDetailsComplete();
+        validate(request);
+        String nextAddress = request.workplace() == null ? clean(request.companyAddress()) : request.workplace().address();
+        boolean addressChanged = !java.util.Objects.equals(entity.getCompanyAddress(), nextAddress);
+        if (addressChanged || !java.util.Objects.equals(entity.getCompanyName(), clean(request.companyName())))
+            locations.invalidateForCompanyChange(entity, addressChanged, request.workplace() != null);
+        apply(entity, request); entity.getOnboarding().markInternshipDetailsComplete();
         details.saveAndFlush(entity); locations.registerSelectedPlace(entity, request.workplace());
         return response(entity);
     }
@@ -72,11 +77,15 @@ public class InternshipDetailsService {
                 request.internshipMode(), request.stipendPerMonth(), request.fullTimeEmploymentOffered());
     }
     public static InternshipDetailsResponse response(InternshipDetails entity) {
+        var location = entity.getWorkplace();
+        RegisteredWorkplaceRequest workplace = location == null || location.getWorkplaceAddress() == null ? null
+                : new RegisteredWorkplaceRequest(location.getPlaceId(), location.getWorkplaceAddress(),
+                        location.getLatitude(), location.getLongitude(), location.getWorkplaceName());
         return new InternshipDetailsResponse(entity.getId(), entity.getOnboarding().getId(), entity.getCompanyName(), entity.getCompanyType().name(),
                 entity.getCompanyType().getLabel(), entity.getOtherCompanyType(), entity.getCompanyAddress(), entity.getCompanyPhone(),
                 entity.getIndustrySupervisorName(), entity.getIndustrySupervisorDesignation(), entity.getIndustrySupervisorContact(),
                 entity.getDurationMonths(), entity.getStartDate(), entity.getEndDate(), entity.getTotalWeeks(), entity.getInternshipMode().name(),
-                entity.getInternshipMode().getLabel(), entity.getStipendPerMonth(), entity.isFullTimeEmploymentOffered(), entity.getCreatedAt(), entity.getUpdatedAt(), null);
+                entity.getInternshipMode().getLabel(), entity.getStipendPerMonth(), entity.isFullTimeEmploymentOffered(), entity.getCreatedAt(), entity.getUpdatedAt(), workplace);
     }
     private static String clean(String value) { if (value == null) return null; String clean = value.trim(); return clean.isBlank() ? null : clean; }
     private static InternshipDetailsException bad(String code, String message) { return new InternshipDetailsException(HttpStatus.BAD_REQUEST, code, message); }

@@ -20,10 +20,12 @@ public class AttendanceService {
     private final AttendanceEvidenceRepository evidence;
     private final AttendanceSubmissionService submissions;
     private final LateAttendancePermissionService permissions;
+    private final AttendanceLocationVerificationService locationVerification;
 
     public AttendanceService(AttendanceRepository attendance, InternshipDetailsRepository internships,
             UserRepository users, AttendancePolicyService policies, Clock clock, AttendanceEvidenceRepository evidence,
-            AttendanceSubmissionService submissions, LateAttendancePermissionService permissions) {
+            AttendanceSubmissionService submissions, LateAttendancePermissionService permissions,
+            AttendanceLocationVerificationService locationVerification) {
         this.attendance = attendance;
         this.internships = internships;
         this.users = users;
@@ -32,6 +34,7 @@ public class AttendanceService {
         this.evidence = evidence;
         this.submissions = submissions;
         this.permissions = permissions;
+        this.locationVerification = locationVerification;
     }
 
     @Transactional
@@ -41,6 +44,12 @@ public class AttendanceService {
 
     @Transactional
     public AttendanceResponse submitToday(UserPrincipal principal, BigDecimal latitude, BigDecimal longitude, BigDecimal accuracy) {
+        return submitToday(principal, latitude, longitude, accuracy, null);
+    }
+
+    @Transactional
+    public AttendanceResponse submitToday(UserPrincipal principal, BigDecimal latitude, BigDecimal longitude,
+            BigDecimal accuracy, Instant locationCapturedAt) {
         User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
         InternshipDetails internship = eligibleInternship(student.getId());
@@ -53,9 +62,11 @@ public class AttendanceService {
                     "Use today's required attendance evidence flow");
         }
         SubmissionLocation location = SubmissionLocation.require(latitude, longitude, accuracy);
+        locationVerification.validateCaptureTime(locationCapturedAt);
         AttendanceRecord record = submissions.record(student, internship, today,
                 VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC);
-        evidence.saveAndFlush(new AttendanceEvidence(record, location, clock.instant()));
+        locationVerification.save(new AttendanceEvidence(record, location, clock.instant()), internship,
+                location, locationCapturedAt, true);
         return response(record);
     }
 

@@ -35,6 +35,10 @@ class WorkplaceApprovalMigrationPostgresTest {
    assertThat(jdbc.queryForObject("select latitude from internship_locations",java.math.BigDecimal.class)).isEqualByComparingTo("21.125");
    assertThat(jdbc.queryForObject("select verification_status from attendance_records",String.class)).isEqualTo("VERIFIED");
    assertThat(jdbc.queryForObject("select distance_meters from attendance_evidence",java.math.BigDecimal.class)).isEqualByComparingTo("10");
+   assertThat(jdbc.queryForObject("select location_verification_status from attendance_evidence",String.class)).isNull();
+   assertThat(jdbc.queryForObject("select location_captured_at from attendance_evidence",java.sql.Timestamp.class)).isNull();
+   assertThat(jdbc.queryForObject("select workplace_revision from attendance_evidence",Long.class)).isNull();
+   assertThat(jdbc.queryForObject("select count(*) from attendance_location_verification_audit",Integer.class)).isZero();
    assertThat(jdbc.queryForObject("select workplace_verification_status from monthly_progress_reports",String.class)).isEqualTo("WITHIN_RADIUS");
    assertThatThrownBy(() -> jdbc.update("update internship_locations set status='APPROVED'")).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
   } finally {

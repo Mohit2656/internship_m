@@ -2,6 +2,27 @@ export type AttendanceResult = "PRESENT" | "ABSENT";
 export type VerificationStatus = "UNVERIFIED" | "VERIFIED";
 export type LivenessStatus = "VERIFIED" | "FAILED" | "NOT_PERFORMED" | "HISTORICAL" | "NOT_APPLICABLE";
 export type AttendanceSubmissionType = "BASIC" | "PHYSICAL_CAPTURE" | "REMOTE_CAPTURE" | "AUTO_ABSENT";
+export type LocationVerificationStatus = "VERIFIED" | "OUTSIDE_RADIUS" | "INSUFFICIENT_ACCURACY" | "LOCATION_UNAVAILABLE" | "WORKPLACE_NOT_APPROVED" | "STALE_LOCATION" | "NOT_APPLICABLE";
+export type AttendanceLocationEvidence = {
+  latitude: number | null; longitude: number | null; gpsAccuracyMeters?: number | null;
+  locationCheckPassed?: boolean | null; expectedLatitude: number | null; expectedLongitude: number | null;
+  distanceMeters: number | null; geofenceRadiusMeters: number | null; workplaceAddress: string | null;
+  verificationReason: string | null; locationVerificationStatus?: LocationVerificationStatus | null;
+  locationCapturedAt?: string | null; workplaceRevision?: number | null;
+};
+
+export function locationVerificationLabel(status?: LocationVerificationStatus | null) {
+  const labels: Record<LocationVerificationStatus, string> = {
+    VERIFIED: "Workplace location verified",
+    OUTSIDE_RADIUS: "Outside permitted workplace radius",
+    INSUFFICIENT_ACCURACY: "Insufficient GPS accuracy",
+    LOCATION_UNAVAILABLE: "Location unavailable",
+    WORKPLACE_NOT_APPROVED: "Workplace approval required",
+    STALE_LOCATION: "GPS capture too old",
+    NOT_APPLICABLE: "Not applicable",
+  };
+  return status ? labels[status] ?? "Not assessed" : "Not assessed";
+}
 
 export type Attendance = {
   id: number;
@@ -15,7 +36,7 @@ export type Attendance = {
   submittedLate?: boolean;
   submissionType: AttendanceSubmissionType;
   serverSubmittedAt: string;
-  evidence?: { latitude: number | null; longitude: number | null; gpsAccuracyMeters?: number | null; locationCheckPassed?: boolean | null; expectedLatitude: number | null; expectedLongitude: number | null; distanceMeters: number | null; geofenceRadiusMeters: number | null; workplaceAddress: string | null; verificationReason: string | null } | null;
+  evidence?: AttendanceLocationEvidence | null;
 };
 
 export function attendanceLabel(attendance: Attendance) {

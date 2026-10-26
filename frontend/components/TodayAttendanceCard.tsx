@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { AiVerificationEvidence, AiVerificationSession, Attendance, AttendancePolicy, HybridSchedule, TodayAttendance, attendanceLabel, attendanceSubmissionOpen, isAutomaticAbsence, livenessLabel } from "@/lib/attendance";
 import { challengeLabel, EdgeAiAnalyzer, EdgeAiFrameState, EDGE_AI_MODEL_VERSION } from "@/lib/edge-ai";
 import { AttendanceLocations, validSubmissionCoordinates } from "@/components/AttendanceLocations";
+import { LocationVerificationResult } from "@/components/LocationVerificationResult";
 
 export function TodayAttendanceCard() {
   const [today, setToday] = useState<TodayAttendance | null>(null);
@@ -22,7 +23,7 @@ export function TodayAttendanceCard() {
   const [aiState, setAiState] = useState<EdgeAiFrameState | null>(null);
   const [aiError, setAiError] = useState("");
   const [error, setError] = useState("");
-  const [submissionLocation, setSubmissionLocation] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
+  const [submissionLocation, setSubmissionLocation] = useState<{ latitude: number; longitude: number; accuracy: number; capturedAt?: string } | null>(null);
   const [locationNotice, setLocationNotice] = useState("");
   const [locating, setLocating] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -178,9 +179,10 @@ export function TodayAttendanceCard() {
   function includeSubmissionLocation() {
     const request = ++locationRequestRef.current;
     setLocating(true); setSubmissionLocation(null); setLocationNotice("");
-    const unavailable = () => {
+    const unavailable = (cause?: GeolocationPositionError) => {
       if (request !== locationRequestRef.current) return;
-      setLocating(false); setLocationNotice("Submission location is required. Allow location access in your browser settings, then retry capture.");
+      const detail = cause?.code === 1 ? "Location permission was denied. Allow location access in your browser settings" : cause?.code === 3 ? "Location capture timed out. Move to a place with a better GPS signal" : "Your device location is unavailable. Check location services";
+      setLocating(false); setLocationNotice(`Submission location is required. ${detail}, then retry capture.`);
     };
     try {
       if (!navigator.geolocation) { unavailable(); return; }
@@ -188,7 +190,9 @@ export function TodayAttendanceCard() {
         if (request !== locationRequestRef.current) return;
         const { latitude, longitude, accuracy } = position.coords;
         if (!validSubmissionCoordinates(latitude, longitude)) { unavailable(); return; }
-        setSubmissionLocation({ latitude, longitude, accuracy }); setLocating(false);
+        const captureTime = new Date(position.timestamp);
+        const capturedAt = position.timestamp > 0 && Number.isFinite(captureTime.getTime()) ? captureTime.toISOString() : undefined;
+        setSubmissionLocation({ latitude, longitude, accuracy, capturedAt }); setLocating(false);
         setLocationNotice("Submission location captured.");
       }, unavailable, { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 });
     } catch { unavailable(); }
@@ -200,6 +204,7 @@ export function TodayAttendanceCard() {
     form.append("longitude", String(submissionLocation.longitude));
     if (Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0)
       form.append("accuracy", String(submissionLocation.accuracy));
+    if (submissionLocation.capturedAt) form.append("locationCapturedAt", submissionLocation.capturedAt);
   }
 
   async function submitBasic() {
@@ -213,7 +218,7 @@ export function TodayAttendanceCard() {
     }
     setSubmitting(true); setError("");
     try {
-      const { data } = await api.post<Attendance>("/student/attendance/today", null, { params: { latitude: submissionLocation.latitude, longitude: submissionLocation.longitude, accuracy: Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? submissionLocation.accuracy : undefined } });
+      const { data } = await api.post<Attendance>("/student/attendance/today", null, { params: { latitude: submissionLocation.latitude, longitude: submissionLocation.longitude, accuracy: Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? submissionLocation.accuracy : undefined, ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {}) } });
       statusVersionRef.current += 1;
       setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
       stopCamera(); setFlowOpen(false);
@@ -287,6 +292,7 @@ export function TodayAttendanceCard() {
       {!loading && attendance?.submittedLate && <p className="mt-3 text-sm font-semibold text-blue-700">Submitted late with faculty mentor permission.</p>}
       {!loading && windowClosed && !submitted && <p role="status" className="mt-3 text-sm text-amber-800">Today's submission window has closed. Any missing attendance will be recorded as absent automatically.</p>}
       {!loading && attendance && !automatic && <AttendanceLocations evidence={attendance.evidence} />}
+      {!loading && attendance && !automatic && <LocationVerificationResult evidence={attendance.evidence}/>}
       {!loading && policy?.todayWorkMode && <p className="mt-3 text-sm font-semibold text-slate-700">Today&apos;s expected work mode: {policy.todayWorkMode === "OFFICE" ? "Office" : "Remote"}</p>}
       {!loading && policy?.internshipMode === "HYBRID" && schedule && <div className="mt-4 flex flex-wrap gap-2">{schedule.entries.map(entry => <span key={entry.dayOfWeek} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-700">{entry.dayOfWeek.slice(0, 3)} · {entry.workMode === "OFFICE" ? "Office" : "Remote"}</span>)}</div>}
       {!loading && !submitted && !policy && <p role="alert" className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s attendance policy could not be confirmed. Reload the dashboard before submitting attendance.</p>}

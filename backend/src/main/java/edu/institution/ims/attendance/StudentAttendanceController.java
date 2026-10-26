@@ -7,6 +7,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import java.math.BigDecimal;
+import java.time.Instant;
+import org.springframework.format.annotation.DateTimeFormat;
 import java.util.List;
 
 @RestController
@@ -32,8 +34,9 @@ public class StudentAttendanceController {
     public ResponseEntity<AttendanceResponse> submitToday(@AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
-            @RequestParam(required = false) BigDecimal accuracy) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.submitToday(principal, latitude, longitude, accuracy));
+            @RequestParam(required = false) BigDecimal accuracy,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant locationCapturedAt) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.submitToday(principal, latitude, longitude, accuracy, locationCapturedAt));
     }
 
     @PostMapping(value = "/today/physical", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -43,9 +46,10 @@ public class StudentAttendanceController {
             @RequestPart(value = "aiEvidence", required = false) @Valid AiVerificationEvidenceRequest aiEvidence,
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
-            @RequestParam(required = false) BigDecimal accuracy) {
+            @RequestParam(required = false) BigDecimal accuracy,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant locationCapturedAt) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(physicalService.submitToday(principal, photo, aiEvidence, latitude, longitude, accuracy));
+                .body(physicalService.submitToday(principal, photo, aiEvidence, latitude, longitude, accuracy, locationCapturedAt));
     }
 
     @PostMapping(value = "/today/remote", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -56,9 +60,10 @@ public class StudentAttendanceController {
             @RequestParam(required = false) String dailyWorkSummary,
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
-            @RequestParam(required = false) BigDecimal accuracy) {
+            @RequestParam(required = false) BigDecimal accuracy,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant locationCapturedAt) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(remoteService.submitToday(principal, photo, aiEvidence, dailyWorkSummary, latitude, longitude, accuracy));
+                .body(remoteService.submitToday(principal, photo, aiEvidence, dailyWorkSummary, latitude, longitude, accuracy, locationCapturedAt));
     }
 
     @PostMapping("/verification-session")

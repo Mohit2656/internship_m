@@ -95,7 +95,9 @@ class OnlineHybridAttendanceIntegrationTest {
                 .param("latitude","18.5204").param("longitude","73.8567").param("accuracy","500").cookie(session))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.evidence.latitude").value(18.5204))
             .andExpect(jsonPath("$.evidence.longitude").value(73.8567)).andExpect(jsonPath("$.evidence.gpsAccuracyMeters").value(500))
-            .andExpect(jsonPath("$.evidence.expectedLatitude").isEmpty()).andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
+            .andExpect(jsonPath("$.evidence.expectedLatitude").isEmpty())
+            .andExpect(jsonPath("$.evidence.locationVerificationStatus").value("NOT_APPLICABLE"))
+            .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
         mvc.perform(get("/api/v1/student/attendance/today").cookie(session)).andExpect(status().isOk())
             .andExpect(jsonPath("$.attendance.evidence.latitude").value(18.5204));
         assertThat(locations.findAll()).isEmpty();

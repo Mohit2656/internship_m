@@ -23,10 +23,12 @@ public class RemoteAttendanceService {
     private final AiVerificationService aiVerification;
     private final Clock clock;
     private final AttendanceSubmissionService submissions;
+    private final AttendanceLocationVerificationService locationVerification;
 
     public RemoteAttendanceService(AttendanceRepository attendance, AttendanceEvidenceRepository evidence,
             AttendancePolicyService policies, UserRepository users, CameraImageValidator imageValidator,
-            AiVerificationService aiVerification, Clock clock, AttendanceSubmissionService submissions) {
+            AiVerificationService aiVerification, Clock clock, AttendanceSubmissionService submissions,
+            AttendanceLocationVerificationService locationVerification) {
         this.attendance = attendance;
         this.evidence = evidence;
         this.policies = policies;
@@ -35,6 +37,7 @@ public class RemoteAttendanceService {
         this.aiVerification = aiVerification;
         this.clock = clock;
         this.submissions = submissions;
+        this.locationVerification = locationVerification;
     }
 
     @Transactional
@@ -47,6 +50,13 @@ public class RemoteAttendanceService {
     public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
             AiVerificationEvidenceRequest aiEvidence, String workSummary,
             BigDecimal latitude, BigDecimal longitude, BigDecimal accuracy) {
+        return submitToday(principal, photo, aiEvidence, workSummary, latitude, longitude, accuracy, null);
+    }
+
+    @Transactional
+    public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
+            AiVerificationEvidenceRequest aiEvidence, String workSummary, BigDecimal latitude,
+            BigDecimal longitude, BigDecimal accuracy, Instant locationCapturedAt) {
         String summary = validateSummary(workSummary);
         ValidatedCameraImage image = imageValidator.validate(photo);
         User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
@@ -63,6 +73,7 @@ public class RemoteAttendanceService {
                             "Today's hybrid work mode has not been configured");
         }
         SubmissionLocation submitted = SubmissionLocation.require(latitude, longitude, accuracy);
+        locationVerification.validateCaptureTime(locationCapturedAt);
         AiVerificationDecision aiDecision = aiVerification.evaluate(principal, internship, today, aiEvidence);
 
         Instant serverTime = clock.instant();
@@ -72,7 +83,7 @@ public class RemoteAttendanceService {
                 status, AttendanceSubmissionType.REMOTE_CAPTURE);
         AttendanceEvidence captured = new AttendanceEvidence(record, image, summary, null, reason, aiDecision, serverTime);
         captured.recordSubmissionLocation(submitted.latitude(), submitted.longitude(), submitted.accuracyMeters());
-        evidence.saveAndFlush(captured);
+        locationVerification.save(captured, internship, submitted, locationCapturedAt, false);
         return AttendanceService.response(record);
     }
 

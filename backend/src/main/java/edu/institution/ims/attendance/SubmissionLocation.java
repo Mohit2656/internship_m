@@ -3,7 +3,7 @@ package edu.institution.ims.attendance;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
-/** Submission evidence, never an attendance-verification decision. */
+/** Validated submission evidence; the backend independently decides its location outcome. */
 public record SubmissionLocation(BigDecimal latitude, BigDecimal longitude, BigDecimal accuracyMeters) {
     public static SubmissionLocation from(BigDecimal latitude, BigDecimal longitude, BigDecimal accuracy) {
         if (!bounded(latitude) || !bounded(longitude) || latitude.abs().compareTo(BigDecimal.valueOf(90)) > 0
@@ -11,6 +11,7 @@ public record SubmissionLocation(BigDecimal latitude, BigDecimal longitude, BigD
             return new SubmissionLocation(null, null, null);
         BigDecimal safeAccuracy = !bounded(accuracy) || accuracy.signum() <= 0
                 || accuracy.compareTo(new BigDecimal("999999.99")) > 0 ? null : accuracy.setScale(2, RoundingMode.HALF_UP);
+        if (safeAccuracy != null && safeAccuracy.signum() <= 0) safeAccuracy = null;
         return new SubmissionLocation(latitude.setScale(6, RoundingMode.HALF_UP),
                 longitude.setScale(6, RoundingMode.HALF_UP), safeAccuracy);
     }

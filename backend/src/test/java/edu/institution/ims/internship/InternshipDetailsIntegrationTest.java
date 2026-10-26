@@ -151,14 +151,15 @@ class InternshipDetailsIntegrationTest {
         data.put("studentId", studentB.getId());
         data.put("workplace", Map.of("placeId", "ChIJ-test-workplace", "address", "Selected workplace address", "latitude", 30.733315, "longitude", 76.779419));
         mvc.perform(post("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(data)))
-            .andExpect(status().isCreated()).andExpect(jsonPath("$.workplace").doesNotExist())
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.workplace.latitude").value(30.733315))
             .andExpect(jsonPath("$.companyAddress").value("Selected workplace address"));
         mvc.perform(get("/api/v1/student/internship").cookie(studentACookie)).andExpect(status().isOk())
-            .andExpect(jsonPath("$.workplace").doesNotExist());
+            .andExpect(jsonPath("$.workplace.longitude").value(76.779419));
         mvc.perform(get("/api/v1/student/internship/location").cookie(studentACookie)).andExpect(status().isOk())
             .andExpect(jsonPath("$.latitude").value(30.733315)).andExpect(jsonPath("$.longitude").value(76.779419));
         var location = locations.findAll().get(0);
         assertThat(location.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING);
+        assertThat(location.getGeofenceRadiusMeters()).isEqualByComparingTo("100");
         assertThat(location.getInternship().getId()).isEqualTo(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getId());
         assertThat(details.findByOnboardingStudentId(studentB.getId())).isEmpty();
     }
@@ -177,7 +178,7 @@ class InternshipDetailsIntegrationTest {
             .isEqualTo(WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE);
     }
 
-    @Test void companyDetailsCanChangeWithoutReplacingHistoricalWorkplace() throws Exception {
+    @Test void companyAddressChangeRequiresFreshMapSelectionAndApproval() throws Exception {
         readyAndCreate(studentACookie, "A", "UID-A", "a@college.edu", "Original Company");
         var internship = details.findByOnboardingStudentId(studentA.getId()).orElseThrow();
         var location = new edu.institution.ims.attendance.InternshipLocation(internship,
@@ -193,10 +194,12 @@ class InternshipDetailsIntegrationTest {
             .andExpect(jsonPath("$.companyAddress").value("Updated company address"))
             .andExpect(jsonPath("$.workplace").doesNotExist());
         var retained = locations.findById(location.getId()).orElseThrow();
-        assertThat(retained.getPlaceId()).isEqualTo("retained-place");
+        assertThat(retained.getPlaceId()).isNull();
+        assertThat(retained.getWorkplaceAddress()).isNull();
         assertThat(retained.getLatitude()).isEqualByComparingTo("30.733315");
         assertThat(retained.getLongitude()).isEqualByComparingTo("76.779419");
-        assertThat(retained.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.CONFIRMED);
+        assertThat(retained.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING);
+        assertThat(retained.getConfirmedBy()).isNull();
     }
 
     @Test void invalidSelectedWorkplaceCannotBePersisted() throws Exception {

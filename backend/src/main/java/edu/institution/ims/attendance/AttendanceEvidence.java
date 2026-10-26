@@ -22,6 +22,10 @@ public class AttendanceEvidence {
     @Column(name = "geofence_radius_meters", precision = 8, scale = 2) private BigDecimal geofenceRadiusMeters;
     @Column(name = "distance_meters", precision = 10, scale = 2) private BigDecimal distanceMeters;
     @Column(name = "location_check_passed") private Boolean locationCheckPassed;
+    @Enumerated(EnumType.STRING) @Column(name = "location_verification_status", length = 40)
+    private LocationVerificationStatus locationVerificationStatus;
+    @Column(name = "location_captured_at") private Instant locationCapturedAt;
+    @Column(name = "workplace_revision") private Long workplaceRevision;
     @Column(name = "exif_timestamp") private Instant exifTimestamp;
     @Column(name = "exif_latitude", precision = 9, scale = 6) private BigDecimal exifLatitude;
     @Column(name = "exif_longitude", precision = 10, scale = 6) private BigDecimal exifLongitude;
@@ -130,6 +134,24 @@ public class AttendanceEvidence {
         this.longitude = submitted.longitude();
         this.gpsAccuracyMeters = submitted.accuracyMeters();
     }
+
+    void recordLocationVerification(InternshipLocation approvedWorkplace, LocationVerificationDecision decision,
+            Instant capturedAt) {
+        this.locationVerificationStatus = decision.status();
+        this.locationCapturedAt = capturedAt;
+        this.workplaceRevision = approvedWorkplace == null ? null : approvedWorkplace.getRevision();
+        this.expectedLatitude = approvedWorkplace == null ? null : approvedWorkplace.getLatitude();
+        this.expectedLongitude = approvedWorkplace == null ? null : approvedWorkplace.getLongitude();
+        this.geofenceRadiusMeters = approvedWorkplace == null ? null : approvedWorkplace.getGeofenceRadiusMeters();
+        this.workplaceAddress = approvedWorkplace == null ? null : approvedWorkplace.getWorkplaceAddress();
+        this.workplacePlaceId = approvedWorkplace == null ? null : approvedWorkplace.getPlaceId();
+        this.distanceMeters = decision.distanceMeters();
+        this.locationCheckPassed = decision.passed();
+    }
+
+    public LocationVerificationStatus getLocationVerificationStatus() { return locationVerificationStatus; }
+    public Instant getLocationCapturedAt() { return locationCapturedAt; }
+    public Long getWorkplaceRevision() { return workplaceRevision; }
 
     public Long getId() { return id; }
     public AttendanceRecord getAttendance() { return attendance; }
