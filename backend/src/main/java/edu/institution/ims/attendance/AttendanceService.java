@@ -66,7 +66,7 @@ public class AttendanceService {
         AttendanceRecord record = submissions.record(student, internship, today,
                 VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC);
         locationVerification.save(new AttendanceEvidence(record, location, clock.instant()), internship,
-                location, locationCapturedAt, true);
+                location, locationCapturedAt, true, accuracy);
         return response(record);
     }
 

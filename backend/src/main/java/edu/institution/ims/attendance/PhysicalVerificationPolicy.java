@@ -14,7 +14,7 @@ public class PhysicalVerificationPolicy {
     private final Duration maxMetadataAge;
 
     public PhysicalVerificationPolicy(
-            @Value("${app.attendance.max-gps-accuracy-meters:100}") BigDecimal maxGpsAccuracyMeters,
+            @Value("${app.attendance.max-gps-accuracy-meters:200}") BigDecimal maxGpsAccuracyMeters,
             @Value("${app.attendance.max-metadata-location-difference-meters:100}") BigDecimal maxMetadataLocationDifferenceMeters,
             @Value("${app.attendance.max-metadata-age-seconds:600}") long maxMetadataAgeSeconds) {
         this.maxGpsAccuracyMeters = maxGpsAccuracyMeters;

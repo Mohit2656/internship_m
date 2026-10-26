@@ -7,6 +7,7 @@ import { AiVerificationEvidence, AiVerificationSession, Attendance, AttendancePo
 import { challengeLabel, EdgeAiAnalyzer, EdgeAiFrameState, EDGE_AI_MODEL_VERSION } from "@/lib/edge-ai";
 import { AttendanceLocations, validSubmissionCoordinates } from "@/components/AttendanceLocations";
 import { LocationVerificationResult } from "@/components/LocationVerificationResult";
+import { captureAttendanceLocation, accuracyDescription, usableAccuracy, type AttendanceLocationSample } from "@/lib/attendance-location";
 
 export function TodayAttendanceCard() {
   const [today, setToday] = useState<TodayAttendance | null>(null);
@@ -23,7 +24,7 @@ export function TodayAttendanceCard() {
   const [aiState, setAiState] = useState<EdgeAiFrameState | null>(null);
   const [aiError, setAiError] = useState("");
   const [error, setError] = useState("");
-  const [submissionLocation, setSubmissionLocation] = useState<{ latitude: number; longitude: number; accuracy: number; capturedAt?: string } | null>(null);
+  const [submissionLocation, setSubmissionLocation] = useState<AttendanceLocationSample | null>(null);
   const [locationNotice, setLocationNotice] = useState("");
   const [locating, setLocating] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -34,20 +35,21 @@ export function TodayAttendanceCard() {
   const challengeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationRequestRef = useRef(0);
   const statusVersionRef = useRef(0);
+  const locationCaptureRef = useRef<{ cancel: () => void } | null>(null);
   const [windowClosed, setWindowClosed] = useState(false);
 
   useEffect(() => {
-    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); stopCamera(); setFlowOpen(false); return; }
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); stopCamera(); setLocating(false); setFlowOpen(false); return; }
     setWindowClosed(false);
     if (!today?.submissionDeadlineAt) return;
     if (today.latePermissionEnabled) {
       if (typeof window === "undefined") return;
       const timer = window.setInterval(() => {
-        if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); stopCamera(); setFlowOpen(false); }
+        if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); stopCamera(); setLocating(false); setFlowOpen(false); }
       }, 1000);
       return () => window.clearInterval(timer);
     }
-    const timer = setTimeout(() => { setWindowClosed(true); stopCamera(); setFlowOpen(false); }, Math.min(2_147_483_647, Math.max(0, Date.parse(today.submissionDeadlineAt) - Date.now())));
+    const timer = setTimeout(() => { setWindowClosed(true); stopCamera(); setLocating(false); setFlowOpen(false); }, Math.min(2_147_483_647, Math.max(0, Date.parse(today.submissionDeadlineAt) - Date.now())));
     return () => clearTimeout(timer);
   }, [today]);
 
@@ -95,6 +97,8 @@ export function TodayAttendanceCard() {
   }, [flowOpen, photo, cameraStatus]);
 
   function stopCamera() {
+    locationCaptureRef.current?.cancel(); locationCaptureRef.current = null;
+    locationRequestRef.current += 1;
     streamRef.current?.getTracks().forEach(track => track.stop());
     streamRef.current = null;
     analyzerRef.current?.close(); analyzerRef.current = null;
@@ -177,25 +181,33 @@ export function TodayAttendanceCard() {
   }
 
   function includeSubmissionLocation() {
+    locationCaptureRef.current?.cancel();
     const request = ++locationRequestRef.current;
     setLocating(true); setSubmissionLocation(null); setLocationNotice("");
-    const unavailable = (cause?: GeolocationPositionError) => {
-      if (request !== locationRequestRef.current) return;
-      const detail = cause?.code === 1 ? "Location permission was denied. Allow location access in your browser settings" : cause?.code === 3 ? "Location capture timed out. Move to a place with a better GPS signal" : "Your device location is unavailable. Check location services";
-      setLocating(false); setLocationNotice(`Submission location is required. ${detail}, then retry capture.`);
-    };
-    try {
-      if (!navigator.geolocation) { unavailable(); return; }
-      navigator.geolocation.getCurrentPosition(position => {
+    const maximum = policy?.maxGpsAccuracyMeters;
+    const remoteCapture = policy?.verificationMethod === "REMOTE";
+    if (!remoteCapture && (typeof maximum !== "number" || !Number.isFinite(maximum) || maximum <= 0)) {
+      setLocating(false); setLocationNotice("The server's GPS accuracy limit is unavailable. Reload the dashboard and retry capture."); return;
+    }
+    locationCaptureRef.current = captureAttendanceLocation({
+      maximumAccuracy: remoteCapture ? null : maximum!,
+      onReading(sample) {
         if (request !== locationRequestRef.current) return;
-        const { latitude, longitude, accuracy } = position.coords;
-        if (!validSubmissionCoordinates(latitude, longitude)) { unavailable(); return; }
-        const captureTime = new Date(position.timestamp);
-        const capturedAt = position.timestamp > 0 && Number.isFinite(captureTime.getTime()) ? captureTime.toISOString() : undefined;
-        setSubmissionLocation({ latitude, longitude, accuracy, capturedAt }); setLocating(false);
-        setLocationNotice("Submission location captured.");
-      }, unavailable, { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 });
-    } catch { unavailable(); }
+        setLocationNotice(`Best reported GPS accuracy: ${accuracyDescription(sample.accuracy)}. Waiting up to 20 seconds for a usable reading${remoteCapture ? "" : ` (required: ${maximum} m or better)`}…`);
+      },
+      onComplete({ sample, reason }) {
+        if (request !== locationRequestRef.current) return;
+        setLocating(false); setSubmissionLocation(sample);
+        if (reason === "CAPTURED" && sample) {
+          setLocationNotice(`Submission location captured. Reported GPS accuracy: ${accuracyDescription(sample.accuracy)}.${remoteCapture ? " Workplace geofencing is not required for remote attendance." : ` Required: ${maximum} m or better. The server determines final verification.`}`);
+        } else if (sample) {
+          setLocationNotice(`Reported GPS accuracy: ${accuracyDescription(sample.accuracy)}; required: ${maximum} m or better. Move outdoors or near a window, enable precise device location, and retry GPS capture. A phone with GPS may provide a better reading. Submitting this reading will require location review; attendance and liveness rules are unchanged.`);
+        } else {
+          const detail = reason === "PERMISSION_DENIED" ? "Location permission was denied. Allow precise location in browser/device settings" : reason === "TIMEOUT" ? "Location capture timed out. Move somewhere with a clearer GPS signal" : "Your device location is unavailable. Check location services";
+          setLocationNotice(`Submission location is required. ${detail}, then retry capture.`);
+        }
+      }
+    });
   }
 
   function appendSubmissionLocation(form: FormData) {
@@ -277,10 +289,12 @@ export function TodayAttendanceCard() {
   const attendance = today?.attendance;
   const physical = policy?.verificationMethod === "PHYSICAL";
   const remote = policy?.verificationMethod === "REMOTE";
+  const poorAccuracy = Boolean(submissionLocation && !remote && typeof policy?.maxGpsAccuracyMeters === "number" && !usableAccuracy(submissionLocation.accuracy, policy.maxGpsAccuracyMeters));
   const automatic = attendance ? isAutomaticAbsence(attendance) : false;
   const submitted = Boolean(attendance && !automatic);
   const latePermissionActive = Boolean(today?.latePermissionEnabled && attendanceSubmissionOpen(today));
   const deadline = today?.submissionDeadlineAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: today.attendanceZone }).format(new Date(today.submissionDeadlineAt)) : null;
+  const locationCaptureControl = <div className="mt-4 text-sm text-slate-600"><button data-button-variant="text" type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="hover:underline">{locating ? "Capturing submission location..." : poorAccuracy ? "Retry GPS capture" : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance.{!remote && typeof policy?.maxGpsAccuracyMeters === "number" && ` Required GPS accuracy: ${policy.maxGpsAccuracyMeters} m or better.`}</p>{locationNotice && <p role={poorAccuracy ? "alert" : "status"} className={`mt-2 ${poorAccuracy ? "text-amber-800" : ""}`}>{locationNotice}</p>}</div>;
   return (
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-7 lg:col-span-2">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -292,13 +306,13 @@ export function TodayAttendanceCard() {
       {!loading && attendance?.submittedLate && <p className="mt-3 text-sm font-semibold text-blue-700">Submitted late with faculty mentor permission.</p>}
       {!loading && windowClosed && !submitted && <p role="status" className="mt-3 text-sm text-amber-800">Today's submission window has closed. Any missing attendance will be recorded as absent automatically.</p>}
       {!loading && attendance && !automatic && <AttendanceLocations evidence={attendance.evidence} />}
-      {!loading && attendance && !automatic && <LocationVerificationResult evidence={attendance.evidence}/>}
+      {!loading && attendance && !automatic && <LocationVerificationResult evidence={attendance.evidence} maxGpsAccuracyMeters={policy?.maxGpsAccuracyMeters}/>}
       {!loading && policy?.todayWorkMode && <p className="mt-3 text-sm font-semibold text-slate-700">Today&apos;s expected work mode: {policy.todayWorkMode === "OFFICE" ? "Office" : "Remote"}</p>}
       {!loading && policy?.internshipMode === "HYBRID" && schedule && <div className="mt-4 flex flex-wrap gap-2">{schedule.entries.map(entry => <span key={entry.dayOfWeek} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-700">{entry.dayOfWeek.slice(0, 3)} · {entry.workMode === "OFFICE" ? "Office" : "Remote"}</span>)}</div>}
       {!loading && !submitted && !policy && <p role="alert" className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s attendance policy could not be confirmed. Reload the dashboard before submitting attendance.</p>}
       {!loading && !submitted && policy && !policy.configurationReady && <p className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s work mode has not been configured. Attendance can be recorded; liveness will be marked as not performed.</p>}
       {!loading && !submitted && policy && !flowOpen && <button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || ((!physical && !remote) && (!submissionLocation || locating))} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 text-sm">{submitting ? "Submitting…" : "Mark Today's Attendance"}</button>}
-      {!loading && !submitted && policy && !physical && !remote && <div className="mt-4 text-sm text-slate-600"><button data-button-variant="text" type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="hover:underline">{locating ? "Capturing submission location..." : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance.</p>{locationNotice && <p role="status" className="mt-2">{locationNotice}</p>}</div>}
+      {!loading && !submitted && policy && !physical && !remote && locationCaptureControl}
       {!loading && !submitted && !windowClosed && flowOpen && <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div className="mb-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-950"><p className="font-bold">Edge Verification</p><p className="mt-1">Camera analysis verifies a live attendance capture on this device. Face recognition and identity matching are not performed.</p></div>
         {!photo ? <video ref={videoRef} playsInline muted className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" /> : <img src={photoUrl} alt="Fresh attendance camera capture" className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" />}
@@ -306,13 +320,13 @@ export function TodayAttendanceCard() {
         <div className="mt-4 flex flex-wrap gap-3 text-sm"><span className={cameraStatus ? "font-semibold text-emerald-700" : "text-slate-500"}>{cameraStatus || "Camera unavailable"}</span></div>
         {!photo && aiSession && <div className="mt-4 max-w-xl rounded-xl border border-slate-200 bg-white p-4 text-sm"><p className="font-semibold">Liveness challenge: {challengeLabel(aiSession.challenge)}</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><span>{aiState?.faceDetected ? "✓" : "○"} Face detected</span><span>{aiState?.singleFace && aiState.qualityPassed ? "✓" : "○"} Face positioned</span><span>{aiState?.livenessPassed ? "✓" : "○"} Liveness confirmed</span></div><p className="mt-3 text-slate-600">{aiState?.guidance ?? "Loading face analysis…"}</p></div>}
         {aiError && <p role="alert" className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">{aiError}</p>}
-        {!loading && !submitted && policy && photo && <div className="mt-4 text-sm text-slate-600"><button data-button-variant="text" type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="hover:underline">{locating ? "Capturing submission location…" : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance.</p>{locationNotice && <p role="status" className="mt-2">{locationNotice}</p>}</div>}
+        {!loading && !submitted && policy && photo && locationCaptureControl}
         <div className="mt-4 flex flex-wrap gap-3">
           {!photo && streamRef.current && <button type="button" disabled={!aiState?.livenessPassed || !aiState.qualityPassed} onClick={() => void capture()} className="text-sm">Capture Attendance</button>}
           {!photo && aiError && <button data-button-variant="outline" type="button" onClick={() => void startCamera()} className="text-sm">Retry Edge Verification</button>}
           {photo && remote && <label className="w-full max-w-xl text-sm font-semibold text-slate-700">Today&apos;s work/activity<textarea value={dailyWorkSummary} onChange={event => setDailyWorkSummary(event.target.value)} minLength={20} maxLength={1000} rows={4} placeholder="Describe the work you completed today (20–1000 characters)." className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"/><span className="mt-1 block text-xs font-normal text-slate-500">{dailyWorkSummary.trim().length} / 1000 characters</span></label>}
           {photo && <><button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || locating || !submissionLocation || (remote && dailyWorkSummary.trim().length < 20)} onClick={() => void (remote ? submitRemote() : submitPhysical())} className="text-sm">{submitting ? "Submitting…" : "Submit Attendance"}</button><button data-button-variant="outline" type="button" disabled={submitting} onClick={() => void startCamera()} className="text-sm">Retake</button></>}
-          <button data-button-variant="text" type="button" onClick={() => { stopCamera(); setFlowOpen(false); setError(""); }} className="text-sm">Cancel</button>
+          <button data-button-variant="text" type="button" onClick={() => { stopCamera(); setLocating(false); setFlowOpen(false); setError(""); }} className="text-sm">Cancel</button>
         </div>
       </div>}
       {error && <p role="alert" className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}

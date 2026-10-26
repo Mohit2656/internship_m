@@ -14,15 +14,17 @@ public class AttendancePolicyService {
     private final AttendanceRepository attendance;
     private final Clock clock;
     private final LateAttendancePermissionService permissions;
+    private final AttendanceLocationVerificationService locationVerification;
 
     public AttendancePolicyService(HybridWorkScheduleRepository schedules,
             InternshipDetailsRepository internships, AttendanceRepository attendance, Clock clock,
-            LateAttendancePermissionService permissions) {
+            LateAttendancePermissionService permissions, AttendanceLocationVerificationService locationVerification) {
         this.schedules = schedules;
         this.internships = internships;
         this.attendance = attendance;
         this.clock = clock;
         this.permissions = permissions;
+        this.locationVerification = locationVerification;
     }
 
     @Transactional(readOnly = true)
@@ -33,7 +35,7 @@ public class AttendancePolicyService {
         return new AttendancePolicyResponse(internship.getInternshipMode(), policy.todayWorkMode(),
                 policy.verificationMethod(), attendance.findByStudentIdAndAttendanceDate(principal.id(), today)
                         .map(record -> !canReplaceAutomaticAbsence(record, principal.id(), today)).orElse(false),
-                policy.configurationReady(), today);
+                policy.configurationReady(), today, locationVerification.maxGpsAccuracyMeters());
     }
 
     public ResolvedAttendancePolicy resolve(InternshipDetails internship, LocalDate date) {

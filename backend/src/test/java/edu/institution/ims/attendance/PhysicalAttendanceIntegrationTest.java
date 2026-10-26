@@ -149,19 +149,20 @@ class PhysicalAttendanceIntegrationTest {
     }
 
     @Test
-    void poorGpsAccuracyFailsLocationWithoutOverridingSuccessfulLiveness() throws Exception {
+    @org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    void poorGpsAccuracyFailsLocationWithoutOverridingSuccessfulLiveness(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
         saveLocation(verifiedStudent, true);
         Cookie session = loginCookie(verifiedStudent.getEmail(), "StudentPassword!21");
         mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo())
                         .file(aiEvidence(session, 1, true, true))
                         .param("latitude", "18.520400").param("longitude", "73.856700")
-                        .param("accuracy", "106").cookie(session))
+                        .param("accuracy", "206").cookie(session))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.evidence.verificationReason").value("EDGE_AI_VERIFIED"))
-                .andExpect(jsonPath("$.evidence.gpsAccuracyMeters").value(106))
+                .andExpect(jsonPath("$.evidence.gpsAccuracyMeters").value(206))
                 .andExpect(jsonPath("$.evidence.locationCheckPassed").value(false))
                 .andExpect(jsonPath("$.evidence.locationVerificationStatus").value("INSUFFICIENT_ACCURACY"))
                 .andExpect(jsonPath("$.evidence.distanceMeters").value(0))
@@ -172,10 +173,14 @@ class PhysicalAttendanceIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].todayAttendance.attendanceResult").value("PRESENT"))
                 .andExpect(jsonPath("$[0].todayAttendance.livenessStatus").value("VERIFIED"))
-                .andExpect(jsonPath("$[0].todayAttendance.evidence.gpsAccuracyMeters").value(106))
+                .andExpect(jsonPath("$[0].todayAttendance.evidence.gpsAccuracyMeters").value(206))
                 .andExpect(jsonPath("$[0].todayAttendance.evidence.verificationReason").value("EDGE_AI_VERIFIED"));
         assertThat(evidence.findAll()).hasSize(1);
         assertThat(evidence.findAll().get(0).isCameraCaptureUsed()).isTrue();
+        String gpsLog = output.getAll().lines().filter(line -> line.contains("Attendance GPS reportedAccuracyMeters="))
+                .collect(java.util.stream.Collectors.joining("\n"));
+        assertThat(gpsLog).contains("reportedAccuracyMeters=206", "maxAccuracyMeters=200", "result=INSUFFICIENT_ACCURACY")
+                .doesNotContain(verifiedStudent.getEmail(), "18.5204", "73.8567", "ims_auth");
     }
 
     @Test
@@ -249,13 +254,16 @@ class PhysicalAttendanceIntegrationTest {
     @Test void approvedGpsLocationIsIndependentAuditedAndCannotUseAnotherStudentsWorkplace() throws Exception {
         saveLocation(verifiedStudent, true);
         Cookie session = loginCookie(verifiedStudent.getEmail(), "StudentPassword!21");
+        mvc.perform(get("/api/v1/student/attendance/today/policy").cookie(session))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.maxGpsAccuracyMeters").value(200));
         mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo())
                 .file(aiEvidence(session, 1, true, true)).param("latitude", "18.5204").param("longitude", "73.8567")
-                .param("accuracy", "5").param("locationCapturedAt", NOW.toString())
+                .param("accuracy", "115").param("locationCapturedAt", NOW.toString())
                 .param("studentId", outsideStudent.getId().toString()).cookie(session))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.evidence.locationVerificationStatus").value("VERIFIED"))
             .andExpect(jsonPath("$.evidence.distanceMeters").value(0))
             .andExpect(jsonPath("$.evidence.locationCheckPassed").value(true))
+            .andExpect(jsonPath("$.evidence.gpsAccuracyMeters").value(115))
             .andExpect(jsonPath("$.evidence.workplaceRevision").value(1))
             .andExpect(jsonPath("$.evidence.locationCapturedAt").value(NOW.toString()))
             .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
@@ -272,6 +280,24 @@ class PhysicalAttendanceIntegrationTest {
             .andExpect(jsonPath("$[0].evidence.locationVerificationStatus").value("VERIFIED"))
             .andExpect(jsonPath("$[0].evidence.expectedLatitude").value(18.5204))
             .andExpect(jsonPath("$[0].evidence.workplaceRevision").value(1));
+    }
+
+    @Test void malformedAccuracyCanBeRetriedAndNegativeAccuracyCannotVerifyLocation() throws Exception {
+        saveLocation(verifiedStudent, true);
+        Cookie session = loginCookie(verifiedStudent.getEmail(), "StudentPassword!21");
+        var ai = aiEvidence(session, 1, true, true);
+        mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo()).file(ai)
+                .param("latitude", "18.5204").param("longitude", "73.8567").param("accuracy", "NaN").cookie(session))
+            .andExpect(status().isBadRequest());
+        assertThat(attendance.findAll()).isEmpty();
+        mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo()).file(ai)
+                .param("latitude", "18.5204").param("longitude", "73.8567").param("accuracy", "-1").cookie(session))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.evidence.gpsAccuracyMeters").isEmpty())
+            .andExpect(jsonPath("$.evidence.locationVerificationStatus").value("INSUFFICIENT_ACCURACY"))
+            .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+            .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
+        assertThat(jdbc.queryForObject("select location_status from attendance_location_verification_audit", String.class))
+            .isEqualTo("INSUFFICIENT_ACCURACY");
     }
 
     @Test void staleSamplesRequireReviewAndFutureTimeCanBeRetriedWithoutLosingLivenessSession() throws Exception {

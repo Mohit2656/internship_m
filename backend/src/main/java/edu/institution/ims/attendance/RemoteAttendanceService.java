@@ -83,7 +83,7 @@ public class RemoteAttendanceService {
                 status, AttendanceSubmissionType.REMOTE_CAPTURE);
         AttendanceEvidence captured = new AttendanceEvidence(record, image, summary, null, reason, aiDecision, serverTime);
         captured.recordSubmissionLocation(submitted.latitude(), submitted.longitude(), submitted.accuracyMeters());
-        locationVerification.save(captured, internship, submitted, locationCapturedAt, false);
+        locationVerification.save(captured, internship, submitted, locationCapturedAt, false, accuracy);
         return AttendanceService.response(record);
     }
 

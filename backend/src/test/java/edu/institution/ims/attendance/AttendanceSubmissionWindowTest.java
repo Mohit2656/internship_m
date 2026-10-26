@@ -81,6 +81,6 @@ class AttendanceSubmissionWindowTest {
 
     private static AttendancePolicyService policy(Clock clock, LateAttendancePermissionService permissions) {
         return new AttendancePolicyService(mock(HybridWorkScheduleRepository.class),
-                mock(InternshipDetailsRepository.class), mock(AttendanceRepository.class), clock, permissions);
+                mock(InternshipDetailsRepository.class), mock(AttendanceRepository.class), clock, permissions, mock(AttendanceLocationVerificationService.class));
     }
 }

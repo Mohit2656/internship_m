@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.*;
@@ -12,6 +14,7 @@ import java.time.*;
 /** Evaluates only a submitted sample against the authenticated internship's approved revision. */
 @Service
 public class AttendanceLocationVerificationService {
+    private static final Logger log = LoggerFactory.getLogger(AttendanceLocationVerificationService.class);
     private final InternshipLocationRepository locations;
     private final InternshipLocationService approvals;
     private final AttendanceEvidenceRepository evidence;
@@ -22,7 +25,7 @@ public class AttendanceLocationVerificationService {
 
     public AttendanceLocationVerificationService(InternshipLocationRepository locations,
             InternshipLocationService approvals, AttendanceEvidenceRepository evidence, JdbcTemplate jdbc, Clock clock,
-            @Value("${app.attendance.max-gps-accuracy-meters:100}") BigDecimal maxAccuracy,
+            @Value("${app.attendance.max-gps-accuracy-meters:200}") BigDecimal maxAccuracy,
             @Value("${app.attendance.max-location-age-seconds:300}") long maxAgeSeconds) {
         if (maxAccuracy.signum() <= 0 || maxAgeSeconds <= 0)
             throw new IllegalArgumentException("GPS accuracy threshold and sample age must be positive");
@@ -33,7 +36,10 @@ public class AttendanceLocationVerificationService {
         this.clock = clock;
         this.maxAccuracy = maxAccuracy;
         this.maxAge = Duration.ofSeconds(maxAgeSeconds);
+        log.info("Attendance GPS policy maxAccuracyMeters={} maxLocationAgeSeconds={}", maxAccuracy, maxAgeSeconds);
     }
+
+    public BigDecimal maxGpsAccuracyMeters() { return maxAccuracy; }
 
     public void validateCaptureTime(Instant capturedAt) {
         if (capturedAt != null && (capturedAt.isBefore(Instant.EPOCH)
@@ -43,7 +49,7 @@ public class AttendanceLocationVerificationService {
     }
 
     public void save(AttendanceEvidence captured, InternshipDetails internship, SubmissionLocation submitted,
-            Instant capturedAt, boolean geofenceApplicable) {
+            Instant capturedAt, boolean geofenceApplicable, BigDecimal reportedAccuracy) {
         validateCaptureTime(capturedAt);
         // The evidence constructor attaches itself to the managed attendance record. Make it
         // managed before the approval query can trigger Hibernate's automatic flush.
@@ -64,6 +70,12 @@ public class AttendanceLocationVerificationService {
                 capturedAt == null ? null : Timestamp.from(capturedAt), captured.getExpectedLatitude(),
                 captured.getExpectedLongitude(), captured.getGeofenceRadiusMeters(),
                 decision.distanceMeters(), decision.passed());
+        // Diagnostic values only: no identity, coordinates, address, token, or session data.
+        String safeReportedAccuracy = reportedAccuracy == null ? "missing"
+                : reportedAccuracy.precision() <= 40 && Math.abs((long) reportedAccuracy.scale()) <= 20
+                    ? reportedAccuracy.toString() : "invalid";
+        log.info("Attendance GPS reportedAccuracyMeters={} normalizedAccuracyMeters={} maxAccuracyMeters={} result={}",
+                safeReportedAccuracy, submitted.accuracyMeters(), maxAccuracy, decision.status());
     }
 
     LocationVerificationDecision evaluate(SubmissionLocation submitted, InternshipLocation approvedWorkplace,

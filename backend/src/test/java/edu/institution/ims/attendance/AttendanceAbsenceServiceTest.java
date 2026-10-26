@@ -176,7 +176,7 @@ class AttendanceAbsenceServiceTest {
 
     private AttendanceAbsenceService service(String instant) {
         Clock clock = Clock.fixed(Instant.parse(instant), ZONE);
-        AttendancePolicyService policies = new AttendancePolicyService(schedules, internships, attendance, clock, mock(LateAttendancePermissionService.class));
+        AttendancePolicyService policies = new AttendancePolicyService(schedules, internships, attendance, clock, mock(LateAttendancePermissionService.class), mock(AttendanceLocationVerificationService.class));
         return new AttendanceAbsenceService(internships, attendance, policies, calendar, writer, clock);
     }
 

@@ -88,7 +88,7 @@ test("late permission overrides noon only on the attendance date in the configur
   assert.equal(attendance.attendanceSubmissionOpen({ ...today, submissionOpen: false }, Date.parse("2026-10-19T07:00:00Z")), false);
 });
 
-function cameraHarness({ liveness = true, method = "PHYSICAL", today = {}, locationOutcome } = {}) {
+function cameraHarness({ liveness = true, method = "PHYSICAL", today = {}, locationOutcome, maxGpsAccuracyMeters = 100 } = {}) {
   const states = [], refs = [], effects = []; let stateIndex = 0, refIndex = 0, effectIndex = 0;
   const pendingEffects = [], calls = [];
   const video = { videoWidth: 640, videoHeight: 480, async play() {} };
@@ -99,7 +99,7 @@ function cameraHarness({ liveness = true, method = "PHYSICAL", today = {}, locat
     useEffect(effect, dependencies) { const i = effectIndex++; if (!effects[i] || dependencies.some((value, n) => value !== effects[i][n])) { effects[i] = dependencies; pendingEffects.push(effect); } }
   };
   const api = {
-    async get(url) { return { data: url.endsWith("/policy") ? { internshipMode: "OFFICE_REPORTING", verificationMethod: method, configurationReady: true } : { attendanceDate: "2026-10-11", attendance: null, ...today } }; },
+    async get(url) { return { data: url.endsWith("/policy") ? { internshipMode: "OFFICE_REPORTING", verificationMethod: method, configurationReady: true, maxGpsAccuracyMeters } : { attendanceDate: "2026-10-11", attendance: null, ...today } }; },
     async post(url, body, config) { calls.push({ url, body, config }); return { data: url.endsWith("verification-session") ? { sessionId: "issued-by-server", challenge: "BLINK" } : { ...record(method === "BASIC" ? "NOT_PERFORMED" : "VERIFIED"), submittedLate: today.latePermissionEnabled === true, ...(locationOutcome ? { evidence: { locationVerificationStatus: locationOutcome, distanceMeters: 200, geofenceRadiusMeters: 100 } } : {}) } }; }
   };
   class Analyzer { async initialize() {} start(video, challenge, update) { if (liveness !== null) update({ faceCount: 1, faceDetected: true, singleFace: true, qualityPassed: true, livenessPassed: liveness }); } close() {} }
@@ -300,4 +300,79 @@ test("capture timestamp accompanies GPS and the result appears only after the ba
   for (const forbidden of ["studentId", "internshipId", "distanceMeters", "locationVerificationStatus"]) assert.equal(body.has(forbidden), false);
   assert.match(h.html(), /outside the permitted workplace radius/); assert.match(h.html(), /Liveness verified/);
   h.cancel();
+});
+
+test("poor accuracy shows actual metres and server limit, then a manual retry sends the improved real reading", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  let accuracy = 115;
+  const requests = [];
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+    mediaDevices: { async getUserMedia() { return { getTracks: () => [{ stop() {} }] }; } },
+    geolocation: { getCurrentPosition(success, failure, options) { requests.push(options); success({ timestamp: Date.now(), coords: { latitude: 18.52, longitude: 73.85, accuracy } }); } }
+  }});
+  t.after(() => { if (previous) Object.defineProperty(globalThis, "navigator", previous); else delete globalThis.navigator; });
+  const h = cameraHarness({ maxGpsAccuracyMeters: 80 }); await h.mount();
+  h.button("Mark Today's Attendance").props.onClick(); await flush();
+  await h.button("Capture Attendance").props.onClick(); await flush();
+  h.button("Capture submission location (required)").props.onClick();
+  assert.equal(h.button("Submit Attendance").props.disabled, true);
+  assert.match(h.html(), /115 m/); assert.match(h.html(), /80 m or better/);
+  t.mock.timers.tick(20000);
+  assert.match(h.html(), /move outdoors|Move outdoors/); assert.match(h.html(), /precise device location/);
+  assert.match(h.html(), /location review/); assert.ok(h.button("Retry GPS capture"));
+  accuracy = 12.345;
+  h.button("Retry GPS capture").props.onClick(); await flush();
+  assert.match(h.html(), /12.345 m/);
+  assert.equal(h.button("Submit Attendance").props.disabled, false);
+  h.button("Submit Attendance").props.onClick(); await flush();
+  const body = h.calls.find(call => call.url.endsWith("/physical")).body;
+  assert.equal(body.get("accuracy"), "12.345"); assert.equal(body.has("locationVerificationStatus"), false);
+  assert.ok(requests.every(options => options.enableHighAccuracy && options.maximumAge === 0)); h.cancel();
+});
+
+test("permission denial provides actionable guidance and leaves retry available without submitting", async t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { geolocation: {
+    getCurrentPosition(success, failure) { failure({ code: 1 }); }
+  } } });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, "navigator", previous); else delete globalThis.navigator; });
+  const h = cameraHarness({ method: "BASIC" }); await h.mount();
+  h.button("Capture submission location (required)").props.onClick(); await flush();
+  assert.match(h.html(), /permission was denied/); assert.match(h.html(), /precise location/);
+  assert.equal(h.button("Capture submission location (required)").props.disabled, false);
+  assert.equal(h.button("Mark Today's Attendance").props.disabled, true); assert.equal(h.calls.length, 0);
+});
+
+test("historical insufficient-accuracy result displays the stored accuracy without claiming an outside-radius error", () => {
+  const html = renderStudent({ ...record("VERIFIED"), evidence: { locationVerificationStatus: "INSUFFICIENT_ACCURACY", gpsAccuracyMeters: 115, distanceMeters: 4.87, geofenceRadiusMeters: 200 } });
+  assert.match(html, /Reported GPS accuracy: 115 m/); assert.match(html, /Distance: 5 m/);
+  assert.match(html, /permitted radius: 200 m/); assert.match(html, /Liveness verified/);
+  assert.doesNotMatch(html, /outside the permitted workplace radius/);
+});
+
+test("closing the attendance window cancels pending GPS and clears its loading state", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const previousNow = Date.now, previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Date.now = () => Date.parse("2026-10-19T06:29:59Z");
+  let lateSuccess;
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { geolocation: { getCurrentPosition(success) { lateSuccess = success; } } } });
+  t.after(() => { Date.now = previousNow; if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator); else delete globalThis.navigator; });
+  const h = cameraHarness({ method: "BASIC", today: { submissionOpen: true, submissionDeadlineAt: "2026-10-19T06:30:00Z", attendanceZone: "Asia/Kolkata" } });
+  await h.mount(); await h.mount();
+  h.button("Capture submission location (required)").props.onClick();
+  assert.ok(h.html().includes("Capturing submission location"));
+  t.mock.timers.tick(1000);
+  assert.match(h.html(), /submission window has closed/);
+  assert.ok(h.button("Capture submission location (required)"));
+  lateSuccess({ timestamp: Date.now(), coords: { latitude: 18, longitude: 73, accuracy: 1 } });
+  assert.doesNotMatch(h.html(), /Submission location captured/);
+  assert.equal(h.button("Mark Today's Attendance").props.disabled, true);
+});
+
+test("missing server accuracy configuration fails clearly instead of guessing a threshold", async () => {
+  const h = cameraHarness({ method: "BASIC", maxGpsAccuracyMeters: null }); await h.mount();
+  h.button("Capture submission location (required)").props.onClick();
+  assert.match(h.html(), /server&#x27;s GPS accuracy limit is unavailable/);
+  assert.equal(h.button("Mark Today's Attendance").props.disabled, true); assert.equal(h.calls.length, 0);
 });

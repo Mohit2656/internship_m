@@ -77,7 +77,7 @@ public class PhysicalAttendanceService {
         AttendanceRecord record = submissions.record(student, internship, today,
                 decision.status(), AttendanceSubmissionType.PHYSICAL_CAPTURE);
         locationVerification.save(new AttendanceEvidence(record, input, null, decision, aiDecision, serverTime),
-                internship, submitted, locationCapturedAt, true);
+                internship, submitted, locationCapturedAt, true, accuracyMeters);
         return AttendanceService.response(record);
     }
 

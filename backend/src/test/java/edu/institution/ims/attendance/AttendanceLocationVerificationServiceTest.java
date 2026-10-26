@@ -20,10 +20,35 @@ class AttendanceLocationVerificationServiceTest {
     }
 
     @Test void absentAndPoorAccuracyCannotPassAndConfiguredThresholdIsUsed() {
+        assertThat(service.maxGpsAccuracyMeters()).isEqualByComparingTo("50");
         assertThat(check("0", "0", "51", NOW).status()).isEqualTo(LocationVerificationStatus.INSUFFICIENT_ACCURACY);
         assertThat(check("0", "0", "50", NOW).status()).isEqualTo(LocationVerificationStatus.VERIFIED);
         assertThat(check("0", "0", "0", NOW).status()).isEqualTo(LocationVerificationStatus.INSUFFICIENT_ACCURACY);
         assertThat(check("0", "0", "0.001", NOW).status()).isEqualTo(LocationVerificationStatus.INSUFFICIENT_ACCURACY);
+    }
+
+    @Test void twoHundredMetrePolicyAcceptsReported115AndBoundaryButStillRejectsPoorOrOutsideReadings() {
+        var relaxed = new AttendanceLocationVerificationService(null, null, null, null,
+                Clock.fixed(NOW, ZoneOffset.UTC), new BigDecimal("200"), 300);
+        assertThat(relaxed.maxGpsAccuracyMeters()).isEqualByComparingTo("200");
+        for (String accuracy : new String[]{"115", "200"}) {
+            var sample = SubmissionLocation.require(BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal(accuracy));
+            assertThat(relaxed.evaluate(sample, workplace, NOW, true).status()).isEqualTo(LocationVerificationStatus.VERIFIED);
+        }
+        var poor = SubmissionLocation.require(BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("200.01"));
+        assertThat(relaxed.evaluate(poor, workplace, NOW, true).status()).isEqualTo(LocationVerificationStatus.INSUFFICIENT_ACCURACY);
+        var outside = SubmissionLocation.require(BigDecimal.ZERO, new BigDecimal("0.002"), new BigDecimal("115"));
+        assertThat(relaxed.evaluate(outside, workplace, NOW, true).status()).isEqualTo(LocationVerificationStatus.OUTSIDE_RADIUS);
+    }
+
+    @Test void invalidAccuracyIsDistinctFromBeingOutsideTheRadius() {
+        for (BigDecimal accuracy : new BigDecimal[]{null, BigDecimal.ZERO, new BigDecimal("-1"),
+                new BigDecimal("0.001"), new BigDecimal("1000000"), new BigDecimal("1e2147483647")}) {
+            var submitted = SubmissionLocation.require(BigDecimal.ZERO, BigDecimal.ZERO, accuracy);
+            assertThat(service.evaluate(submitted, workplace, NOW, true).status())
+                    .isEqualTo(LocationVerificationStatus.INSUFFICIENT_ACCURACY);
+        }
+        assertThat(check("0", "0.002", "5", NOW).status()).isEqualTo(LocationVerificationStatus.OUTSIDE_RADIUS);
     }
 
     @Test void missingApprovedWorkplaceAndRemoteWorkNeverClaimGeofenceVerification() {

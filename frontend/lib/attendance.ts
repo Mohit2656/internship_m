@@ -111,6 +111,7 @@ export type AttendancePolicy = {
   attendanceAlreadySubmitted: boolean;
   configurationReady: boolean;
   serverDate: string;
+  maxGpsAccuracyMeters: number;
 };
 
 export type HybridScheduleEntry = { dayOfWeek: string; workMode: HybridWorkMode };
