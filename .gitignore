@@ -10,6 +10,8 @@ frontend/.next/
 frontend/.env.local
 *.log
 *.tsbuildinfo
+.local-run/
+backend/classpath.txt
 
 # Ignore deployment credentials at every project level; retain blank examples.
 .env

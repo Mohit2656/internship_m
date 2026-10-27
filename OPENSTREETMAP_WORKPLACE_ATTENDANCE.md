@@ -14,7 +14,7 @@ The assigned mentor reviews a workplace in the student's profile page; the III C
 
 The new `OpenStreetMapWorkplacePicker` dynamically loads `OpenStreetMapWorkplaceMap` in the browser. It supports clicking the map, dragging a marker, requesting the device's current position, viewing coordinates, and explicitly confirming the selection. Initial map centre is a viewport only; it is never saved as a selected workplace.
 
-Enter the company address in the existing company form. The picker associates that address with the confirmed pin; it does not claim the address was reverse geocoded. Address search is not configured. No public Nominatim autocomplete or other geocoder is called. `RegisteredWorkplace.placeId` is null for a new OSM selection; existing Google Place IDs remain intact on saved records unless the student explicitly changes the selection.
+Enter the company address in the existing company form, or use the picker's **Search for a workplace** box to find a company, street, or city. Search runs only on the Search button or Enter; selecting a result moves the draft pin and fills the address. Adjust the pin to the actual entrance and explicitly confirm before saving. The company address remains editable; selecting a pin alone does not reverse geocode it. Search uses the authenticated backend Photon proxy described in [WORKPLACE_SEARCH.md](WORKPLACE_SEARCH.md). `RegisteredWorkplace.placeId` is null for a new OSM selection; existing Google Place IDs remain intact on saved records unless the student explicitly changes the selection.
 
 Office and hybrid registration require a confirmed workplace in the UI. An unfinished pin/address change blocks saving in every mode. Online/college company registration remains usable without a workplace. Missing backend coordinates never result in verified GPS attendance.
 
@@ -40,7 +40,7 @@ Apply Flyway `V34__attendance_gps_location_signal.sql` with the matching backend
 
 The frontend adds `leaflet`, `react-leaflet`, and the development dependency `@types/leaflet`. No API key is required for the default interactive OSM tiles. Optional public `NEXT_PUBLIC_OSM_TILE_URL`, `NEXT_PUBLIC_OSM_TILE_PROVIDER_NAME`, and `NEXT_PUBLIC_OSM_TILE_PROVIDER_URL` settings are separate from Google configuration and require a frontend rebuild. Supply the chosen provider's required attribution. Never put a secret in a `NEXT_PUBLIC_` variable.
 
-The default map uses the [OSM tile policy](https://operations.osmfoundation.org/policies/tiles/): visible attribution, HTTPS, browser caching/referrer, no bulk/offline downloads, and no speculative tile buffering. Select a suitable tile provider for deployment traffic and service requirements. No geocoding service, backend tile proxy, AI service, Vercel routing, or Render deployment setting is changed.
+The default map uses the [OSM tile policy](https://operations.osmfoundation.org/policies/tiles/): visible attribution, HTTPS, browser caching/referrer, no bulk/offline downloads, and no speculative tile buffering. Select a suitable tile provider for deployment traffic and service requirements. The subsequent workplace search feature adds a separately configured geocoding proxy; it does not add a backend tile proxy or change the AI service or frontend routing.
 
 No production deployment or application-data migration is performed by this implementation.
 

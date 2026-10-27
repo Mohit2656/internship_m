@@ -85,10 +85,10 @@ test("Places selection fetches actual branch fields and rejects incomplete provi
 });
 function nodes(tree) { if (!tree || typeof tree !== "object") return []; return [tree, ...[tree.props?.children].flat(Infinity).flatMap(nodes)]; }
 function reviewHarness(scope, fail) {
-  const states = { 2: "Incorrect branch selected", 3: { revision: 7, latitude: 21, longitude: 79, geofenceRadiusMeters: 200, workplaceAddress: "Actual branch address", mentorDecision: null, iiicDecision: "APPROVE" }, 7: false };
+  const states = { 2: "Incorrect branch selected", 3: { revision: 7, latitude: 21, longitude: 79, geofenceRadiusMeters: 200, workplaceAddress: "Actual branch address", status: "PENDING", mentorDecision: null, iiicDecision: "APPROVE" }, 6: "200", 7: false };
   let index = 0; const calls = [];
   const hooks = { useEffect() {}, useState(initial) { const i = index++; return [i in states ? states[i] : initial, value => { states[i] = value; }]; } };
-  const { InternshipLocationManager } = load("InternshipLocationManager", { react: hooks, "@/lib/api": { api: { async post(url, body) { calls.push({ url, body }); if (fail) throw { response: { data: { message: "Workplace changed. Refresh." } } }; return { data: { ...states[3], status: "APPROVED", mentorDecision: "APPROVE" } }; } } }, "@/components/WorkplacePlaceSelector": { WorkplacePlaceSelector: () => null }, "@/components/LocationMapLink": { LocationMapLink: () => null } });
+  const { InternshipLocationManager } = load("InternshipLocationManager", { react: hooks, "@/lib/api": { api: { async post(url, body) { calls.push({ url, body }); if (fail) throw { response: { data: { message: "Workplace changed. Refresh." } } }; return { data: { ...states[3], status: "APPROVED", mentorDecision: "APPROVE" } }; } } }, "@/components/OpenStreetMapWorkplacePicker": { OpenStreetMapWorkplacePicker: () => null }, "@/components/LocationMapLink": { LocationMapLink: () => null } });
   return { states, calls, tree: InternshipLocationManager({ studentId: 42, scope }) };
 }
 test("mentor review posts selected revision through mentor endpoint and updates the panel", async () => {
