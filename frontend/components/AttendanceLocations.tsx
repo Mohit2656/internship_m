@@ -1,5 +1,4 @@
 import type { Attendance } from "@/lib/attendance";
-import { LocationMapLink } from "@/components/LocationMapLink";
 
 export function validSubmissionCoordinates(latitude: unknown, longitude: unknown): boolean {
   return typeof latitude === "number" && typeof longitude === "number"
@@ -15,6 +14,6 @@ export function AttendanceLocations({ evidence }: { evidence: Pick<NonNullable<A
     <p className="font-semibold">Attendance submission location</p>
     <p>Latitude: {evidence.latitude}; Longitude: {evidence.longitude}</p>
     {typeof accuracy === "number" && Number.isFinite(accuracy) && accuracy >= 0 && <p>Reported GPS accuracy: {accuracy} m</p>}
-    <LocationMapLink latitude={evidence.latitude} longitude={evidence.longitude} label="Open submission location in Google Maps" />
+    <a className="mt-2 inline-block text-sm font-semibold text-blue-700 hover:underline" href={`https://www.google.com/maps?q=${encodeURIComponent(`${evidence.latitude},${evidence.longitude}`)}`} target="_blank" rel="noopener noreferrer">View Submitted Location on Google Maps</a>
   </div>;
 }

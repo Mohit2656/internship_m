@@ -27,7 +27,7 @@ test("mentor attendance history opens stored submission coordinates independentl
   const hooks = { useEffect() {}, useState(initial) { const i = cursor++; return [i in values ? values[i] : initial, () => {}]; } }, empty = () => null;
   const { ReportsCenter } = load("components/ReportsCenter.tsx", { react: hooks, "@/lib/api": {}, "@/lib/attendance": attendance, "@/lib/monthly-progress": load("lib/monthly-progress.ts", { "@/lib/api": {} }), "@/components/AttendanceLocations": submissionLocations, "@/components/MentorRecordDelete": { MentorRecordDelete: empty }, "@/components/DashboardReportExport": { DashboardReportExport: empty } });
   const html = renderToStaticMarkup(React.createElement(ReportsCenter, { role, attendanceOnly: true }));
-  assert.match(html, /query=18[.]5204%2C73[.]8567/); assert.match(html, /Open submission location in Google Maps/); assert.match(html, /Liveness not confirmed/); assert.doesNotMatch(html, /workplace|geofence|radius/i);
+  assert.match(html, /maps\?q=18[.]5204%2C73[.]8567/); assert.match(html, /View Submitted Location on Google Maps/); assert.match(html, /Liveness not confirmed/); assert.doesNotMatch(html, /workplace|geofence|radius/i);
 });
 for (const role of ["ADMIN", "MENTOR"]) test(`${role} attendance records use liveness filters, historical status and readable summary`, () => {
   const fields = [{ id: "verification", label: "Liveness status" }, { id: "studentName", label: "Student" }, { id: "date", label: "Date" }];

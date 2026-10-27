@@ -427,6 +427,60 @@ class PhysicalAttendanceIntegrationTest {
         assertThat(locations.findAll()).isEmpty();
     }
 
+    @Test void mentorAndAdminHistoryKeepEachSubmittedLocationSeparateFromWorkplaceAndOtherRecords() throws Exception {
+        saveLocation(outsideStudent, true);
+        assignments.saveAndFlush(new MentorStudentAssignment(mentorA, verifiedStudent, admin, NOW));
+        submitPhysical(outsideStudent, "StudentPassword!22", "19.076000", "72.877700", "10");
+        submitPhysical(verifiedStudent, "StudentPassword!21", "-33.868820", "151.209290", "10");
+
+        var internship = internships.findByOnboardingStudentId(outsideStudent.getId()).orElseThrow();
+        var workplace = locations.findByInternshipId(internship.getId()).orElseThrow();
+        for (int daysAgo : new int[]{1, 2}) {
+            Instant submittedAt = NOW.minusSeconds(daysAgo * 86400L);
+            AttendanceRecord historical = attendance.saveAndFlush(new AttendanceRecord(outsideStudent,
+                    internship, TODAY.minusDays(daysAgo), AttendanceResult.PRESENT, VerificationStatus.UNVERIFIED,
+                    AttendanceSubmissionType.PHYSICAL_CAPTURE, submittedAt));
+            // A historical workplace may exist even when the submitted point is unavailable.
+            evidence.saveAndFlush(new AttendanceEvidence(historical,
+                    new PhysicalEvidenceInput(daysAgo == 1 ? BigDecimal.ZERO : null,
+                            daysAgo == 1 ? BigDecimal.ZERO : null, null,
+                            new ValidatedCameraImage("image/jpeg", 123, null, null, null)),
+                    workplace, new VerificationDecision(VerificationStatus.UNVERIFIED,
+                            VerificationReason.EDGE_AI_EVIDENCE_MISSING, null, null, null),
+                    AiVerificationDecision.missing(), submittedAt));
+        }
+
+        Cookie mentor = loginCookie(mentorA.getEmail(), "MentorPassword!23");
+        for (String role : new String[]{"mentor", "admin"}) {
+            Cookie session = role.equals("mentor") ? mentor : adminSession;
+            mvc.perform(get("/api/v1/" + role + "/attendance/students/" + outsideStudent.getId()).cookie(session))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.records.length()").value(3))
+                    .andExpect(jsonPath("$.records[0].evidence.latitude").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.records[0].evidence.longitude").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.records[0].evidence.expectedLatitude").value(18.5204))
+                    .andExpect(jsonPath("$.records[1].evidence.latitude").value(0))
+                    .andExpect(jsonPath("$.records[1].evidence.longitude").value(0))
+                    .andExpect(jsonPath("$.records[2].evidence.latitude").value(19.076))
+                    .andExpect(jsonPath("$.records[2].evidence.longitude").value(72.8777))
+                    .andExpect(jsonPath("$.records[2].evidence.expectedLatitude").value(18.5204))
+                    .andExpect(jsonPath("$.records[2].evidence.expectedLongitude").value(73.8567))
+                    .andExpect(jsonPath("$.records[2].evidence.locationVerificationStatus").value("OUTSIDE_RADIUS"))
+                    .andExpect(jsonPath("$.records[2].livenessStatus").value("VERIFIED"));
+            mvc.perform(get("/api/v1/" + role + "/attendance/students/" + verifiedStudent.getId()).cookie(session))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.records.length()").value(1))
+                    .andExpect(jsonPath("$.records[0].evidence.latitude").value(-33.86882))
+                    .andExpect(jsonPath("$.records[0].evidence.longitude").value(151.20929));
+        }
+        mvc.perform(get("/api/v1/mentor/attendance/today").cookie(mentor)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.uid == 'P200')].todayAttendance.evidence.latitude").value(19.076))
+                .andExpect(jsonPath("$[?(@.uid == 'P200')].todayAttendance.evidence.longitude").value(72.8777))
+                .andExpect(jsonPath("$[?(@.uid == 'P100')].todayAttendance.evidence.latitude").value(-33.86882))
+                .andExpect(jsonPath("$[?(@.uid == 'P100')].todayAttendance.evidence.longitude").value(151.20929));
+        mvc.perform(get("/api/v1/mentor/attendance/students/" + outsideStudent.getId())
+                        .cookie(loginCookie(mentorB.getEmail(), "MentorPassword!24")))
+                .andExpect(status().isForbidden());
+    }
+
     private void submitPhysical(User student, String password, String latitude, String longitude,
             String accuracy) throws Exception {
         Cookie session = loginCookie(student.getEmail(), password);
@@ -436,11 +490,14 @@ class PhysicalAttendanceIntegrationTest {
                         .param("insideGeofence", "true").cookie(session))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
-                .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
+                .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
+                .andExpect(jsonPath("$.evidence.latitude").value(new BigDecimal(latitude).doubleValue()))
+                .andExpect(jsonPath("$.evidence.longitude").value(new BigDecimal(longitude).doubleValue()));
         AttendanceRecord record = attendance.findByStudentIdAndAttendanceDate(student.getId(), TODAY).orElseThrow();
         AttendanceEvidence stored = evidence.findByAttendanceId(record.getId()).orElseThrow();
         assertThat(stored.getVerificationReason()).isEqualTo(VerificationReason.EDGE_AI_VERIFIED);
         assertThat(stored.getLatitude()).isEqualTo(SubmissionLocation.from(new BigDecimal(latitude),new BigDecimal(longitude),new BigDecimal(accuracy)).latitude());
+        assertThat(stored.getLongitude()).isEqualTo(SubmissionLocation.from(new BigDecimal(latitude),new BigDecimal(longitude),new BigDecimal(accuracy)).longitude());
         LocationVerificationStatus expected = student.getId().equals(outsideStudent.getId()) ? LocationVerificationStatus.OUTSIDE_RADIUS
                 : student.getId().equals(inaccurateStudent.getId()) ? LocationVerificationStatus.INSUFFICIENT_ACCURACY
                 : LocationVerificationStatus.WORKPLACE_NOT_APPROVED;

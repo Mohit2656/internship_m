@@ -174,7 +174,7 @@ test("student display the same stored submission coordinates without requesting 
   const item = { ...record("FAILED"), evidence: { latitude: 18.5204, longitude: 73.8567, gpsAccuracyMeters: 106, workplaceAddress: "Unrelated company address" } };
   for (const html of [renderStudent(item)]) {
     assert.match(html, /Latitude: 18[.]5204/); assert.match(html, /Longitude: 73[.]8567/); assert.match(html, /Reported GPS accuracy: 106 m/);
-    assert.match(html, /query=18[.]5204%2C73[.]8567/); assert.match(html, /Open submission location in Google Maps/);
+    assert.match(html, /maps\?q=18[.]5204%2C73[.]8567/); assert.match(html, /View Submitted Location on Google Maps/);
     assert.match(html, /target="_blank"/); assert.match(html, /noopener noreferrer/); assert.match(html, /Liveness not confirmed/);
     assert.doesNotMatch(html, /Unrelated company address|Registered workplace|geofence|radius/i);
   }
@@ -189,7 +189,7 @@ test("missing, partial, invalid and nonnumeric stored coordinates are neutral; z
     }
   }
   for (const html of [renderStudent({ ...record("HISTORICAL"), evidence: { latitude: 0, longitude: 0, gpsAccuracyMeters: -1 } })]) {
-    assert.match(html, /query=0%2C0/); assert.doesNotMatch(html, /Reported GPS accuracy/); assert.match(html, /Historical attendance/);
+    assert.match(html, /maps\?q=0%2C0/); assert.doesNotMatch(html, /Reported GPS accuracy/); assert.match(html, /Historical attendance/);
   }
 });
 
