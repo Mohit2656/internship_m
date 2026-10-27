@@ -318,6 +318,16 @@ html[data-theme="dark"] .report-document:not(h1, h2, h3, h4, h5, h6) {
 }
 html[data-theme="dark"] :is(h1, h2, h3, h4, h5, h6).report-document { color: var(--ink); }
 
+/* Saved approval stays visibly white, including the disabled state in dark mode. */
+button[data-button-variant="approved"]:disabled,
+html[data-theme="dark"] button[data-button-variant="approved"]:disabled {
+  background: #fff;
+  border-color: #cbd5e1;
+  color: #1e3a8a;
+  opacity: 1;
+  cursor: default;
+}
+
 @media (max-width: 420px) {
   html { scroll-padding-top: 9rem; }
   .app-topbar-inner { grid-template-columns: minmax(0, 1fr); }

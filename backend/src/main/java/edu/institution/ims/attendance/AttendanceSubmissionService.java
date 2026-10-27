@@ -1,6 +1,7 @@
 package edu.institution.ims.attendance;
 
 import edu.institution.ims.internship.InternshipDetails;
+import edu.institution.ims.notification.MentorNotificationService;
 import edu.institution.ims.user.User;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -19,14 +20,17 @@ public class AttendanceSubmissionService {
     private final LateAttendancePermissionService permissions;
     private final JdbcTemplate jdbc;
     private final Clock clock;
+    private final MentorNotificationService notifications;
 
     public AttendanceSubmissionService(AttendanceRepository attendance, AttendancePolicyService policies,
-            LateAttendancePermissionService permissions, JdbcTemplate jdbc, Clock clock) {
+            LateAttendancePermissionService permissions, JdbcTemplate jdbc, Clock clock,
+            MentorNotificationService notifications) {
         this.attendance = attendance;
         this.policies = policies;
         this.permissions = permissions;
         this.jdbc = jdbc;
         this.clock = clock;
+        this.notifications = notifications;
     }
 
     // The caller holds the student lock, shared with mentor permission changes.
@@ -56,6 +60,7 @@ public class AttendanceSubmissionService {
             throw duplicate();
         }
         if (late) audit(record, "LATE_SUBMISSION");
+        notifications.attendanceSubmitted(record);
         return record;
     }
 

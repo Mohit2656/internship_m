@@ -272,7 +272,7 @@ test("late permission leaves failed liveness blocked", async t => {
 test("GPS verification is displayed from the server independently of liveness, and legacy evidence is neutral", () => {
   for (const [status, label] of [["VERIFIED", "Workplace location verified"], ["OUTSIDE_RADIUS", "outside the permitted"],
     ["INSUFFICIENT_ACCURACY", "GPS accuracy is insufficient"], ["LOCATION_UNAVAILABLE", "Location could not be verified"],
-    ["WORKPLACE_NOT_APPROVED", "Workplace approval is required"], ["STALE_LOCATION", "GPS capture is too old"]]) {
+    ["WORKPLACE_NOT_APPROVED", "The workplace was not approved when this attendance was submitted."], ["STALE_LOCATION", "GPS capture is too old"]]) {
     const html = renderStudent({ ...record("VERIFIED"), evidence: { locationVerificationStatus: status, distanceMeters: 120, geofenceRadiusMeters: 100 } });
     assert.ok(html.includes(label)); assert.match(html, /Liveness verified/); assert.match(html, /Distance: 120 m/);
   }

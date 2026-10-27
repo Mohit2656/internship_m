@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AxiosError } from "axios";
 import { api, ApiError } from "@/lib/api";
 import { OpenStreetMapWorkplacePicker } from "@/components/OpenStreetMapWorkplacePicker";
@@ -22,8 +22,11 @@ export function InternshipLocationManager({ studentId, scope = "admin" }: { stud
   const [error, setError] = useState("");
   const [correctionPending, setCorrectionPending] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const requestVersion = useRef(0);
+  const mutationPending = useRef(false);
 
   const radiusChanged = Boolean(location && Number(radius) !== Number(location.geofenceRadiusMeters));
+  const workplaceApproved = location?.status === "APPROVED";
   const missingMentor = location?.mentorDecision !== "APPROVE";
   const missingIiic = location?.iiicDecision !== "APPROVE";
   const statusLabel = !location ? (error ? "Unavailable" : "Not registered") : location.status === "APPROVED" ? "Approved"
@@ -47,39 +50,72 @@ export function InternshipLocationManager({ studentId, scope = "admin" }: { stud
 
   useEffect(() => {
     const abort = new AbortController();
-    setLoading(true); setLocation(null); setLatitude(""); setLongitude(""); setRadius("100"); setCorrection(false); setSelection(null); setReason(""); setError(""); setCorrectionPending(false);
+    const version = ++requestVersion.current;
+    mutationPending.current = false;
+    setLoading(true); setLocation(null); setLatitude(""); setLongitude(""); setRadius("100"); setCorrection(false); setSelection(null); setReason(""); setError(""); setCorrectionPending(false); setSaving(false); setConfirming(false);
     api.get<InternshipLocation>((scope === "student" ? "/student/internship/location" : `/${scope}/students/${studentId}/internship/location`), { signal: abort.signal })
-      .then(response => { if (!abort.signal.aborted) useLocation(response.data); })
+      .then(response => { if (!abort.signal.aborted && version === requestVersion.current) useLocation(response.data); })
       .catch((cause: AxiosError) => {
-        if (!abort.signal.aborted && cause.response?.status !== 404) setError("Internship location could not be loaded.");
+        if (!abort.signal.aborted && version === requestVersion.current && cause.response?.status !== 404) setError("Internship location could not be loaded.");
       })
-      .finally(() => { if (!abort.signal.aborted) setLoading(false); });
-    return () => abort.abort();
+      .finally(() => { if (!abort.signal.aborted && version === requestVersion.current) setLoading(false); });
+    return () => { abort.abort(); requestVersion.current++; };
   }, [studentId, scope, refreshVersion]);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || loading || saving || confirming || correction || radiusChanged || reason.trim()) return;
+    let active = true;
+    let pending: AbortController | null = null;
+    function refresh() {
+      if (!active || pending || mutationPending.current || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
+      const abort = new AbortController(); pending = abort;
+      const version = ++requestVersion.current;
+      api.get<InternshipLocation>(scope === "student" ? "/student/internship/location" : `/${scope}/students/${studentId}/internship/location`, { signal: abort.signal })
+        .then(({ data }) => { if (active && !abort.signal.aborted && version === requestVersion.current) { useLocation(data); setError(""); } })
+        .catch(() => { if (active && !abort.signal.aborted && version === requestVersion.current) setError("Workplace status could not be refreshed. Showing the last loaded status; retry Refresh status."); })
+        .finally(() => { if (pending === abort) pending = null; });
+    }
+    window.addEventListener("focus", refresh);
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", refresh);
+    const timer = window.setInterval(refresh, 30_000);
+    return () => {
+      active = false; pending?.abort();
+      window.removeEventListener("focus", refresh);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", refresh);
+      window.clearInterval(timer);
+    };
+  }, [studentId, scope, refreshVersion, loading, saving, confirming, correction, radiusChanged, reason]);
+
   async function save() {
-    if (correction && (correctionPending || !selection?.address || reason.trim().length < 5)) return;
+    if (mutationPending.current || (correction && (correctionPending || !selection?.address || reason.trim().length < 5))) return;
+    mutationPending.current = true;
+    const version = ++requestVersion.current;
     setSaving(true); setError("");
     try {
       const { data } = await api.put<InternshipLocation>(`/admin/students/${studentId}/internship/location/${correction ? "correction" : "radius"}`, correction ? {
         workplace: selection, radiusMeters: Number(radius), reason: reason.trim()
       } : { radiusMeters: Number(radius) });
+      if (version !== requestVersion.current) return;
       setCorrection(false); setSelection(null); setReason(""); setCorrectionPending(false);
       useLocation(data);
     } catch (cause) {
-      setError((cause as AxiosError<ApiError>).response?.data?.message ?? "Location could not be saved.");
-    } finally { setSaving(false); }
+      if (version === requestVersion.current) setError((cause as AxiosError<ApiError>).response?.data?.message ?? "Location could not be saved.");
+    } finally { if (version === requestVersion.current) { mutationPending.current = false; setSaving(false); } }
   }
 
   async function confirm(decision: "APPROVE" | "REJECT" = "APPROVE") {
-    if (!location?.workplaceAddress || correction || radiusChanged) return;
+    if (mutationPending.current || !location?.workplaceAddress || correction || radiusChanged || (decision === "APPROVE" && workplaceApproved)) return;
+    mutationPending.current = true;
+    const version = ++requestVersion.current;
     setConfirming(true); setError("");
     try {
       const { data } = await api.post<InternshipLocation>(`/${scope}/students/${studentId}/internship/location/review`, { revision: location?.revision, decision, remarks: reason.trim() || null });
+      if (version !== requestVersion.current) return;
       useLocation(data);
+      setReason("");
     } catch (cause) {
-      setError((cause as AxiosError<ApiError>).response?.data?.message ?? "Location could not be confirmed.");
-    } finally { setConfirming(false); }
+      if (version === requestVersion.current) setError((cause as AxiosError<ApiError>).response?.data?.message ?? "Location could not be confirmed.");
+    } finally { if (version === requestVersion.current) { mutationPending.current = false; setConfirming(false); } }
   }
 
   return (
@@ -96,7 +132,7 @@ export function InternshipLocationManager({ studentId, scope = "admin" }: { stud
       </div>}
       {!loading && scope === "admin" && correction && <div className="mt-5 space-y-3"><OpenStreetMapWorkplacePicker value={selection} name={location?.workplaceName || location?.companyName} disabled={saving || confirming} onSelect={setSelection} onPendingChange={setCorrectionPending}/><label className="block text-sm font-semibold">Correction reason<textarea value={reason} maxLength={500} onChange={e => setReason(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 p-3" /></label><p className="text-xs text-slate-500">This change is audited, requires both approvals again, and affects future submissions only.</p></div>}
       {!loading && scope === "admin" && <><div className="mt-5 flex flex-wrap gap-3"><button data-button-variant="outline" type="button" disabled={saving || confirming} onClick={() => { setCorrection(v => !v); setSelection(!correction && location?.workplaceAddress ? { name: location.workplaceName, placeId: location.placeId, address: location.workplaceAddress, latitude: Number(location.latitude), longitude: Number(location.longitude) } : null); setReason(""); setCorrectionPending(false); }} className="text-sm">{correction ? "Cancel correction" : "Correct registered workplace"}</button><button data-button-variant="outline" type="button" disabled={saving || confirming || !radius || Number(radius) < 10 || Number(radius) > 5000 || (correction ? correctionPending || !selection?.address || reason.trim().length < 5 : !location || !radiusChanged)} onClick={() => void save()} className="text-sm">{saving ? "Saving…" : correction ? "Save audited correction" : "Save radius"}</button></div>{radiusChanged && <p className="mt-3 text-sm text-amber-800">Saving a changed radius clears both approvals and requires a new review. Save the radius or restore its previous value before reviewing.</p>}</>}
-      {!loading && location?.workplaceAddress && <div className="mt-5 space-y-3"><div className="text-sm text-slate-600"><p>Workplace revision {location.revision}</p><p className="mt-2">Mentor: {location.mentorDecision || "PENDING"}{location.mentorReviewedAt && ` - user ${location.mentorReviewerId}, ${new Date(location.mentorReviewedAt).toLocaleString()}`}</p>{location.mentorRemarks && <p>{location.mentorRemarks}</p>}<p className="mt-2">III Cell: {location.iiicDecision || "PENDING"}{location.confirmedAt && ` - user ${location.confirmedBy}, ${new Date(location.confirmedAt).toLocaleString()}`}</p>{location.iiicRemarks && <p>{location.iiicRemarks}</p>}</div>{scope !== "student" && !correction && <><label className="block text-sm font-semibold">Review remarks (required for rejection)<textarea value={reason} maxLength={500} onChange={e => setReason(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 p-3" /></label><div className="flex gap-3"><button disabled={saving || confirming || radiusChanged} onClick={() => void confirm("APPROVE")} className="text-sm">Approve workplace</button><button data-button-variant="outline" disabled={saving || confirming || radiusChanged || reason.trim().length<5} onClick={() => void confirm("REJECT")} className="text-sm">Reject workplace</button></div></>}</div>}
+      {!loading && location?.workplaceAddress && <div className="mt-5 space-y-3"><div className="text-sm text-slate-600"><p>Workplace revision {location.revision}</p><p className="mt-2">Mentor: {location.mentorDecision || "PENDING"}{location.mentorReviewedAt && ` - user ${location.mentorReviewerId}, ${new Date(location.mentorReviewedAt).toLocaleString()}`}</p>{location.mentorRemarks && <p>{location.mentorRemarks}</p>}<p className="mt-2">III Cell: {location.iiicDecision || "PENDING"}{location.confirmedAt && ` - user ${location.confirmedBy}, ${new Date(location.confirmedAt).toLocaleString()}`}</p>{location.iiicRemarks && <p>{location.iiicRemarks}</p>}</div>{scope !== "student" && !correction && <><label className="block text-sm font-semibold">Review remarks (required for rejection)<textarea value={reason} maxLength={500} onChange={e => setReason(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 p-3" /></label><div className="flex gap-3"><button data-button-variant={workplaceApproved ? "approved" : undefined} disabled={saving || confirming || radiusChanged || workplaceApproved} onClick={() => void confirm("APPROVE")} className="text-sm">{workplaceApproved ? "Approved" : "Approve workplace"}</button><button data-button-variant="outline" disabled={saving || confirming || radiusChanged || reason.trim().length<5} onClick={() => void confirm("REJECT")} className="text-sm">Reject workplace</button></div></>}</div>}
       {!loading && <button data-button-variant="outline" type="button" disabled={saving || confirming || correction || radiusChanged} onClick={() => setRefreshVersion(value => value + 1)} className="mt-4 text-sm">Refresh status</button>}
       {location?.status === "APPROVED" && location.confirmedAt && <p className="mt-4 text-xs text-slate-500">Confirmed {new Date(location.confirmedAt).toLocaleString()}.</p>}
       {error && <p role="alert" className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}

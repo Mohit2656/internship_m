@@ -26,7 +26,7 @@ const location = {
 function panel(scope, value) {
   let cursor = 0;
   const seed = { 3: value, 4: value ? String(value.latitude) : "", 5: value ? String(value.longitude) : "", 6: "200", 7: false };
-  const hooks = { useState(initial) { const i = cursor++; return [i in seed ? seed[i] : initial, () => {}]; }, useEffect() {} };
+  const hooks = { useState(initial) { const i = cursor++; return [i in seed ? seed[i] : initial, () => {}]; }, useRef(initial) { return { current: initial }; }, useEffect() {} };
   const { InternshipLocationManager } = load("InternshipLocationManager", {
     react: hooks, "@/lib/api": { api: {} },
     "@/components/OpenStreetMapWorkplacePicker": { OpenStreetMapWorkplacePicker: picker },
@@ -107,8 +107,40 @@ function harness(initialProps = {}) {
       assert.ok(component, "OpenStreetMap correction picker should be rendered");
       return component.props;
     },
+    close() { cleanups.forEach(cleanup => cleanup?.()); },
   };
   return result;
+}
+
+function browserEvents(t) {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const windowListeners = new Map(), documentListeners = new Map(), intervals = new Map(), cleanups = [];
+  let timerId = 0;
+  const surface = listeners => ({
+    addEventListener(name, handler) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(handler); },
+    removeEventListener(name, handler) { listeners.get(name)?.delete(handler); },
+  });
+  const doc = { ...surface(documentListeners), visibilityState: "visible" };
+  Object.defineProperty(globalThis, "window", { configurable: true, value: {
+    ...surface(windowListeners),
+    setInterval(handler, delay) { const id = ++timerId; intervals.set(id, { handler, delay }); return id; },
+    clearInterval(id) { intervals.delete(id); },
+  } });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: doc });
+  t.after(() => {
+    cleanups.forEach(cleanup => cleanup());
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow); else delete globalThis.window;
+    if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument); else delete globalThis.document;
+  });
+  return {
+    focus() { [...windowListeners.get("focus") ?? []].forEach(handler => handler()); },
+    visibility(value) { doc.visibilityState = value; [...documentListeners.get("visibilitychange") ?? []].forEach(handler => handler()); },
+    poll() { [...intervals.values()].forEach(({ handler, delay }) => { assert.equal(delay, 30_000); handler(); }); },
+    listeners() { return [...windowListeners.values(), ...documentListeners.values()].reduce((sum, listeners) => sum + listeners.size, 0); },
+    cleanup(callback) { cleanups.push(callback); },
+    get timers() { return intervals.size; },
+  };
 }
 
 test("registered branch displays actual address, read-only coordinates and Maps link without a Google Places dependency", () => {
@@ -125,7 +157,8 @@ test("mentor panel is read-only and has no correction or confirmation actions", 
   const html = panel("mentor", location);
   assert.equal((html.match(/readOnly=""/g) || []).length, 3);
   assert.doesNotMatch(html, /Correct registered workplace|Save radius|Confirm location/);
-  assert.match(html, /Approve workplace/);
+  assert.match(html, /data-button-variant="approved"[^>]*disabled=""[^>]*>Approved<|disabled=""[^>]*data-button-variant="approved"[^>]*>Approved</);
+  assert.doesNotMatch(html, /Approve workplace/);
   assert.match(html, /Reject workplace/);
 });
 
@@ -194,7 +227,8 @@ test("unsaved radius blocks review and refresh until the server saves its new re
   let tree = await h.loaded();
   radiusInput(tree).props.onChange({ target: { value: "250" } });
   tree = h.render();
-  assert.equal(button(tree, "Approve workplace").props.disabled, true);
+  assert.equal(button(tree, "Approved").props.disabled, true);
+  assert.equal(button(tree, "Approved").props["data-button-variant"], "approved");
   assert.equal(button(tree, "Reject workplace").props.disabled, true);
   assert.equal(button(tree, "Refresh status").props.disabled, true);
   assert.match(renderToStaticMarkup(tree), /Saving a changed radius clears both approvals and requires a new review[.]/);
@@ -207,6 +241,7 @@ test("unsaved radius blocks review and refresh until the server saves its new re
   tree = await h.settle();
   assert.match(renderToStaticMarkup(tree), />Awaiting mentor and III Cell</);
   assert.equal(button(tree, "Approve workplace").props.disabled, false);
+  assert.notEqual(button(tree, "Approve workplace").props["data-button-variant"], "approved");
   assert.equal(button(tree, "Refresh status").props.disabled, false);
   assert.equal(h.click(tree, "Approve workplace"), true);
   assert.equal(h.requests.at(-1).body.revision, 5);
@@ -265,6 +300,243 @@ test("an aborted older request cannot replace the newly selected student's workp
   const html = renderToStaticMarkup(tree);
   assert.match(html, /Current student&#x27;s branch/);
   assert.doesNotMatch(html, /Stale student/);
+});
+
+test("student panel refetches each persisted approval stage on focus and visibility without fabricating approval", async t => {
+  const browser = browserEvents(t);
+  const h = harness({ scope: "student", studentId: undefined });
+  browser.cleanup(() => h.close());
+  const pending = { ...location, status: "PENDING", mentorDecision: null, iiicDecision: null };
+  let tree = await h.loaded(pending);
+  assert.equal(h.requests[0].url, "/student/internship/location");
+  assert.match(renderToStaticMarkup(tree), />Awaiting mentor and III Cell</);
+  browser.focus();
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests.at(-1).url, "/student/internship/location");
+  assert.match(renderToStaticMarkup(h.render()), />Awaiting mentor and III Cell</);
+  h.requests.at(-1).resolve({ ...pending, mentorDecision: "APPROVE", mentorReviewerId: 55 });
+  tree = await h.settle();
+  assert.match(renderToStaticMarkup(tree), />Awaiting III Cell</);
+  assert.doesNotMatch(renderToStaticMarkup(tree), />Approved</);
+  const requestCount = h.requests.length;
+  browser.visibility("hidden");
+  assert.equal(h.requests.length, requestCount);
+  browser.visibility("visible");
+  assert.equal(h.requests.length, requestCount + 1);
+  h.requests.at(-1).resolve(location);
+  tree = await h.settle();
+  const html = renderToStaticMarkup(tree);
+  assert.match(html, />Approved</);
+  assert.match(html, /Both the assigned mentor and III Cell have approved this workplace/);
+  assert.match(html, /Registered branch address/);
+  assert.match(html, /query=21[.]125%2C79[.]0875/);
+  assert.doesNotMatch(html, /Approve workplace|Reject workplace|Correct registered workplace/);
+});
+
+test("student panel polls the authoritative record and a reopened view retains approved state", async t => {
+  const browser = browserEvents(t);
+  const h = harness({ scope: "student", studentId: undefined });
+  await h.loaded({ ...location, status: "PENDING", iiicDecision: null });
+  assert.equal(browser.timers, 1);
+  browser.poll();
+  assert.equal(h.requests.at(-1).url, "/student/internship/location");
+  h.requests.at(-1).resolve(location);
+  assert.match(renderToStaticMarkup(await h.settle()), />Approved</);
+  h.close();
+  assert.equal(browser.timers, 0);
+  assert.equal(browser.listeners(), 0);
+  const reopened = harness({ scope: "student", studentId: undefined });
+  browser.cleanup(() => reopened.close());
+  const tree = await reopened.loaded(location);
+  assert.match(renderToStaticMarkup(tree), />Approved</);
+  assert.equal(reopened.requests.length, 1);
+});
+
+test("student background refresh displays server rejection and preserves the saved branch", async t => {
+  const browser = browserEvents(t);
+  const h = harness({ scope: "student", studentId: undefined });
+  browser.cleanup(() => h.close());
+  await h.loaded({ ...location, status: "PENDING", mentorDecision: null });
+  browser.focus();
+  assert.equal(h.requests.length, 2);
+  h.requests.at(-1).resolve({ ...location, status: "REJECTED", mentorDecision: "REJECT", mentorRemarks: "Wrong company branch selected" });
+  const html = renderToStaticMarkup(await h.settle());
+  assert.match(html, />Rejected</);
+  assert.match(html, /Wrong company branch selected/);
+  assert.match(html, /Registered branch address/);
+  assert.doesNotMatch(html, />Approved</);
+});
+
+test("a failed review or status refresh retains the last authoritative state", async t => {
+  const browser = browserEvents(t);
+  const h = harness();
+  browser.cleanup(() => h.close());
+  let tree = await h.loaded({ ...location, status: "PENDING", mentorDecision: null, iiicDecision: null });
+  h.click(tree, "Approve workplace");
+  h.requests.at(-1).reject({ response: { data: { message: "Workplace review could not be saved" } } });
+  tree = await h.settle();
+  assert.match(renderToStaticMarkup(tree), /Workplace review could not be saved/);
+  assert.match(renderToStaticMarkup(tree), />Awaiting mentor and III Cell</);
+  assert.equal(button(tree, "Approve workplace").props.disabled, false);
+  assert.notEqual(button(tree, "Approve workplace").props["data-button-variant"], "approved");
+  browser.focus();
+  assert.equal(h.requests.length, 3);
+  h.requests.at(-1).reject(new Error("Network unavailable"));
+  tree = await h.settle();
+  assert.match(renderToStaticMarkup(tree), />Awaiting mentor and III Cell</);
+  assert.doesNotMatch(renderToStaticMarkup(tree), />Approved</);
+});
+
+for (const scope of ["mentor", "admin"]) {
+  const ownDecision = scope === "mentor" ? "mentorDecision" : "iiicDecision";
+  const otherDecision = scope === "mentor" ? "iiicDecision" : "mentorDecision";
+
+  test(`${scope} approval becomes white and disabled only after the server confirms final approval and remains so after reopening`, async () => {
+    const h = harness({ scope });
+    let tree = await h.loaded({ ...location, status: "PENDING", [ownDecision]: null });
+    const pending = button(tree, "Approve workplace");
+    assert.equal(pending.props.disabled, false);
+    assert.notEqual(pending.props["data-button-variant"], "approved");
+    h.click(tree, "Approve workplace");
+    const review = h.requests.at(-1);
+    assert.equal(review.url, `/${scope}/students/1/internship/location/review`);
+    assert.deepEqual(review.body, { revision: 4, decision: "APPROVE", remarks: null });
+    tree = h.render();
+    assert.equal(button(tree, "Approve workplace").props.disabled, true);
+    assert.notEqual(button(tree, "Approve workplace").props["data-button-variant"], "approved");
+    review.resolve(location);
+    tree = await h.settle();
+    const approved = button(tree, "Approved");
+    assert.equal(approved.props["data-button-variant"], "approved");
+    assert.equal(approved.props.disabled, true);
+    assert.match(renderToStaticMarkup(tree), /Both the assigned mentor and III Cell have approved this workplace/);
+    const requestCount = h.requests.length;
+    assert.equal(h.click(tree, "Approved"), false);
+    assert.equal(h.requests.length, requestCount);
+    h.close();
+
+    const reopened = harness({ scope });
+    tree = await reopened.loaded(location);
+    assert.equal(button(tree, "Approved").props["data-button-variant"], "approved");
+    assert.equal(button(tree, "Approved").props.disabled, true);
+    assert.equal(reopened.requests.length, 1);
+    reopened.close();
+  });
+
+  test(`${scope} partial approval keeps the active pending button and identifies the remaining reviewer after posting and reopening`, async () => {
+    const h = harness({ scope });
+    let tree = await h.loaded({ ...location, status: "PENDING", mentorDecision: null, iiicDecision: null });
+    h.click(tree, "Approve workplace");
+    const partial = { ...location, status: "PENDING", [ownDecision]: "APPROVE", [otherDecision]: null };
+    h.requests.at(-1).resolve(partial);
+    tree = await h.settle();
+    assert.equal(button(tree, "Approve workplace").props.disabled, false);
+    assert.notEqual(button(tree, "Approve workplace").props["data-button-variant"], "approved");
+    assert.match(renderToStaticMarkup(tree), scope === "mentor" ? /Awaiting III Cell/ : /Awaiting mentor/);
+    assert.doesNotMatch(renderToStaticMarkup(tree), />Approved</);
+    h.close();
+
+    const reopened = harness({ scope });
+    tree = await reopened.loaded(partial);
+    assert.equal(button(tree, "Approve workplace").props.disabled, false);
+    assert.notEqual(button(tree, "Approve workplace").props["data-button-variant"], "approved");
+    reopened.close();
+  });
+
+  test(`${scope} failed approval cannot turn the pending button white`, async () => {
+    const h = harness({ scope });
+    let tree = await h.loaded({ ...location, status: "PENDING", [ownDecision]: null });
+    h.click(tree, "Approve workplace");
+    h.requests.at(-1).reject({ response: { data: { message: "Approval was not saved. Try again." } } });
+    tree = await h.settle();
+    assert.match(renderToStaticMarkup(tree), /Approval was not saved[.] Try again[.]/);
+    assert.equal(button(tree, "Approve workplace").props.disabled, false);
+    assert.notEqual(button(tree, "Approve workplace").props["data-button-variant"], "approved");
+    assert.doesNotMatch(renderToStaticMarkup(tree), />Approved</);
+    h.close();
+  });
+
+  test(`${scope} can review rejected workplaces and pending approvals that are invalid for the current reviewers`, async () => {
+    const h = harness({ scope });
+    let tree = await h.loaded({ ...location, status: "PENDING" });
+    assert.match(renderToStaticMarkup(tree), /Approval needs review/);
+    assert.equal(button(tree, "Approve workplace").props.disabled, false);
+    assert.notEqual(button(tree, "Approve workplace").props["data-button-variant"], "approved");
+    h.click(tree, "Approve workplace");
+    assert.equal(h.requests.at(-1).body.decision, "APPROVE");
+    h.requests.at(-1).resolve({ ...location, status: "REJECTED", [otherDecision]: "REJECT" });
+    tree = await h.settle();
+    assert.match(renderToStaticMarkup(tree), />Rejected</);
+    assert.equal(button(tree, "Approve workplace").props.disabled, false);
+    assert.notEqual(button(tree, "Approve workplace").props["data-button-variant"], "approved");
+    h.close();
+  });
+}
+
+test("a pending background response cannot overwrite a newer review response", async t => {
+  const browser = browserEvents(t);
+  const h = harness();
+  browser.cleanup(() => h.close());
+  const pending = { ...location, status: "PENDING", iiicDecision: null };
+  let tree = await h.loaded(pending);
+  browser.focus();
+  assert.equal(h.requests.length, 2);
+  const oldRead = h.requests.at(-1);
+  h.click(tree, "Approve workplace");
+  const review = h.requests.at(-1);
+  assert.equal(review.method, "post");
+  review.resolve(location);
+  tree = await h.settle();
+  assert.match(renderToStaticMarkup(tree), />Approved</);
+  oldRead.resolve(pending);
+  tree = await h.settle();
+  assert.match(renderToStaticMarkup(tree), />Approved</);
+  assert.doesNotMatch(renderToStaticMarkup(tree), />Awaiting III Cell</);
+});
+
+test("a previous student's late review cannot replace the current student's record", async () => {
+  const h = harness();
+  let tree = await h.loaded({ ...location, status: "PENDING", iiicDecision: null });
+  h.click(tree, "Approve workplace");
+  const oldReview = h.requests.at(-1);
+  h.render({ studentId: 2 });
+  h.requests.at(-1).resolve({ ...location, workplaceName: "Current student's branch", status: "REJECTED", iiicDecision: "REJECT" });
+  await h.settle();
+  oldReview.resolve({ ...location, workplaceName: "Previous student's branch" });
+  tree = await h.settle();
+  const html = renderToStaticMarkup(tree);
+  assert.match(html, /Current student&#x27;s branch/);
+  assert.match(html, />Rejected</);
+  assert.doesNotMatch(html, /Previous student|>Approved</);
+  h.close();
+});
+
+test("automatic refresh preserves unsaved radius, review remarks and map correction drafts", async t => {
+  const browser = browserEvents(t);
+  const h = harness();
+  browser.cleanup(() => h.close());
+  let tree = await h.loaded();
+  const initialCount = h.requests.length;
+  radiusInput(tree).props.onChange({ target: { value: "250" } });
+  tree = h.render();
+  browser.focus(); browser.poll();
+  assert.equal(h.requests.length, initialCount);
+  assert.equal(radiusInput(h.render()).props.value, "250");
+  radiusInput(tree).props.onChange({ target: { value: "200" } });
+  tree = h.render();
+  elements(tree).find(element => element.type === "textarea").props.onChange({ target: { value: "Review remarks in progress" } });
+  tree = h.render();
+  browser.focus(); browser.poll();
+  assert.equal(h.requests.length, initialCount);
+  assert.equal(elements(h.render()).find(element => element.type === "textarea").props.value, "Review remarks in progress");
+  h.click(tree, "Correct registered workplace");
+  tree = h.render();
+  const draft = { name: "New entrance", placeId: null, address: "Draft branch address", latitude: 19.076, longitude: 72.8777 };
+  h.picker(tree).onSelect(draft);
+  h.render();
+  browser.focus(); browser.poll();
+  assert.equal(h.requests.length, initialCount);
+  assert.deepEqual(h.picker(h.render()).value, draft);
 });
 
 test("attendance browser GPS and workplace are independent when browser GPS is missing", () => {

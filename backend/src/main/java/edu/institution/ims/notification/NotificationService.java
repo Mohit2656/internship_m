@@ -1,14 +1,17 @@
 package edu.institution.ims.notification;
 
 import edu.institution.ims.monthlyprogress.MonthlyProgressReport;
+import edu.institution.ims.attendance.InternshipLocation;
 import edu.institution.ims.opportunity.Opportunity;
 import edu.institution.ims.opportunity.OpportunityStatus;
 import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.user.User;
+import edu.institution.ims.user.Role;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.web.server.ResponseStatusException;
 import java.sql.Timestamp;
 import java.time.*;
@@ -23,6 +26,25 @@ public class NotificationService {
             String mentorName, String actionUrl, Instant createdAt, Instant readAt) {}
     public record Inbox(List<Notification> content, int page, long totalElements, int totalPages, long unreadCount) {}
     public record Count(long unreadCount) {}
+
+    /** Each reviewer approves independently; an alert does not imply both have approved. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void internshipApproved(InternshipLocation location, User reviewer, boolean fullyApproved) {
+        boolean mentor = reviewer.getRole() == Role.MENTOR;
+        if (!mentor && reviewer.getRole() != Role.ADMIN) throw new IllegalArgumentException("Reviewer role is invalid");
+        String authority = mentor ? "faculty mentor" : "IIIC coordinator";
+        String remaining = mentor ? "IIIC coordinator" : "faculty mentor";
+        String message = "Your " + authority + " has approved your internship workplace at "
+                + location.getInternship().getCompanyName() + " (revision " + location.getRevision() + "). "
+                + (fullyApproved ? "Both mentor and IIIC coordinator approvals are complete."
+                    : "Approval from your " + remaining + " is still required. Check the workplace panel for the current status.");
+        create(location.getInternship().getOnboarding().getStudent().getId(),
+                "internship-approved:" + location.getId() + ":" + location.getRevision() + ":"
+                        + reviewer.getRole() + ":" + reviewer.getId(),
+                mentor ? "INTERNSHIP_MENTOR_APPROVED" : "INTERNSHIP_IIIC_APPROVED",
+                "Internship approved by " + authority, message, null, null,
+                "/student/internship/details", mentor ? location.getMentorReviewedAt() : location.getConfirmedAt());
+    }
 
     @Transactional
     public void opportunityPublished(Opportunity opportunity) {

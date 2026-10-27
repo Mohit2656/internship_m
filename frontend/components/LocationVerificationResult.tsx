@@ -9,7 +9,7 @@ export function LocationVerificationResult({ evidence, maxGpsAccuracyMeters }: {
     OUTSIDE_RADIUS: "Location outside the permitted workplace radius — manual review required.",
     INSUFFICIENT_ACCURACY: "GPS accuracy is insufficient — manual review required.",
     LOCATION_UNAVAILABLE: "Location could not be verified — manual review required.",
-    WORKPLACE_NOT_APPROVED: "Workplace approval is required before location can be verified.",
+    WORKPLACE_NOT_APPROVED: "The workplace was not approved when this attendance was submitted.",
     STALE_LOCATION: "The GPS capture is too old — manual review required.",
   };
   if (!labels[status]) return null;

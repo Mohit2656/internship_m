@@ -123,6 +123,24 @@ test("student internship view preserves company information and shows its own wo
   assert.doesNotMatch(html, /data-student-id=/);
 });
 
+test("student dashboard shows the authoritative workplace panel once internship details are loaded", () => {
+  const imports = { ...shared,
+    "@/components/StatusBadge": { StatusBadge: empty },
+    "@/components/WorkflowBadge": { WorkflowBadge: empty },
+    "@/components/TodayAttendanceCard": { TodayAttendanceCard: () => React.createElement("p", null, "Today's attendance history") },
+    "@/components/DailyAttendanceHistory": { DailyAttendanceHistory: empty },
+  };
+  for (const [internshipDetails, loading, expected] of [[details, false, true], [null, false, false], [details, true, false]]) {
+    const { default: Page } = load("app/student/dashboard/page.tsx", { ...imports,
+      react: hooks({ 0: {}, 2: { workflowStatus: "INTERNSHIP_DETAILS_COMPLETE" }, 3: internshipDetails, 4: loading }),
+    });
+    const html = renderToStaticMarkup(React.createElement(Page));
+    assert.equal(html.includes('data-workplace-scope="student"'), expected);
+    assert.match(html, /Today&#x27;s attendance history/);
+    assert.doesNotMatch(html, /data-student-id=/);
+  }
+});
+
 test("admin student view preserves company and hybrid configuration alongside scoped workplace review", () => {
   const { default: Page } = load("app/admin/students/[id]/page.tsx", { ...shared,
     react: hooks({ 0: { id: 7, internshipDetails: { ...details, internshipMode: "HYBRID" } }, 1: false }),

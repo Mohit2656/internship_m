@@ -20,6 +20,7 @@ public class InternshipLocationService {
     private final BigDecimal defaultRadius;
     @org.springframework.beans.factory.annotation.Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
     @org.springframework.beans.factory.annotation.Autowired private edu.institution.ims.mentor.MentorStudentAssignmentRepository assignments;
+    @org.springframework.beans.factory.annotation.Autowired private edu.institution.ims.notification.NotificationService notifications;
 
     public InternshipLocationService(InternshipLocationRepository locations,
             InternshipDetailsRepository internships, UserRepository users, Clock clock,
@@ -150,6 +151,7 @@ public class InternshipLocationService {
         if(request.decision()==WorkplaceReview.Decision.REJECT && (request.remarks()==null || request.remarks().strip().length()<5)) throw error(HttpStatus.BAD_REQUEST,"REJECTION_REASON_REQUIRED","Provide a rejection reason of at least five characters");
         location.review(actor,request.decision().name(),request.remarks(),clock.instant());locations.saveAndFlush(location);
         jdbc.update("insert into workplace_review_audit(location_id,revision,reviewer_id,reviewer_role,decision,reviewed_at,remarks,latitude,longitude,radius_meters,place_id,workplace_address) values (?,?,?,?,?,?,?,?,?,?,?,?)",location.getId(),location.getRevision(),actor.getId(),actor.getRole().name(),request.decision().name(),java.sql.Timestamp.from(clock.instant()),request.remarks(),location.getLatitude(),location.getLongitude(),location.getGeofenceRadiusMeters(),location.getPlaceId(),location.getWorkplaceAddress());
+        if (request.decision() == WorkplaceReview.Decision.APPROVE) notifications.internshipApproved(location, actor, fullyApproved(location));
         return response(location);
     }
 
