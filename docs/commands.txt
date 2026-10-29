@@ -1,0 +1,3 @@
+COMMAND TO CONNECT THE db :
+
+"psql -h 127.0.0.1 -U springapp_user -d springapp_db"
