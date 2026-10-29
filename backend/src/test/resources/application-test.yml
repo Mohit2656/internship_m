@@ -24,7 +24,7 @@ app:
     cookie-name: ims_auth
     cookie-secure: false
   cors:
-    allowed-origins: http://localhost:3000
+    allowed-origins: http://localhost:3010, http://iiic.cse.stvincentngp.edu.in, https://iiic.cse.stvincentngp.edu.in
   resume-ai:
     base-url: http://127.0.0.1:8091
     connect-timeout-seconds: 1
