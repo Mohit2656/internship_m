@@ -19,6 +19,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         String token = request.getCookies() == null ? null : Arrays.stream(request.getCookies()).filter(c -> cookieName.equals(c.getName())).map(Cookie::getValue).findFirst().orElse(null);
+        if (token == null) {
+            String authHeader = request.getHeader("Authorization");
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                token = authHeader.substring(7).trim();
+            }
+        }
         if (token != null && SecurityContextHolder.getContext().getAuthentication() == null && jwt.valid(token)) {
             try {
                 var principal = users.loadById(jwt.userId(token));
