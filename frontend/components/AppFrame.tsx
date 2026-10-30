@@ -20,7 +20,10 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
     ["/admin/reports", "Reports"], ["/admin/attendance", "Attendance"],
   ] : user?.role === "MENTOR" ? [
     ["/mentor/monthly-progress", "Monthly progress"], ["/mentor/reports", "Reports"], ["/mentor/attendance", "Attendance"],
-  ] : user?.role === "STUDENT" ? [["/student/monthly-progress", "Monthly progress"]] : [];
+  ] : user?.role === "STUDENT" ? [
+    ["/student/monthly-progress", "Monthly progress"],
+    ["/student/documents", "Documents & Templates"],
+  ] : [];
   return <div className="app-frame min-h-screen">
     <header className="app-topbar"><div className="app-topbar-inner">
       <Link href={home} className="app-brand" onClick={() => setMenuOpen(false)}><span className="app-brand-mark">IMS</span><span className="app-brand-copy"><span className="app-brand-name">Internship Management System</span><span className="app-brand-role">{user?.roleLabel}</span></span></Link>
