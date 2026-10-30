@@ -9,7 +9,13 @@ export type AttendanceLocationEvidence = {
   distanceMeters: number | null; geofenceRadiusMeters: number | null; workplaceAddress: string | null;
   verificationReason: string | null; locationVerificationStatus?: LocationVerificationStatus | null;
   locationCapturedAt?: string | null; workplaceRevision?: number | null;
+  dailyWorkSummary?: string | null;
 };
+
+export type AttendanceReviewStatus = "PENDING" | "APPROVED" | "REJECTED" | "MANUAL_REVIEW" | "NOT_APPLICABLE";
+export type AttendanceReview = { status: AttendanceReviewStatus; revision: number; reviewerId: number | null; reviewerName: string | null; reviewedAt: string | null; reason: string | null; approvalAllowed: boolean };
+export type AttendanceReviewAudit = { revision: number; previousStatus: AttendanceReviewStatus; status: AttendanceReviewStatus; reviewerId: number; reviewerName: string; reviewedAt: string; reason: string | null };
+export const attendanceReviewLabel = (status?: AttendanceReviewStatus) => status === "APPROVED" ? "Approved" : status === "REJECTED" ? "Rejected" : status === "MANUAL_REVIEW" ? "Manual review required" : status === "NOT_APPLICABLE" ? "Not applicable" : "Pending mentor approval";
 
 export function locationVerificationLabel(status?: LocationVerificationStatus | null) {
   const labels: Record<LocationVerificationStatus, string> = {
@@ -37,6 +43,7 @@ export type Attendance = {
   submissionType: AttendanceSubmissionType;
   serverSubmittedAt: string;
   evidence?: AttendanceLocationEvidence | null;
+  review?: AttendanceReview | null;
 };
 
 export function attendanceLabel(attendance: Attendance) {

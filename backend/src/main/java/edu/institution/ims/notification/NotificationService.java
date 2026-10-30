@@ -22,6 +22,16 @@ public class NotificationService {
     private final JdbcTemplate jdbc;
     private final Clock clock;
     public NotificationService(JdbcTemplate jdbc, Clock clock) { this.jdbc=jdbc; this.clock=clock; }
+
+    /** ADMIN is the existing institution-wide IIIC authority; no department scope exists. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void notifyCoordinators(Long studentId, String key, String type, String title, String event, Instant at) {
+        String name=jdbc.queryForList("select coalesce(p.student_name,sa.student_name,u.email) from users u "
+                + "left join student_profiles p on p.user_id=u.id left join student_accounts sa on sa.user_id=u.id where u.id=?",
+                String.class,studentId).stream().findFirst().orElse("Student");
+        for(Long coordinator:jdbc.queryForList("select id from users where role='ADMIN' and active=true order by id",Long.class))
+            create(coordinator,key,type,title,"Student "+name+event,null,null,"/admin/students/"+studentId+"#resume-analysis",at);
+    }
     public record Notification(Long id, String type, String title, String message, String rejectionReason,
             String mentorName, String actionUrl, Instant createdAt, Instant readAt) {}
     public record Inbox(List<Notification> content, int page, long totalElements, int totalPages, long unreadCount) {}
@@ -46,6 +56,18 @@ public class NotificationService {
                 "/student/internship/details", mentor ? location.getMentorReviewedAt() : location.getConfirmedAt());
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void workplaceRejected(InternshipLocation location, User reviewer, String reason) {
+        boolean mentor=reviewer.getRole()==Role.MENTOR;
+        if (!mentor && reviewer.getRole()!=Role.ADMIN) throw new IllegalArgumentException("Reviewer role is invalid");
+        create(location.getInternship().getOnboarding().getStudent().getId(),
+                "workplace-rejected:"+location.getId()+":"+location.getRevision()+":"+reviewer.getRole()+":"+reviewer.getId(),
+                "WORKPLACE_REJECTED","Workplace requires correction",
+                "Your "+(mentor?"faculty mentor":"IIIC coordinator")+" rejected the workplace at "
+                        +location.getInternship().getCompanyName()+". Review the feedback and correct your workplace details; fresh approvals are required.",
+                reason,null,"/student/internship/details",mentor?location.getMentorReviewedAt():location.getConfirmedAt());
+    }
+
     @Transactional
     public void opportunityPublished(Opportunity opportunity) {
         // Match the existing student feed's visibility: published, nonexpired opportunities.
@@ -57,7 +79,7 @@ public class NotificationService {
         String message = opportunity.getCompanyName() + (summary.isBlank() ? " has posted a new opportunity." : ": " + summary);
         // Use the same persistent inbox and unique event key as existing notifications.
         // The caller's publication transaction commits or rolls back all recipient rows together.
-        for (Long studentId : jdbc.queryForList("select id from users where role='STUDENT' and active=true", Long.class)) {
+        for (Long studentId : jdbc.queryForList("select id from users where role='STUDENT' and active=true order by id", Long.class)) {
             create(studentId, "opportunity-published:" + opportunity.getId(), "OPPORTUNITY_PUBLISHED",
                     opportunity.getTitle(), message, null, null,
                     "/student/opportunities/" + opportunity.getId(), opportunity.getPublishedAt());
@@ -111,8 +133,9 @@ public class NotificationService {
         return unread(principal);
     }
     private Long student(UserPrincipal principal) {
-        if(principal==null || !principal.active() || !"STUDENT".equals(principal.role()))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Student access required");
+        // Controller paths enforce the caller's role; every query is still bound to its authenticated owner.
+        if(principal==null || !principal.active() || !("STUDENT".equals(principal.role()) || "ADMIN".equals(principal.role())))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Notification access required");
         return principal.id();
     }
 }

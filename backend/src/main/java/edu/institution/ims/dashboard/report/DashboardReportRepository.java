@@ -25,6 +25,7 @@ public class DashboardReportRepository {
     }
     private static final String FROM = """
             from users u
+            left join academic_sessions acs on acs.id=u.academic_session_id
             left join student_accounts sa on sa.user_id = u.id
             left join student_profiles p on p.user_id = u.id
             left join mentor_student_assignments a on a.student_user_id = u.id and a.active = true
@@ -32,6 +33,7 @@ public class DashboardReportRepository {
             left join mentor_profiles mp on mp.user_id = a.mentor_user_id
             left join internship_onboarding o on o.student_user_id = u.id
             left join internship_details i on i.onboarding_id = o.id
+            left join users cr on cr.id=i.completion_reviewer_id
             left join student_professional_profiles pp on pp.student_user_id = u.id
             left join student_resumes r on r.professional_profile_id = pp.id and r.is_active = true
             left join resume_analyses ra on ra.resume_id = r.id
@@ -62,7 +64,7 @@ public class DashboardReportRepository {
             throw new IllegalArgumentException("History from must be on or before history through");
         LocalDate attendanceDate = filters.containsKey("attendanceDate") ? date(filters.get("attendanceDate")) : LocalDate.now(clock);
         MapSqlParameterSource params = new MapSqlParameterSource().addValue("attendanceDate", java.sql.Date.valueOf(attendanceDate))
-                .addValue("dayOfWeek", attendanceDate.getDayOfWeek().name()).addValue("viewerId", user.id());
+                .addValue("completionToday", java.sql.Date.valueOf(LocalDate.now(clock))).addValue("dayOfWeek", attendanceDate.getDayOfWeek().name()).addValue("viewerId", user.id());
         StringBuilder where = new StringBuilder(" where u.role = 'STUDENT'");
         if (!admin) where.append(" and a.mentor_user_id = :viewerId");
         // Reject guessed / out-of-scope IDs even if another filter would produce an empty result.
@@ -76,6 +78,9 @@ public class DashboardReportRepository {
                 case "studentId" -> "u.id = :studentId";
                 case "mentorId" -> "a.mentor_user_id = :mentorId";
                 case "branch" -> "p.branch = :branch";
+                case "completionSearch" -> "(lower(coalesce(p.student_name,sa.student_name,u.email)) like :completionSearch escape '!' or lower(coalesce(p.uid,sa.uid,'')) like :completionSearch escape '!' or lower(i.company_name) like :completionSearch escape '!')";
+                case "academicSessionId" -> "u.academic_session_id = :academicSessionId";
+                case "completionStatus" -> value.equals("ALL") ? "i.id is not null" : "i.id is not null and ("+edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL+") = :completionStatus";
                 case "academicYear" -> "p.academic_year = :academicYear";
                 case "semester" -> "coalesce(p.semester, sa.semester) = :semester";
                 case "profileStatus" -> value.equals("COMPLETE") ? "p.id is not null" : "p.id is null";
@@ -96,10 +101,10 @@ public class DashboardReportRepository {
             if (expression != null) {
                 where.append(" and ").append(expression);
                 Object parameter = switch (key) {
-                    case "studentId", "mentorId" -> positiveId(value);
+                    case "studentId", "mentorId", "academicSessionId" -> positiveId(value);
                     case "semester" -> Integer.valueOf(value);
                     case "fullTimeOffered", "accountActive" -> value.equals("YES");
-                    case "search", "company" -> "%" + value.toLowerCase(Locale.ROOT).replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+                    case "search", "company", "completionSearch" -> "%" + value.toLowerCase(Locale.ROOT).replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
                     default -> value;
                 };
                 params.addValue(key, parameter);
@@ -117,7 +122,7 @@ public class DashboardReportRepository {
     }
     /** Authorized, one-row-per-student projection shared by institutional report types. */
     String reportStudentsSql(Scope scope) {
-        return "select u.id as sid,coalesce(p.uid,sa.uid) as uid,coalesce(p.student_name,sa.student_name) as studentName,p.branch,mp.name as mentorName,i.id as internshipId,i.company_name as company,coalesce(o.source,'UNRECORDED') as source,i.stipend_per_month as stipend,i.full_time_employment_offered as offer,coalesce(o.workflow_status,'NOT_SECURED') as workflow,o.diary_issued as diary,coalesce(p.updated_at,p.created_at) as profileLastStudentUpdatedAt,coalesce(i.updated_at,i.created_at) as internshipLastStudentUpdatedAt " + FROM + scope.where();
+        return "select u.id as sid,coalesce(p.uid,sa.uid) as uid,coalesce(p.student_name,sa.student_name) as studentName,p.branch,mp.name as mentorName,i.id as internshipId,i.company_name as company,acs.name as academicSession,i.start_date as startDate,i.end_date as endDate,i.completed_at as completionDate,cr.email as completionReviewer,i.completion_remarks as completionRemarks,case when i.id is null then null else " + edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL + " end as completionStatus,coalesce(o.source,'UNRECORDED') as source,i.stipend_per_month as stipend,i.full_time_employment_offered as offer,coalesce(o.workflow_status,'NOT_SECURED') as workflow,o.diary_issued as diary,coalesce(p.updated_at,p.created_at) as profileLastStudentUpdatedAt,coalesce(i.updated_at,i.created_at) as internshipLastStudentUpdatedAt " + FROM + scope.where();
     }
     public long count(Scope scope) {
         return Objects.requireNonNull(jdbc.queryForObject("select count(*) " + FROM + scope.where(), scope.params(), Long.class));

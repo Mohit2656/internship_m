@@ -38,6 +38,7 @@ public class InstitutionalReportService {
     public Options options(UserPrincipal user) {
         catalog.isAdmin(user);
         List<Type> types=new ArrayList<>();
+        types.add(new Type("COMPLETIONS","Internship Completions","Official IIIC completion decisions and pending/in-progress internships by assigned academic session.",true,"Internship Completions",completionFields()));
         types.add(new Type("ROSTER","Student / Faculty Mentor Allotment","Current student, company, source, stipend and faculty mentor details.",true,"Main report ",rosterFields()));
         types.add(type("OVERALL","Overall Internship Summary","Source categories, including students without a recorded source.",fields("category","Category","total","Number of Students","percentage","Percentage of Total")));
         types.add(type("STIPEND","Stipend Analysis","Paid, unpaid and unavailable stipend data by source.",fields("category","Category","paid","Stipend Students","unpaid","Non-Stipend Students","unknown","Stipend Unavailable","total","Total")));
@@ -52,7 +53,7 @@ public class InstitutionalReportService {
         types.add(new Type("ATTENDANCE","Attendance Records","Daily attendance including automatic absences after the submission deadline. Automatic absences are identified separately from student submissions.",true,"Attedance report ",attendanceFields()));
         types.add(new Type("ATTENDANCE_SUMMARY","Student Attendance Summary","Daily present/absent counts and percentages among stored records, including automatically recorded absences.",true,"Attedance report ",summaryFields()));
         types.add(new Type("DIARY_ISSUANCE","Diary Issuance","Uses the existing diary-issued flag. Submission and evaluation data are unavailable.",true,"DATA reguired  from students",fields("category","Category","issued","Diary Issued","notIssued","Diary Not Issued","total","Total")));
-        types.add(new Type("PARTICIPATION","Student Participation / Joined","Unavailable: no selected, joined or completed internship status exists.",false,"CDC self  Dept wise student rep",List.of()));
+        types.add(new Type("PARTICIPATION","Student Participation / Joined","Unavailable: selected/joined participation is not recorded. Official completion is available in Internship Completions.",false,"CDC self  Dept wise student rep",List.of()));
         types.add(new Type("EVALUATION","Evaluation and Diary Submission","Unavailable: no evaluation or diary-submission model exists. Diary issuance is available separately.",false,"Marks report format ",List.of()));
         types.add(new Type("SEMINAR","Project Seminar Evaluation","Unavailable: no project, seminar scores, evaluation date or remarks model exists.",false,"Marks report format ",List.of()));
         List<DashboardReportCatalog.Filter> filters=new ArrayList<>(catalog.filters(user));
@@ -73,6 +74,11 @@ public class InstitutionalReportService {
     }
     private List<DashboardReportCatalog.Field> identity() {
         return List.of(field("studentId","Student account ID",TEXT),field("uid","UID",TEXT),field("studentName","Student",TEXT),field("branch","Branch",TEXT),field("mentorName","Faculty Mentor",TEXT),field("company","Company",TEXT),field("workflow","Internship workflow",TEXT));
+    }
+    private List<DashboardReportCatalog.Field> completionFields() {
+        var f=new ArrayList<>(identity());
+        f.addAll(List.of(field("academicSession","Academic session",TEXT),field("startDate","Start date",DATE),field("endDate","End date",DATE),field("completionStatus","Completion status",TEXT),field("completionDate","Completion date",DATETIME),field("completionReviewer","IIIC reviewer",TEXT),field("completionRemarks","Completion remarks",TEXT)));
+        return f;
     }
     private List<DashboardReportCatalog.Field> monthlyFields() {
         var f = new ArrayList<>(identity());
@@ -104,7 +110,7 @@ public class InstitutionalReportService {
         List<DashboardReportCatalog.Field> f=new ArrayList<>(identity());
         f.addAll(fields("total","Stored Records","present","Present","absent","Absent","verified","Liveness verified","unverified","Liveness failed","notPerformed","Liveness not performed","historical","Historical verification","percentage","Present / Stored Records (%)"));return f;
     }
-    private record Query(Type type,List<DashboardReportCatalog.Field> fields,String sql,MapSqlParameterSource params) {}
+    private record Query(Type type,List<DashboardReportCatalog.Field> fields,String sql,MapSqlParameterSource params,long totalStudents) {}
     private Query query(UserPrincipal user,ReportTableRequest request) {
         var options=options(user);
         Type type=options.types().stream().filter(t->t.id().equals(request.reportType())).findFirst().orElseThrow(()->new IllegalArgumentException("Unsupported report type"));
@@ -163,6 +169,7 @@ public class InstitutionalReportService {
         String summaryAttendance = "(select ar.*, " + liveness + " as liveness_outcome from attendance_records ar left join attendance_evidence e on e.attendance_id=ar.id where ar.deleted_at is null" + window + ") ar";
         String sql=switch(type.id()) {
             case "MONTHLY_PROGRESS" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,m.id as recordId,m.report_month_number as monthNumber,m.review_status as reviewStatus,m.revision,m.period_start as periodStart,m.period_end as periodEnd,m.work_description as workDescription,m.submitted_at as submittedAt,m.reviewer_id as reviewerId,m.reviewed_at as reviewedAt,m.rejection_reason as rejectionReason,m.image_sha256 as imageSha256 from "+base+" join monthly_progress_reports m on m.student_internship_id=s.internshipId and m.deleted_at is null where 1=1"+monthlyWindow;
+            case "COMPLETIONS" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,s.academicSession,s.startDate,s.endDate,s.completionStatus,s.completionDate,s.completionReviewer,s.completionRemarks from "+base+" where s.internshipId is not null";
             case "ROSTER" -> "select s.sid as studentId,s.uid,s.studentName,s.branch,s.mentorName,s.company,s.workflow,s.source,s.stipend,s.offer,s.profileLastStudentUpdatedAt,s.internshipLastStudentUpdatedAt from "+base;
             case "OVERALL" -> "select source as category,count(*) as total,cast(cast(count(*) as decimal(18,4))*100/nullif((select count(*) from "+base+"),0) as decimal(12,4)) as percentage from "+base+" group by source";
             case "STIPEND" -> "select source as category,count(*) as total,"+sums()+",sum(case when stipend is null then 1 else 0 end) as \"unknown\" from "+base+" group by source";
@@ -182,7 +189,7 @@ public class InstitutionalReportService {
             if(new HashSet<>(request.fields()).size()!=request.fields().size()) throw new IllegalArgumentException("Duplicate report fields");
             selected=request.fields().stream().map(id->type.fields().stream().filter(f->f.id().equals(id)).findFirst().orElseThrow(()->new IllegalArgumentException("Unsupported report field"))).toList();
         }
-        return new Query(type,selected,sql,params);
+        return new Query(type,selected,sql,params,repository.count(scope));
     }
     private static String sums() {return "sum(case when stipend>0 then 1 else 0 end) as paid,sum(case when stipend=0 then 1 else 0 end) as unpaid";}
     private static String sources(String condition) {
@@ -192,13 +199,18 @@ public class InstitutionalReportService {
         return List.of(new String[]{"Total Students","1=1"},new String[]{"Stipend Students","stipend>0"},new String[]{"Non-Stipend Students","stipend=0"},new String[]{"Placement Offers","offer=true"},new String[]{"Diary Issued","diary=true"},new String[]{"Details Complete","workflow='INTERNSHIP_DETAILS_COMPLETE'"}).stream().map(p->"select '"+p[0]+"' as parameter,"+sources(p[1])+" from "+base).collect(Collectors.joining(" union all "));
     }
     private List<Map<String,Object>> rows(Query query,int offset,int size) {
-        String order=query.type().id().equals("ATTENDANCE")?"date,studentId,recordId":Set.of("ATTENDANCE_SUMMARY","ROSTER").contains(query.type().id())?"studentId":"1";
+        String order=query.type().id().equals("ATTENDANCE")?"date,studentId,recordId":Set.of("ATTENDANCE_SUMMARY","ROSTER","COMPLETIONS").contains(query.type().id())?"studentId":"1";
         return jdbc.query("select * from ("+query.sql()+") report order by "+order+" limit :reportSize offset :reportOffset",new MapSqlParameterSource(query.params().getValues()).addValue("reportSize",size).addValue("reportOffset",offset),(rs,num)->{
             Map<String,Object> row=new LinkedHashMap<>();
             for(var f:query.fields()) {Object value=rs.getObject(f.id());if(value instanceof java.sql.Timestamp t) value=t.toInstant().atZone(clock.getZone()).toOffsetDateTime();row.put(f.id(),value);}return row;
         });
     }
     private Map<String,Object> summary(Query query) {
+        if(query.type().id().equals("COMPLETIONS")) {
+            Map<String,Object> counts=jdbc.queryForMap("select count(*) as total,sum(case when completionStatus='COMPLETED' then 1 else 0 end) as completed,sum(case when completionStatus='COMPLETION_PENDING' then 1 else 0 end) as pending from ("+query.sql()+") report",query.params());
+            long total=((Number)counts.get("total")).longValue(),completed=counts.get("completed")==null?0:((Number)counts.get("completed")).longValue(),pending=counts.get("pending")==null?0:((Number)counts.get("pending")).longValue();
+            return Map.of("totalStudents",query.totalStudents(),"totalInternships",total,"completedInternships",completed,"activeInternships",total-completed-pending,"completionPending",pending,"completionPercentage",total==0?0:Math.round(10000.0*completed/total)/100.0);
+        }
         if(query.type().id().equals("ATTENDANCE")) return jdbc.queryForMap("select count(*) as records,sum(case when result='PRESENT' then 1 else 0 end) as present,sum(case when result='ABSENT' then 1 else 0 end) as absent,sum(case when verification='VERIFIED' then 1 else 0 end) as verified,sum(case when verification='FAILED' then 1 else 0 end) as unverified,sum(case when verification='NOT_PERFORMED' then 1 else 0 end) as \"notPerformed\",sum(case when verification='HISTORICAL' then 1 else 0 end) as historical,cast(100.0*sum(case when result='PRESENT' then 1 else 0 end)/nullif(count(*),0) as decimal(12,4)) as \"presentRecordPercentage\" from ("+query.sql()+") report",query.params());
         return Map.of();
     }
@@ -222,6 +234,7 @@ public class InstitutionalReportService {
                 metadata.put("Generated at",ZonedDateTime.now(clock).toString());metadata.put("Generated by",user.email());metadata.put("Access scope",options(user).scope());metadata.put("Record count",Integer.toString(count));
                 metadata.put("Applied filters",Objects.toString(request.filters(),"None"));metadata.put("Selected students",request.studentIds()==null||request.studentIds().isEmpty()?"All within authorized filters":request.studentIds().toString());
                 metadata.put("Report definition",q.type().description());metadata.put("Historical reference",q.type().historicalSheet());
+                if(q.type().id().equals("COMPLETIONS")) summary(q).forEach((key,value)->metadata.put(key,String.valueOf(value)));
                 writer.finish(metadata);
             }
             return new DashboardReportService.Download(file,q.type().id().toLowerCase(Locale.ROOT)+"-"+LocalDate.now(clock)+"."+extension,request.format().contentType(),count);

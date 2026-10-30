@@ -99,9 +99,11 @@ public class MonthlyProgressService {
     public MonthlyProgressReportResponse review(UserPrincipal principal, Long id, int revision, boolean approved, String reason) {
         if (principal==null || !principal.active() || !"MENTOR".equals(principal.role()))
             throw error(HttpStatus.FORBIDDEN,"MENTOR_REQUIRED","Only the assigned faculty mentor may review a report");
-        // Use the same assignment-before-record lock order as mentor deletion.
+        // Shared mentor -> active student -> assignment -> report, matching other review workflows.
         var owners=jdbc.queryForList("select o.student_user_id from monthly_progress_reports r join internship_details i on i.id=r.student_internship_id join internship_onboarding o on o.id=i.onboarding_id where r.id=? and r.deleted_at is null",Long.class,id);
         if (owners.isEmpty()) throw notFound();
+        users.findByIdForWorkflowRead(principal.id()).filter(u->u.getRole()==Role.MENTOR && u.isActive()).orElseThrow(MonthlyProgressService::notFound);
+        if(!WorkflowUserLocks.student(jdbc,owners.get(0),true)) throw notFound();
         var scoped=jdbc.queryForList("select id from mentor_student_assignments where student_user_id=? and mentor_user_id=? and active=true for update",Long.class,owners.get(0),principal.id());
         if (scoped.isEmpty()) throw notFound();
         MonthlyProgressReport report=reports.findForReviewById(id).orElseThrow(MonthlyProgressService::notFound);
@@ -142,7 +144,7 @@ public class MonthlyProgressService {
     }
     @Transactional(readOnly = true) public List<MonthlyProgressReportResponse> mentorReports(UserPrincipal principal) {
         List<Long> studentIds = assignments.findAllByMentorIdAndActiveTrueOrderByStudentEmailAsc(principal.id())
-                .stream().map(assignment -> assignment.getStudent().getId()).toList();
+                .stream().filter(a->a.getStudent().isActive()).map(assignment -> assignment.getStudent().getId()).toList();
         if (studentIds.isEmpty()) return List.of();
         return reports.findAllByStudentInternshipOnboardingStudentIdInOrderBySubmittedAtDesc(studentIds).stream().map(MonthlyProgressService::response).toList();
     }

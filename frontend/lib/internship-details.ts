@@ -3,6 +3,17 @@ export type RegisteredWorkplace = { name?: string | null; placeId: string | null
 export type CompanyType = "IT" | "MANUFACTURING" | "CORE" | "OTHER";
 export type InternshipMode = "OFFICE_REPORTING" | "HYBRID" | "ONLINE" | "COLLEGE_REPORTING";
 
+/** Calendar dates are inclusive. UTC arithmetic prevents daylight-saving drift. */
+export function internshipWeeks(start: string, end: string): number | null {
+  const date = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return NaN;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? NaN : parsed.getTime();
+  };
+  const first = date(start), last = date(end);
+  return !Number.isFinite(first) || !Number.isFinite(last) || last <= first ? null : Math.ceil(((last - first) / 86400000 + 1) / 7);
+}
+
 export type InternshipDetails = {
   workplace?: RegisteredWorkplace | null;
   id: number; onboardingId: number; companyName: string; companyType: CompanyType; companyTypeLabel: string;

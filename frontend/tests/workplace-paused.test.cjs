@@ -16,6 +16,7 @@ function load(file, imports = {}) {
 }
 
 const internship = load("lib/internship-details.ts");
+const monthlyDates = load("lib/monthly-progress.ts", { "@/lib/api": {} });
 const update = load("components/LastStudentUpdate.tsx");
 const view = load("components/InternshipDetailsView.tsx", { "@/components/LastStudentUpdate": update });
 const workplace = { placeId: null, name: "Registered branch", address: "Selected branch address", latitude: 18.52, longitude: 73.85 };
@@ -109,6 +110,7 @@ const shared = { "next/link": { default: ({ children, ...props }) => React.creat
   "next/navigation": { useParams: () => ({ id: "7" }) }, "@/lib/api": {},
   "@/components/AppFrame": { AppFrame: children }, "@/components/ProtectedRoute": { ProtectedRoute: children },
   "@/components/InternshipDetailsView": view, "@/lib/internship-details": internship,
+  "@/lib/monthly-progress": monthlyDates,
   "@/components/LastStudentUpdate": update,
   "@/components/InternshipLocationManager": { InternshipLocationManager: manager } };
 

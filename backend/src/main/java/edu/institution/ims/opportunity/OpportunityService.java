@@ -18,11 +18,13 @@ public class OpportunityService {
     private final UserRepository users;
     private final SkillNormalizer normalizer;
     private final NotificationService notifications;
+    private final OpportunityMatchingService matching;
 
     public OpportunityService(OpportunityRepository opportunities, OpportunitySkillRepository skills,
-            UserRepository users, SkillNormalizer normalizer, NotificationService notifications) {
+            UserRepository users, SkillNormalizer normalizer, NotificationService notifications, OpportunityMatchingService matching) {
         this.opportunities = opportunities; this.skills = skills; this.users = users; this.normalizer = normalizer;
         this.notifications = notifications;
+        this.matching = matching;
     }
 
     @Transactional
@@ -64,6 +66,7 @@ public class OpportunityService {
         if (opportunity.getStatus() == OpportunityStatus.DRAFT) {
             validatePublishable(opportunity); opportunity.publish(); opportunities.saveAndFlush(opportunity);
             notifications.opportunityPublished(opportunity);
+            matching.published(opportunity);
         }
         return response(opportunity);
     }

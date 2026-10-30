@@ -24,7 +24,8 @@ public interface MentorStudentAssignmentRepository extends JpaRepository<MentorS
     Optional<MentorStudentAssignment> findByStudentIdAndActiveTrueForLateAttendanceUpdate(
             @Param("studentId") Long studentId);
 
-    long countByMentorIdAndActiveTrue(Long mentorUserId);
+    @Query("select count(a) from MentorStudentAssignment a where a.mentor.id=:mentorUserId and a.active=true and a.student.active=true")
+    long countByMentorIdAndActiveTrue(@Param("mentorUserId") Long mentorUserId);
 
     List<MentorStudentAssignment> findAllByStudentIdOrderByAssignedAtAsc(Long studentUserId);
 }

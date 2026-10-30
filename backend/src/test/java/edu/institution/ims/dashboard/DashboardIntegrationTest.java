@@ -24,10 +24,16 @@ class DashboardIntegrationTest {
     @Autowired MockMvc mvc; @Autowired ObjectMapper json; @Autowired UserRepository users; @Autowired StudentAccountRepository accounts;
     @Autowired StudentProfileRepository profiles; @Autowired InternshipOnboardingRepository onboardings; @Autowired InternshipDocumentRepository documents;
     @Autowired InternshipDetailsRepository details; @Autowired PasswordEncoder encoder;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    Long sessionId;
     Cookie adminCookie; Cookie studentCookie;
 
     @BeforeEach void setUp() throws Exception {
         details.deleteAll(); documents.deleteAll(); onboardings.deleteAll(); profiles.deleteAll(); accounts.deleteAll(); users.deleteAll();
+        String sessionName="DASHBOARD-"+UUID.randomUUID();
+        jdbc.update("insert into academic_sessions(name,start_date,end_date) values(?,DATE '2026-07-01',DATE '2027-06-30')",sessionName);
+        sessionId=jdbc.queryForObject("select id from academic_sessions where name=?",Long.class,sessionName);
+        jdbc.update("update academic_session_settings set active_session_id=? where id=1",sessionId);
         User admin = users.save(new User("incharge@example.edu", encoder.encode("AdminPassword!23"), Role.ADMIN, true));
         adminCookie = login(admin.getEmail(), "AdminPassword!23");
     }
@@ -74,7 +80,7 @@ class DashboardIntegrationTest {
         mvc.perform(get("/api/v1/admin/dashboard/summary")).andExpect(status().isUnauthorized());
     }
 
-    private Cookie student(String email, String ignored) throws Exception { User user = users.save(new User(email, encoder.encode("StudentPassword!23"), Role.STUDENT, true)); accounts.save(new StudentAccount(user)); return login(email, "StudentPassword!23"); }
+    private Cookie student(String email, String ignored) throws Exception { User user = users.save(new User(email, encoder.encode("StudentPassword!23"), Role.STUDENT, true)); user.assignAcademicSession(sessionId); users.saveAndFlush(user); accounts.save(new StudentAccount(user)); return login(email, "StudentPassword!23"); }
     private Cookie login(String email, String password) throws Exception { return mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new LoginRequest(email, password)))).andReturn().getResponse().getCookie("ims_auth"); }
     private void completeProfile(Cookie cookie, String suffix) throws Exception { mvc.perform(post("/api/v1/student/profile").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(profile(suffix)))).andExpect(status().isCreated()); }
     private void secure(Cookie cookie, String source) throws Exception { mvc.perform(post("/api/v1/student/internship-onboarding/secure").cookie(cookie)).andExpect(status().isCreated()); mvc.perform(put("/api/v1/student/internship-onboarding/source").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content("{\"source\":\"" + source + "\"}")).andExpect(status().isOk()); }

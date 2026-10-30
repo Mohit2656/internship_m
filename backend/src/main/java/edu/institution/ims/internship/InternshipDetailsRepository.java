@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.Optional;
 
 public interface InternshipDetailsRepository extends JpaRepository<InternshipDetails, Long> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from InternshipDetails i where i.onboarding.student.id = :studentId")
+    Optional<InternshipDetails> findForUpdateByStudentId(Long studentId);
     @EntityGraph(attributePaths = {"onboarding", "onboarding.student"})
     @Query("select i from InternshipDetails i where i.startDate <= :through "
             + "and i.onboarding.workflowStatus = edu.institution.ims.internship.WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE "

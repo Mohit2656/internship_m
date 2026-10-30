@@ -111,7 +111,7 @@ public class AttendanceService {
                 record.getAttendanceResult(), record.getVerificationStatus(), record.getSubmissionType(),
                 record.getServerSubmittedAt(), AttendanceEvidenceResponse.from(record.getEvidence()),
                 record.getVerificationBasis(), record.getLivenessStatus(), record.isAutomaticAbsent(),
-                record.isSubmittedLate());
+                record.isSubmittedLate(), AttendanceReviewResponse.from(record));
     }
 
     static AttendanceException error(HttpStatus status, String code, String message) {

@@ -16,8 +16,9 @@ class OpportunityPublicationNotificationTest {
     private final OpportunityRepository opportunities = mock(OpportunityRepository.class);
     private final OpportunitySkillRepository skills = mock(OpportunitySkillRepository.class);
     private final NotificationService notifications = mock(NotificationService.class);
+    private final OpportunityMatchingService matching = mock(OpportunityMatchingService.class);
     private final OpportunityService service = new OpportunityService(opportunities, skills,
-            mock(UserRepository.class), mock(SkillNormalizer.class), notifications);
+            mock(UserRepository.class), mock(SkillNormalizer.class), notifications, matching);
 
     private OpportunityRequest request(String description) {
         return new OpportunityRequest("Example Company", "Software Intern", description, null, "Pune",
@@ -47,6 +48,7 @@ class OpportunityPublicationNotificationTest {
         ordered.verify(opportunities).saveAndFlush(opportunity);
         ordered.verify(notifications).opportunityPublished(opportunity);
         verify(notifications, times(1)).opportunityPublished(opportunity);
+        verify(matching, times(1)).published(opportunity);
         verify(opportunities, times(1)).saveAndFlush(opportunity);
     }
 
@@ -64,6 +66,7 @@ class OpportunityPublicationNotificationTest {
         draft(null);
         assertThat(service.update(42L, request("Ready for review.")).status()).isEqualTo(OpportunityStatus.DRAFT);
         verifyNoInteractions(notifications);
+        verifyNoInteractions(matching);
     }
 
     @Test void invalidOrClosedPublicationDoesNotNotify() {

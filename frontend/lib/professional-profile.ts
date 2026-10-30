@@ -36,6 +36,10 @@ export type ResumeAnalysis = {
   certifications: string[];
 };
 
+export type ResumeCorrectionValues = Pick<ResumeAnalysis, "skills" | "experience" | "education" | "certifications">;
+export type ResumeCorrectionChange = { revision: number; source: "STUDENT_CORRECTED" | "IIIC_REVIEWED"; editedAt: string; editorId: number | null; editorName: string; values: ResumeCorrectionValues };
+export type ResumeCorrections = { resumeId: number; original: ResumeAnalysis; values: ResumeCorrectionValues; revision: number; source: "AI_EXTRACTED" | "STUDENT_CORRECTED" | "IIIC_REVIEWED"; editedAt: string | null; editorId: number | null; editorName: string | null; history: ResumeCorrectionChange[] };
+
 export function notParsedAnalysis(resumeId: number): ResumeAnalysis {
   return { resumeId, status: "NOT_PARSED", modelName: null, modelVersion: null, startedAt: null,
     completedAt: null, skills: [], experience: [], education: [], certifications: [] };

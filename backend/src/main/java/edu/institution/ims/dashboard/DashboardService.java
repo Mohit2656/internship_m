@@ -20,32 +20,35 @@ public class DashboardService {
     public DashboardService(DashboardAnalyticsRepository analytics) { this.analytics = analytics; }
 
     @Transactional(readOnly = true)
-    public DashboardSummaryResponse summary() {
+    public DashboardSummaryResponse summary() { return summary(null); }
+
+    @Transactional(readOnly = true)
+    public DashboardSummaryResponse summary(Long sessionId) {
         DashboardCountsProjection counts = analytics.counts(Role.STUDENT, DOCUMENTS_PENDING, DOCUMENTS_COMPLETE, DIARY_ISSUED,
-                WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE, WorkflowStatus.DOCUMENTS_COMPLETE, WorkflowStatus.DIARY_ISSUED);
+                WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE, WorkflowStatus.DOCUMENTS_COMPLETE, WorkflowStatus.DIARY_ISSUED, sessionId);
         return new DashboardSummaryResponse(
                 new StudentOverview(zero(counts.getTotal()), zero(counts.getProfileComplete()), zero(counts.getProfileIncomplete())),
                 new InternshipProgress(zero(counts.getInternshipSecured()), zero(counts.getInternshipNotSecured()), zero(counts.getDocumentsPending()),
                         zero(counts.getDocumentsComplete()), zero(counts.getDiaryIssued()), zero(counts.getDetailsComplete())),
-                enumBreakdown(analytics.sourceCounts(Role.STUDENT), InternshipSource.values()),
-                enumBreakdown(analytics.companyTypeCounts(Role.STUDENT), CompanyType.values()),
-                enumBreakdown(analytics.modeCounts(Role.STUDENT), InternshipMode.values()),
-                stipend(), fullTimeEmployment(), topCompanies(),
+                enumBreakdown(analytics.sourceCounts(Role.STUDENT, sessionId), InternshipSource.values()),
+                enumBreakdown(analytics.companyTypeCounts(Role.STUDENT, sessionId), CompanyType.values()),
+                enumBreakdown(analytics.modeCounts(Role.STUDENT, sessionId), InternshipMode.values()),
+                stipend(sessionId), fullTimeEmployment(sessionId), topCompanies(sessionId),
                 new Attention(zero(counts.getProfileIncomplete()), zero(counts.getInternshipNotSecured()), zero(counts.getDocumentsPending()),
                         zero(counts.getDiaryPending()), zero(counts.getDetailsPending())));
     }
 
-    private Stipend stipend() {
-        StipendProjection projection = analytics.stipend(Role.STUDENT);
+    private Stipend stipend(Long sessionId) {
+        StipendProjection projection = analytics.stipend(Role.STUDENT, sessionId);
         return new Stipend(zero(projection.getPaid()), zero(projection.getUnpaid()), projection.getAveragePaidMonthlyStipend());
     }
-    private FullTimeEmployment fullTimeEmployment() {
+    private FullTimeEmployment fullTimeEmployment(Long sessionId) {
         Map<Boolean, Long> values = new HashMap<>();
-        analytics.fullTimeEmploymentCounts(Role.STUDENT).forEach(row -> values.put(row.getValue(), zero(row.getCount())));
+        analytics.fullTimeEmploymentCounts(Role.STUDENT, sessionId).forEach(row -> values.put(row.getValue(), zero(row.getCount())));
         return new FullTimeEmployment(values.getOrDefault(true, 0L), values.getOrDefault(false, 0L));
     }
-    private List<TopCompany> topCompanies() {
-        return analytics.topCompanies(Role.STUDENT, PageRequest.of(0, 5)).stream()
+    private List<TopCompany> topCompanies(Long sessionId) {
+        return analytics.topCompanies(Role.STUDENT, PageRequest.of(0, 5), sessionId).stream()
                 .map(row -> new TopCompany(row.getCompanyName(), zero(row.getStudentCount()))).toList();
     }
     private static List<Breakdown> enumBreakdown(List<EnumCountProjection> rows, Enum<?>[] options) {

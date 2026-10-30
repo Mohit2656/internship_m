@@ -17,7 +17,8 @@ public record InternshipDetailsRequest(
         @NotNull(message = "Duration in months is required") @Positive(message = "Duration in months must be greater than zero") Integer durationMonths,
         @NotNull(message = "Start date is required") LocalDate startDate,
         @NotNull(message = "End date is required") LocalDate endDate,
-        @NotNull(message = "Total weeks is required") @Positive(message = "Total weeks must be greater than zero") Integer totalWeeks,
+        // Retained for older clients; the server calculates this from the dates.
+        Integer totalWeeks,
         @NotNull(message = "Internship mode is required") InternshipMode internshipMode,
         @NotNull(message = "Stipend per month is required") @DecimalMin(value = "0.00", message = "Stipend cannot be negative") @Digits(integer = 10, fraction = 2, message = "Stipend must have at most two decimal places") BigDecimal stipendPerMonth,
         @NotNull(message = "Full-time employment opportunity selection is required") Boolean fullTimeEmploymentOffered,

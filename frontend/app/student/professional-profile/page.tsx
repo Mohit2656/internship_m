@@ -5,8 +5,10 @@ import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ResumeAnalysisCard } from "@/components/ResumeAnalysisCard";
+import { ResumeCorrectionEditor } from "@/components/ResumeCorrectionEditor";
 import { SkillProfileCard } from "@/components/SkillProfileCard";
 import { api } from "@/lib/api";
+import { formatDateTime } from "@/lib/monthly-progress";
 import {
   downloadResume, notParsedAnalysis, ProfessionalProfile, readableFileSize, ResumeAnalysis, resumeAccept, resumeError, resumeMaxBytes,
 } from "@/lib/professional-profile";
@@ -23,6 +25,7 @@ export default function ProfessionalProfilePage() {
   const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [skillRefreshKey, setSkillRefreshKey] = useState(0);
+  const currentAnalysis = analysis?.resumeId === profile?.resume?.id ? analysis : null;
 
   useEffect(() => {
     api.get<ProfessionalProfile>("/student/professional-profile")
@@ -114,9 +117,10 @@ export default function ProfessionalProfilePage() {
         </form> : <dl className="mt-6 grid gap-5 sm:grid-cols-2"><div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Headline</dt><dd className="mt-2 text-sm font-semibold text-slate-900">{profile?.headline ?? "Not added"}</dd></div><div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Career Interests</dt><dd className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{profile?.careerInterests ?? "Not added"}</dd></div></dl>}
       </section>
       <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Resume</p><div className="mt-2 flex flex-wrap items-start justify-between gap-5"><div><h2 className="text-xl font-bold">{profile?.resume ? "Current Resume" : "No resume uploaded"}</h2>{profile?.resume ? <><p className="mt-2 text-sm font-semibold text-slate-900">{profile.resume.originalFilename}</p><p className="mt-1 text-sm text-slate-600">Uploaded {new Date(profile.resume.uploadedAt).toLocaleDateString()} · {readableFileSize(profile.resume.fileSize)}</p></> : <p className="mt-2 text-sm text-slate-600">Upload a PDF or DOCX resume. Maximum file size: 5 MB.</p>}</div><div className="flex flex-wrap gap-3">{profile?.resume && <button data-button-variant="outline" disabled={!!busy} onClick={download} className="text-sm">{busy === "download" ? "Downloading…" : "View / Download"}</button>}<label className={`cursor-pointer rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white ${busy ? "pointer-events-none opacity-50" : ""}`}>{busy === "resume" ? "Uploading…" : profile?.resume ? "Re-upload Resume" : "Upload Resume"}<input type="file" accept={resumeAccept} onChange={upload} className="sr-only" /></label></div></div>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Resume</p><div className="mt-2 flex flex-wrap items-start justify-between gap-5"><div><h2 className="text-xl font-bold">{profile?.resume ? "Current Resume" : "No resume uploaded"}</h2>{profile?.resume ? <><p className="mt-2 text-sm font-semibold text-slate-900">{profile.resume.originalFilename}</p><p className="mt-1 text-sm text-slate-600">Uploaded {formatDateTime(profile.resume.uploadedAt)} · {readableFileSize(profile.resume.fileSize)}</p></> : <p className="mt-2 text-sm text-slate-600">Upload a PDF or DOCX resume. Maximum file size: 5 MB.</p>}</div><div className="flex flex-wrap gap-3">{profile?.resume && <button data-button-variant="outline" disabled={!!busy} onClick={download} className="text-sm">{busy === "download" ? "Downloading…" : "View / Download"}</button>}<label className={`cursor-pointer rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white ${busy ? "pointer-events-none opacity-50" : ""}`}>{busy === "resume" ? "Uploading…" : profile?.resume ? "Re-upload Resume" : "Upload Resume"}<input type="file" accept={resumeAccept} onChange={upload} className="sr-only" /></label></div></div>
       </section>
-      <ResumeAnalysisCard hasResume={Boolean(profile?.resume)} loading={analysisLoading} analysis={analysis} onAnalyze={analyze} />
+      {profile?.resume && currentAnalysis?.status === "PARSED" ? <ResumeCorrectionEditor key={profile.resume.id} endpoint="/student/resume/analysis/corrections" resumeId={profile.resume.id} onSaved={() => setSkillRefreshKey(value => value + 1)} />
+        : <ResumeAnalysisCard hasResume={Boolean(profile?.resume)} loading={analysisLoading} analysis={currentAnalysis} onAnalyze={analyze} />}
       <SkillProfileCard refreshKey={skillRefreshKey} />
     </div>}
   </main></AppFrame></ProtectedRoute>;

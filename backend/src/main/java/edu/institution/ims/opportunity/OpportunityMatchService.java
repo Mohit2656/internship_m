@@ -17,14 +17,18 @@ public class OpportunityMatchService {
     private final StudentSkillRepository studentSkills; private final StudentResumeRepository resumes;
     private final ResumeAnalysisRepository resumeAnalyses; private final OpportunityAiAnalysisRepository opportunityAnalyses;
     private final OpportunityMatchClient client;
+    private final ResumeCorrectionService corrections;
+    private final SkillNormalizer normalizer;
 
     public OpportunityMatchService(OpportunityRepository opportunities, OpportunitySkillRepository opportunitySkills,
             StudentProfileRepository studentProfiles, StudentProfessionalProfileRepository professionalProfiles,
             StudentSkillRepository studentSkills, StudentResumeRepository resumes, ResumeAnalysisRepository resumeAnalyses,
-            OpportunityAiAnalysisRepository opportunityAnalyses, OpportunityMatchClient client) {
+            OpportunityAiAnalysisRepository opportunityAnalyses, OpportunityMatchClient client,
+            ResumeCorrectionService corrections, SkillNormalizer normalizer) {
         this.opportunities = opportunities; this.opportunitySkills = opportunitySkills; this.studentProfiles = studentProfiles;
         this.professionalProfiles = professionalProfiles; this.studentSkills = studentSkills; this.resumes = resumes;
         this.resumeAnalyses = resumeAnalyses; this.opportunityAnalyses = opportunityAnalyses; this.client = client;
+        this.corrections = corrections; this.normalizer = normalizer;
     }
 
     @Transactional(readOnly = true)
@@ -35,7 +39,8 @@ public class OpportunityMatchService {
         StudentOpportunityMatchResponse.Eligibility eligibility = eligibility(opportunity, institutional);
         StudentProfessionalProfile professional = professionalProfiles.findByStudentId(principal.id()).orElse(null);
         List<StudentSkill> activeSkills = professional == null ? List.of() : studentSkills.findAllByProfessionalProfileIdAndActiveTrueOrderByDisplayNameAsc(professional.getId());
-        List<String> experience = currentExperience(professional);
+        ResumeCorrectionService.Values resumeValues = currentValues(professional);
+        List<String> experience = experience(resumeValues);
         List<OpportunitySkill> authoritative = opportunitySkills.findAllByOpportunityIdOrderByRequirementTypeAscDisplayNameAsc(opportunityId);
         List<String> roles = new ArrayList<>(); List<String> responsibilities = new ArrayList<>();
         opportunityAnalyses.findFirstByOpportunityIdOrderByCreatedAtDesc(opportunityId).filter(a -> a.getStatus() == OpportunityAiAnalysisStatus.ANALYZED)
@@ -43,8 +48,8 @@ public class OpportunityMatchService {
                     if (signal.getSignalType() == OpportunityAiSignalType.ROLE) roles.add(signal.getDisplayValue());
                     else responsibilities.add(signal.getDisplayValue());
                 }));
-        OpportunityMatchRequest request = request(opportunity, professional, activeSkills, experience, authoritative, roles, responsibilities);
-        String notice = activeSkills.isEmpty() ? "No confirmed skills are currently available for semantic skill comparison." : null;
+        OpportunityMatchRequest request = request(opportunity, professional, activeSkills, experience, authoritative, roles, responsibilities, resumeValues);
+        String notice = request.student().skills().isEmpty() ? "No confirmed skills are currently available for semantic skill comparison." : null;
         try {
             OpportunityMatchResult result = client.match(request);
             return available(opportunityId, eligibility, request, result, notice);
@@ -89,10 +94,11 @@ public class OpportunityMatchService {
             StudentProfessionalProfile professional = profilesByStudent.get(studentId);
             List<StudentSkill> skills = professional == null ? List.of()
                     : skillsByProfile.getOrDefault(professional.getId(), List.of());
-            List<String> experience = currentExperience(professional, resumeByProfile, analysisByResume);
+            ResumeCorrectionService.Values resumeValues = currentValues(professional, resumeByProfile, analysisByResume);
+            List<String> experience = experience(resumeValues);
             StudentOpportunityMatchResponse.Eligibility candidateEligibility = eligibility(opportunity, institutional);
-            OpportunityMatchRequest candidateRequest = request(opportunity, professional, skills, experience, authoritative, roles, responsibilities);
-            String notice = skills.isEmpty() ? "No confirmed skills are currently available for semantic skill comparison." : null;
+            OpportunityMatchRequest candidateRequest = request(opportunity, professional, skills, experience, authoritative, roles, responsibilities, resumeValues);
+            String notice = candidateRequest.student().skills().isEmpty() ? "No confirmed skills are currently available for semantic skill comparison." : null;
             return new PreparedCandidate(studentId, candidateEligibility, candidateRequest, notice);
         }).toList();
 
@@ -117,7 +123,8 @@ public class OpportunityMatchService {
         StudentProfessionalProfile professional = professionalProfiles.findByStudentId(principal.id()).orElse(null);
         List<StudentSkill> activeSkills = professional == null ? List.of()
                 : studentSkills.findAllByProfessionalProfileIdAndActiveTrueOrderByDisplayNameAsc(professional.getId());
-        List<String> experience = currentExperience(professional);
+        ResumeCorrectionService.Values resumeValues = currentValues(professional);
+        List<String> experience = experience(resumeValues);
         List<Long> opportunityIds = values.stream().map(Opportunity::getId).toList();
         Map<Long, List<OpportunitySkill>> skillsByOpportunity = new HashMap<>();
         opportunitySkills.findAllByOpportunityIdInOrderByRequirementTypeAscDisplayNameAsc(opportunityIds)
@@ -138,8 +145,8 @@ public class OpportunityMatchService {
             }
             StudentOpportunityMatchResponse.Eligibility candidateEligibility = eligibility(opportunity, institutional);
             OpportunityMatchRequest candidateRequest = request(opportunity, professional, activeSkills, experience,
-                    skillsByOpportunity.getOrDefault(opportunity.getId(), List.of()), roles, responsibilities);
-            String notice = activeSkills.isEmpty() ? "No confirmed skills are currently available for semantic skill comparison." : null;
+                    skillsByOpportunity.getOrDefault(opportunity.getId(), List.of()), roles, responsibilities, resumeValues);
+            String notice = candidateRequest.student().skills().isEmpty() ? "No confirmed skills are currently available for semantic skill comparison." : null;
             return new PreparedOpportunity(opportunity.getId(), candidateEligibility, candidateRequest, notice);
         }).toList();
         Map<Long, StudentOpportunityMatchResponse> matches = new LinkedHashMap<>();
@@ -156,15 +163,14 @@ public class OpportunityMatchService {
         return Collections.unmodifiableMap(matches);
     }
 
-    private static List<String> currentExperience(StudentProfessionalProfile professional, Map<Long, StudentResume> resumeByProfile,
+    private ResumeCorrectionService.Values currentValues(StudentProfessionalProfile professional, Map<Long, StudentResume> resumeByProfile,
             Map<Long, ResumeAnalysis> analysisByResume) {
-        if (professional == null) return List.of();
+        if (professional == null) return null;
         StudentResume resume = resumeByProfile.get(professional.getId());
-        if (resume == null || resume.getParsingStatus() != ResumeParsingStatus.PARSED) return List.of();
+        if (resume == null || resume.getParsingStatus() != ResumeParsingStatus.PARSED) return null;
         ResumeAnalysis analysis = analysisByResume.get(resume.getId());
-        if (analysis == null || analysis.getStatus() != ResumeParsingStatus.PARSED) return List.of();
-        return analysis.getExperiences().stream().map(exp -> experienceLabel(exp.getTitle(), exp.getCompany()))
-                .filter(value -> !value.isBlank()).toList();
+        if (analysis == null || analysis.getStatus() != ResumeParsingStatus.PARSED) return null;
+        return corrections.effectiveValues(analysis);
     }
 
     private static StudentOpportunityMatchResponse available(Long opportunityId, StudentOpportunityMatchResponse.Eligibility eligibility,
@@ -210,12 +216,15 @@ public class OpportunityMatchService {
     }
     private static String criterionMessage(String status) { return switch (status) { case "PASS" -> "Requirement met"; case "FAIL" -> "Requirement not met"; case "UNKNOWN" -> "Student data unavailable"; default -> "No restriction"; }; }
 
-    private List<String> currentExperience(StudentProfessionalProfile professional) {
-        if (professional == null) return List.of();
+    private ResumeCorrectionService.Values currentValues(StudentProfessionalProfile professional) {
+        if (professional == null) return null;
         return resumes.findByProfessionalProfileIdAndActiveTrue(professional.getId())
                 .filter(r -> r.getParsingStatus() == ResumeParsingStatus.PARSED).flatMap(r -> resumeAnalyses.findByResumeId(r.getId()))
-                .filter(a -> a.getStatus() == ResumeParsingStatus.PARSED).map(a -> a.getExperiences().stream().map(exp ->
-                        experienceLabel(exp.getTitle(), exp.getCompany())).filter(value -> !value.isBlank()).toList()).orElse(List.of());
+                .filter(a -> a.getStatus() == ResumeParsingStatus.PARSED).map(corrections::effectiveValues).orElse(null);
+    }
+    private static List<String> experience(ResumeCorrectionService.Values values) {
+        return values == null ? List.of() : values.experience().stream()
+                .map(exp -> experienceLabel(exp.title(),exp.company())).filter(value -> !value.isBlank()).toList();
     }
     private static String experienceLabel(String title, String company) {
         String cleanTitle = clean(title); String cleanCompany = clean(company);
@@ -257,9 +266,19 @@ public class OpportunityMatchService {
                 : "Related " + kind + " skill: " + match.studentSkill() + ".";
         return new StudentOpportunityMatchResponse.SkillExplanation(match.opportunitySkill(), match.matchType(), match.studentSkill(), detail);
     }
-    private static OpportunityMatchRequest request(Opportunity opportunity, StudentProfessionalProfile professional, List<StudentSkill> studentSkills,
-            List<String> experience, List<OpportunitySkill> opportunitySkills, List<String> roles, List<String> responsibilities) {
-        List<OpportunityMatchRequest.Skill> own = studentSkills.stream().map(s -> new OpportunityMatchRequest.Skill(s.getDisplayName(), s.getNormalizedName())).toList();
+    private OpportunityMatchRequest request(Opportunity opportunity, StudentProfessionalProfile professional, List<StudentSkill> studentSkills,
+            List<String> experience, List<OpportunitySkill> opportunitySkills, List<String> roles, List<String> responsibilities,
+            ResumeCorrectionService.Values resumeValues) {
+        Map<String,OpportunityMatchRequest.Skill> currentSkills = new LinkedHashMap<>();
+        studentSkills.stream().filter(s -> resumeValues == null || s.getSource() != StudentSkillSource.AI_EXTRACTED)
+                .forEach(s -> currentSkills.put(s.getNormalizedName(),new OpportunityMatchRequest.Skill(s.getDisplayName(),s.getNormalizedName())));
+        if (resumeValues != null) resumeValues.skills().forEach(name -> {
+            String normalized;
+            try { normalized = normalizer.normalize(name).normalizedName(); }
+            catch (ResumeException ignored) { normalized = name.trim().replaceAll("\\s+"," ").toLowerCase(Locale.ROOT); }
+            currentSkills.putIfAbsent(normalized,new OpportunityMatchRequest.Skill(name,normalized));
+        });
+        List<OpportunityMatchRequest.Skill> own = List.copyOf(currentSkills.values());
         List<OpportunityMatchRequest.Skill> required = opportunitySkills.stream().filter(s -> s.getRequirementType() == OpportunitySkillType.REQUIRED)
                 .map(s -> new OpportunityMatchRequest.Skill(s.getDisplayName(), s.getNormalizedName())).toList();
         List<OpportunityMatchRequest.Skill> preferred = opportunitySkills.stream().filter(s -> s.getRequirementType() == OpportunitySkillType.PREFERRED)

@@ -18,6 +18,7 @@ public class User {
     @Column(nullable = false) private boolean active = true;
     @Column(name = "must_change_password", nullable = false) private boolean mustChangePassword;
     @Column(name = "token_version", nullable = false) private long tokenVersion;
+    @Column(name = "academic_session_id") private Long academicSessionId;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
     @OneToOne(mappedBy = "user", fetch = FetchType.LAZY) private StudentProfile studentProfile;
@@ -31,6 +32,11 @@ public class User {
     @PrePersist void createTimestamps() { var now = Instant.now(); createdAt = now; updatedAt = now; }
     @PreUpdate void updateTimestamp() { updatedAt = Instant.now(); }
     public Long getId() { return id; }
+    public Long getAcademicSessionId() { return academicSessionId; }
+    public void assignAcademicSession(Long id) {
+        if (role != Role.STUDENT || academicSessionId != null || id == null) throw new IllegalStateException("Only an unassigned student can receive an academic session");
+        academicSessionId=id;
+    }
     public String getEmail() { return email; }
     public String getPasswordHash() { return passwordHash; }
     public Role getRole() { return role; }

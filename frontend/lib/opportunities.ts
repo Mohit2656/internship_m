@@ -162,6 +162,24 @@ export type StudentOpportunityPage = {
 };
 
 export type TalentEligibilityFilter = "ELIGIBLE_OR_UNKNOWN" | "ELIGIBLE" | "UNKNOWN" | "INELIGIBLE" | "ALL";
+export type ScoredCandidate = {
+  studentId: number; studentName: string | null; uid: string | null; branch: Branch | null; semester: number;
+  matchScore: number; eligibility: "ELIGIBLE" | "UNKNOWN" | "INELIGIBLE"; eligibilityReasons: string[];
+  matchedSkills: string[]; missingRequiredSkills: string[]; matchedPreferredSkills: string[];
+  contextEvidence: string[]; resumeAvailable: boolean; strongMatch: boolean;
+};
+export type MatchingRunSummary = { id: number; triggerType: string; algorithmVersion: string; createdAt: string };
+export type MatchingRun = MatchingRunSummary & {
+  opportunityId: number;
+  report: { title: string; companyName: string; scoringExplanation: string; strongMatchThreshold: number; candidates: ScoredCandidate[] };
+};
+
+/** CSV cells are quoted and spreadsheet formulas neutralized before download. */
+export function matchingCsv(candidates: ScoredCandidate[]) {
+  const cell = (value: string | number | null) => `"${String(value ?? "").replaceAll("\u0000", "").replace(/^[\s\u0001-\u001f]*[=+@-]|^[\t\r\n]/, value => `'${value}`).replaceAll('"', '""')}"`;
+  const rows = candidates.map(c => [c.studentName, c.uid, c.branch, c.matchScore, c.eligibility, c.matchedSkills.join("; "), c.missingRequiredSkills.join("; "), c.matchedPreferredSkills.join("; ")]);
+  return [["Student", "UID", "Branch", "Match score", "Eligibility", "Matched required", "Missing required", "Matched preferred"], ...rows].map(row => row.map(cell).join(",")).join("\r\n");
+}
 export type TalentCandidate = {
   studentId: number;
   studentName: string;

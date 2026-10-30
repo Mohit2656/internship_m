@@ -83,6 +83,8 @@ app:
     base-url: ${OPPORTUNITY_AI_BASE_URL:${RESUME_AI_BASE_URL:http://127.0.0.1:8091}}
     connect-timeout-seconds: ${OPPORTUNITY_AI_CONNECT_TIMEOUT_SECONDS:3}
     read-timeout-seconds: ${OPPORTUNITY_AI_READ_TIMEOUT_SECONDS:120}
+  opportunity-matching:
+    strong-match-threshold: ${OPPORTUNITY_STRONG_MATCH_THRESHOLD:75}
 bootstrap:
   admin:
     email: ${BOOTSTRAP_ADMIN_EMAIL:}
