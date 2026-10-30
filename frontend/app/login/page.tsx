@@ -7,7 +7,6 @@ import { AxiosError } from "axios";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError, AuthUser } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 const loginOptions = [
   { role: "STUDENT", label: "Student Login", icon: "student" },
@@ -43,6 +42,18 @@ function LoginContent() {
     else if (!loading && !landing && !selectedOption) router.replace("/");
   }, [loading, user, router, landing, selectedOption]);
 
+  useEffect(() => {
+    const originalTheme = document.documentElement.dataset.theme;
+    document.documentElement.dataset.theme = "light";
+    return () => {
+      try {
+        const saved = localStorage.getItem("ims:theme");
+        if (saved) document.documentElement.dataset.theme = saved;
+        else if (originalTheme) document.documentElement.dataset.theme = originalTheme;
+      } catch {}
+    };
+  }, []);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!selectedOption || submitting) return;
@@ -58,20 +69,19 @@ function LoginContent() {
 
   if (user) return <main className="grid min-h-screen place-items-center"><p className="text-sm text-slate-500">Checking your session…</p></main>;
 
-  return <main className="flex min-h-[100svh] flex-col overflow-hidden bg-[#f4f8ff]">
-    <header className="login-header relative z-20 border-b border-blue-100 bg-white px-3 shadow-[0_8px_30px_rgba(15,48,94,0.06)] sm:px-8">
-      <div className="mx-auto flex h-[96px] max-w-[1440px] items-center justify-between gap-4 lg:h-[120px]">
-        <div className="flex min-w-0 items-center gap-3 sm:gap-5">
-          <Image src="/branding/college-logo.png" alt="St. Vincent Pallotti College official seal" width={150} height={150} priority className="h-14 w-14 shrink-0 rounded-full object-contain sm:h-[90px] sm:w-[90px]" />
-          <Image src="/branding/college-wordmark.png" alt="St. Vincent Pallotti College of Engineering and Technology, Nagpur — An Autonomous Institution" width={650} height={128} priority className="h-auto min-w-0 flex-1 object-contain object-left sm:max-w-[560px]" />
+  return <main className="login-page flex min-h-[100svh] flex-col overflow-y-auto bg-[#f4f8ff] lg:overflow-hidden">
+    <header className="login-header relative z-20 border-b border-blue-100 bg-white px-3 shadow-[0_4px_20px_rgba(15,48,94,0.05)] sm:px-8">
+      <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-center gap-3 sm:h-20 sm:gap-4 lg:h-[120px] lg:justify-between">
+        <div className="flex min-w-0 items-center justify-center gap-2.5 sm:gap-5 lg:justify-start">
+          <Image src="/branding/college-logo.png" alt="St. Vincent Pallotti College official seal" width={150} height={150} priority className="h-10 w-10 shrink-0 rounded-full object-contain sm:h-16 sm:w-16 lg:h-[90px] lg:w-[90px]" />
+          <Image src="/branding/college-wordmark.png" alt="St. Vincent Pallotti College of Engineering and Technology, Nagpur — An Autonomous Institution" width={650} height={128} priority className="h-auto max-h-10 min-w-0 flex-1 object-contain object-center sm:max-h-14 lg:max-h-none sm:max-w-[560px] lg:object-left" />
         </div>
         <div className="hidden items-center gap-8 lg:flex"><span className="h-12 w-px bg-blue-200"/><p className="whitespace-nowrap text-sm font-semibold uppercase tracking-[0.32em] text-[#405b82]">Arise &amp; Shine</p></div>
-        <ThemeToggle />
       </div>
     </header>
 
     <div className="grid flex-1 lg:min-h-0 lg:grid-cols-[51.5%_48.5%]">
-      <section className="relative isolate flex min-h-[430px] overflow-hidden bg-[#0b2a52] px-7 py-12 text-white sm:px-12 lg:min-h-0 lg:px-[clamp(3rem,5.6vw,5.5rem)] lg:py-[clamp(2.5rem,6vh,4.5rem)]">
+      <section className="relative isolate hidden overflow-hidden bg-[#0b2a52] text-white lg:flex lg:min-h-0 lg:px-[clamp(3rem,5.6vw,5.5rem)] lg:py-[clamp(2.5rem,6vh,4.5rem)]">
         <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_16%_8%,rgba(77,148,245,0.48),transparent_36%),linear-gradient(135deg,#082750_0%,#0b3b76_54%,#2463ac_100%)]" />
         <div className="absolute -left-36 -top-36 -z-10 h-80 w-80 rounded-full border border-white/20 bg-white/[0.04]" />
         <div className="absolute -bottom-52 -right-24 -z-10 h-[430px] w-[430px] rounded-full border border-white/15 bg-white/[0.04]" />
@@ -97,31 +107,42 @@ function LoginContent() {
         </div>
       </section>
 
-      <section className="login-panel relative flex items-center justify-center overflow-hidden px-5 py-12 sm:px-10 lg:py-8">
-        <div className="absolute -right-40 -top-52 h-[430px] w-[430px] rounded-full bg-blue-100/55 blur-sm" />
-        <div className="absolute -bottom-48 left-12 h-[380px] w-[380px] rounded-full bg-white/80" />
-        <div className="relative w-full max-w-[630px] rounded-[1.75rem] border border-white/90 bg-white/85 p-7 shadow-[0_28px_80px_rgba(41,91,160,0.15)] backdrop-blur-xl sm:p-10 lg:p-[clamp(2.25rem,4vw,3.75rem)]">
-          <p className="text-base font-bold text-[#0870e6] sm:text-lg">Welcome back</p>
-          <div className="mt-4 h-1 w-16 rounded-full bg-[#f5b844]" />
-          <h2 className="mt-7 text-3xl font-bold tracking-tight text-slate-950 sm:text-[2.65rem]">{landing ? "Choose your login" : selectedOption?.label ?? "Sign in to your account"}</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">{landing ? "Select your role to sign in to your account." : "Use the email and password provided by your institution."}</p>
+      <section className="login-panel login-mobile-bg relative flex flex-1 flex-col items-center justify-end overflow-hidden px-4 pt-32 pb-4 sm:pt-40 sm:pb-8 lg:flex-row lg:justify-center lg:py-8 lg:px-10 lg:pt-8">
+        <div className="absolute -right-40 -top-52 hidden h-[430px] w-[430px] rounded-full bg-blue-100/55 blur-sm lg:block" />
+        <div className="absolute -bottom-48 left-12 hidden h-[380px] w-[380px] rounded-full bg-white/80 lg:block" />
+        <div className="relative w-full max-w-[480px] rounded-2xl border border-white/90 bg-white/85 p-5 shadow-[0_16px_50px_rgba(41,91,160,0.12)] backdrop-blur-xl sm:max-w-[630px] sm:rounded-[1.75rem] sm:p-10 lg:p-[clamp(2.25rem,4vw,3.75rem)]">
+          <div className="mb-3.5 border-b border-blue-100/80 pb-2.5 text-center lg:hidden">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-blue-700">
+              Department of Computer Science &amp; Engineering
+            </p>
+            <p className="mt-0.5 text-sm font-bold tracking-tight text-slate-900">
+              Internship Management System
+            </p>
+          </div>
 
-          {landing ? <nav aria-label="Login options" className="mt-8 space-y-4">
+          <p className="text-sm font-bold text-[#0870e6] sm:text-base lg:text-lg">Welcome back</p>
+          <div className="mt-2.5 h-1 w-12 rounded-full bg-[#f5b844] sm:mt-4 sm:w-16" />
+          <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-950 sm:mt-7 sm:text-3xl lg:text-[2.65rem]">{landing ? "Choose your login" : selectedOption?.label ?? "Sign in to your account"}</h2>
+          <p className="mt-1.5 text-xs leading-5 text-slate-600 sm:mt-3 sm:text-sm sm:leading-6 lg:text-base">{landing ? "Select your role to sign in to your account." : "Use the email and password provided by your institution."}</p>
+
+          {landing ? <nav aria-label="Login options" className="mt-5 space-y-3 sm:mt-8 sm:space-y-4">
             {loginOptions.map(option => <Link key={option.role} href={`/login?role=${option.role}`} className="login-role-button ui-button group w-full">
               <span className="login-role-icon"><RoleIcon type={option.icon} /></span>
               <span className="login-role-divider" />
               <span className="login-role-label">{option.label}</span>
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="login-role-chevron"><path d="m9 5 7 7-7 7" /></svg>
             </Link>)}
-          </nav> : <form onSubmit={submit} className="mt-8 space-y-5">
-            <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-900">Email address</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-4 grid place-items-center text-slate-500" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><input autoComplete="email" type="email" required value={email} onChange={event => setEmail(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-3.5 pl-12 pr-4 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100" placeholder="you@institution.edu" /></span></label>
-            <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-900">Password</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-4 grid place-items-center text-slate-500" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg></span><input autoComplete="current-password" type={showPassword ? "text" : "password"} required minLength={1} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-3.5 pl-12 pr-12 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100" placeholder="Enter your password" /><button data-button-variant="icon" type="button" onClick={() => setShowPassword(value => !value)} className="absolute inset-y-0 right-3 grid w-9 place-items-center" aria-label={showPassword ? "Hide password" : "Show password"}><svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/>{showPassword && <path d="m4 4 16 16"/>}</svg></button></span></label>
-            <Link href="/" className="block text-sm font-semibold text-blue-700">Choose a different login option</Link>
-            <Link href="/forgot-password" className="block text-sm font-semibold text-blue-700">Forgot Password?</Link>
-            {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-            <button type="submit" disabled={submitting} className="w-full">{submitting ? "Signing in…" : "Sign in"}</button>
+          </nav> : <form onSubmit={submit} className="mt-5 space-y-3.5 sm:mt-8 sm:space-y-5">
+            <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-900 sm:mb-2 sm:text-sm">Email address</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-slate-500 sm:left-4" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 sm:h-5 sm:w-5" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><input autoComplete="email" type="email" required value={email} onChange={event => setEmail(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-2.5 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 sm:py-3.5 sm:pl-12 sm:text-base" placeholder="you@institution.edu" /></span></label>
+            <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-900 sm:mb-2 sm:text-sm">Password</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-slate-500 sm:left-4" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 sm:h-5 sm:w-5" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg></span><input autoComplete="current-password" type={showPassword ? "text" : "password"} required minLength={1} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-2.5 pl-10 pr-11 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 sm:py-3.5 sm:pl-12 sm:pr-12 sm:text-base" placeholder="Enter your password" /><button data-button-variant="icon" type="button" onClick={() => setShowPassword(value => !value)} className="absolute inset-y-0 right-2 grid w-8 place-items-center sm:right-3 sm:w-9" aria-label={showPassword ? "Hide password" : "Show password"}><svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 sm:h-5 sm:w-5" stroke="currentColor" strokeWidth="1.8"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/>{showPassword && <path d="m4 4 16 16"/>}</svg></button></span></label>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+              <Link href="/" className="font-semibold text-blue-700 hover:underline">Choose a different login option</Link>
+              <Link href="/forgot-password" className="font-semibold text-blue-700 hover:underline">Forgot Password?</Link>
+            </div>
+            {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700 sm:px-4 sm:py-3 sm:text-sm">{error}</p>}
+            <button type="submit" disabled={submitting} className="w-full py-2.5 text-sm font-semibold sm:py-3 sm:text-base">{submitting ? "Signing in…" : "Sign in"}</button>
           </form>}
-          <div className="mt-9 flex items-center gap-4 text-center text-xs leading-5 text-slate-600"><span className="h-px flex-1 bg-blue-200"/><p>Accounts are created and managed by the III Cell.</p><span className="h-px flex-1 bg-blue-200"/></div>
+          <div className="mt-5 flex items-center gap-3 text-center text-[11px] leading-4 text-slate-600 sm:mt-9 sm:gap-4 sm:text-xs sm:leading-5"><span className="h-px flex-1 bg-blue-200"/><p>Accounts are created and managed by the III Cell.</p><span className="h-px flex-1 bg-blue-200"/></div>
         </div>
       </section>
     </div>
