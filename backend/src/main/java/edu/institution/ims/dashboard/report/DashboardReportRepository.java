@@ -50,7 +50,7 @@ public class DashboardReportRepository {
         if (requested != null) requested.forEach((key, raw) -> {
             var filter = allowed.get(key);
             if (filter == null || raw == null || raw.length() > 254) throw new IllegalArgumentException("Unsupported or unauthorized report filter: " + key);
-            String value = raw.trim();
+            String value = DashboardReportCatalog.filterValue(filter,raw);
             if (!value.isEmpty()) {
                 if (filter.type().equals("select") && filter.choices().stream().noneMatch(c -> c.value().equals(value)))
                     throw new IllegalArgumentException("Invalid value for " + filter.label());
@@ -80,7 +80,7 @@ public class DashboardReportRepository {
                 case "branch" -> "p.branch = :branch";
                 case "completionSearch" -> "(lower(coalesce(p.student_name,sa.student_name,u.email)) like :completionSearch escape '!' or lower(coalesce(p.uid,sa.uid,'')) like :completionSearch escape '!' or lower(i.company_name) like :completionSearch escape '!')";
                 case "academicSessionId" -> "u.academic_session_id = :academicSessionId";
-                case "completionStatus" -> value.equals("ALL") ? "i.id is not null" : "i.id is not null and ("+edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL+") = :completionStatus";
+                case "completionStatus" -> "i.id is not null and ("+edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL+") = :completionStatus";
                 case "academicYear" -> "p.academic_year = :academicYear";
                 case "semester" -> "coalesce(p.semester, sa.semester) = :semester";
                 case "profileStatus" -> value.equals("COMPLETE") ? "p.id is not null" : "p.id is null";
@@ -112,7 +112,7 @@ public class DashboardReportRepository {
         });
         return new Scope(where.toString(), params, Collections.unmodifiableMap(filters), attendanceDate);
     }
-    private static LocalDate date(String value) {
+    static LocalDate date(String value) {
         try { LocalDate result = LocalDate.parse(value); if (result.getYear() < 1900 || result.getYear() > 9999) throw new IllegalArgumentException(); return result; }
         catch (RuntimeException e) { throw new IllegalArgumentException("Report dates must use YYYY-MM-DD between 1900 and 9999"); }
     }
