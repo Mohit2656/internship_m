@@ -37,7 +37,11 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
     ["/admin/internship-completions", "Completions"], ["/admin/settings/academic-sessions", "Settings"], ["/admin/reports", "Reports"], ["/admin/attendance", "Attendance"],
   ] : user?.role === "MENTOR" ? [
     ["/mentor/weekly-progress", "Weekly progress"], ["/mentor/monthly-progress", "Monthly progress"], ["/mentor/reports", "Reports"], ["/mentor/attendance", "Attendance"],
-  ] : user?.role === "STUDENT" ? [["/student/weekly-progress", "Weekly progress"], ["/student/monthly-progress", "Monthly progress"]] : [];
+  ] : user?.role === "STUDENT" ? [
+    ["/student/weekly-progress", "Weekly progress"],
+    ["/student/monthly-progress", "Monthly progress"],
+    ["/student/documents", "Documents & Templates"],
+  ] : [];
   const groups = [
     { title: "Internship Management", links: links.filter(([href]) => ["/admin/weekly-progress", "/admin/monthly-progress", "/admin/opportunities", "/admin/internship-completions"].includes(href)) },
     { title: "User Management", links: links.filter(([href]) => ["/admin/student-accounts", "/admin/mentor-accounts"].includes(href)) },
