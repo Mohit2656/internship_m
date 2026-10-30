@@ -37,11 +37,12 @@ button, input { font: inherit; }
 .login-role-chevron { width: 1.35rem; height: 1.35rem; margin-left: 1rem; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .18s ease; }
 .login-panel .login-role-button:hover .login-role-chevron { transform: translateX(3px); }
 @media (max-width: 480px) {
-  .login-panel .login-role-button { min-height: 4.25rem; padding-inline: .8rem; }
-  .login-role-icon { width: 2.7rem; flex-basis: 2.7rem; }
-  .login-role-icon svg { width: 2rem; height: 2rem; }
-  .login-role-divider { margin-inline: .35rem .8rem; }
-  .login-role-label { font-size: 1rem; }
+  .login-panel .login-role-button { min-height: 3.5rem; padding-inline: .75rem; border-radius: .875rem; }
+  .login-role-icon { width: 2.25rem; flex-basis: 2.25rem; }
+  .login-role-icon svg { width: 1.65rem; height: 1.65rem; }
+  .login-role-divider { height: 2rem; margin-inline: .35rem .75rem; }
+  .login-role-label { font-size: .95rem; }
+  .login-role-chevron { width: 1.15rem; height: 1.15rem; margin-left: .5rem; }
 }
 /* Unlayered rules keep every native button (including future screens) on the
    shared theme, above Tailwind's utility layers. Layout utilities still apply. */
@@ -271,49 +272,59 @@ html[data-theme="dark"] .app-page-content h1:not(.report-document, .report-docum
 html[data-theme="dark"] .app-page-content :is(section, form).rounded-2xl.bg-white:not(.report-document, .report-document *) { border-color: #2b3d56; box-shadow: 0 3px 16px rgb(0 0 0 / .12); }
 html[data-theme="dark"] .app-page-content section.border-dashed:not(.report-document, .report-document *) { background: #101e32; }
 
-/* Existing utility colors share a dark palette without changing page layouts. */
-html[data-theme="dark"] :is(.bg-white, [class~="bg-white/85"], [class~="bg-white/80"]):not(.report-document, .report-document *) { background-color: #142136; }
-html[data-theme="dark"] :is(.bg-slate-50, .bg-slate-100):not(.report-document, .report-document *) { background-color: #1b2a40; }
-html[data-theme="dark"] :is(.bg-slate-200, .bg-slate-300):not(.report-document, .report-document *) { background-color: #33465f; }
-html[data-theme="dark"] :is(.border-slate-100, .border-slate-200, .border-slate-300, [class~="border-slate-300/90"]):not(.report-document, .report-document *) { border-color: #34465f; }
-html[data-theme="dark"] .divide-slate-100 > :not(:last-child):not(.report-document, .report-document *) { border-color: #2b3d56; }
-html[data-theme="dark"] :is(.text-slate-950, .text-slate-900, .text-slate-800):not(.report-document, .report-document *) { color: #edf4ff; }
-html[data-theme="dark"] :is(.text-slate-700, .text-slate-600):not(.report-document, .report-document *) { color: #bac9dd; }
-html[data-theme="dark"] :is(.text-slate-500, .text-slate-400):not(.report-document, .report-document *) { color: #9cacc2; }
-html[data-theme="dark"] :is(.bg-blue-50, .bg-blue-100, [class~="bg-blue-50/40"], [class~="bg-blue-50/45"], [class~="bg-blue-50/60"], [class~="bg-blue-100/55"]):not(.report-document, .report-document *) { background-color: #182f50; }
-html[data-theme="dark"] .bg-blue-200:not(.report-document, .report-document *) { background-color: #36577f; }
-html[data-theme="dark"] :is(.border-blue-100, .border-blue-200):not(.report-document, .report-document *) { border-color: #345782; }
-html[data-theme="dark"] :is(.text-blue-700, .text-blue-800, .text-blue-900, .text-blue-950):not(.report-document, .report-document *) { color: #99c7ff; }
-html[data-theme="dark"] :is(.bg-emerald-50, .bg-emerald-100, [class~="bg-emerald-50/50"]):not(.report-document, .report-document *) { background-color: #113a34; }
-html[data-theme="dark"] .border-emerald-200:not(.report-document, .report-document *) { border-color: #286452; }
-html[data-theme="dark"] :is(.text-emerald-600, .text-emerald-700, .text-emerald-800, .text-emerald-950):not(.report-document, .report-document *) { color: #8ce0bc; }
-html[data-theme="dark"] :is(.bg-amber-50, .bg-amber-100, [class~="bg-amber-50/50"]):not(.report-document, .report-document *) { background-color: #3b2d1b; }
-html[data-theme="dark"] .border-amber-200:not(.report-document, .report-document *) { border-color: #765a30; }
-html[data-theme="dark"] :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950):not(.report-document, .report-document *) { color: #f2cd83; }
-html[data-theme="dark"] :is(.bg-red-50, .bg-rose-50):not(.report-document, .report-document *) { background-color: #41262e; }
-html[data-theme="dark"] :is(.border-red-100, .border-red-200):not(.report-document, .report-document *) { border-color: #79414e; }
-html[data-theme="dark"] :is(.text-red-600, .text-red-700, .text-red-800, .text-rose-700, .text-rose-800):not(.report-document, .report-document *) { color: #ffafb9; }
+/* Mobile Login Page Background Asset */
+@media (max-width: 1023px) {
+  .login-mobile-bg {
+    background-image: url('/branding/mobile-login-bg.png');
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: top center;
+    background-color: #f4f8ff;
+  }
+}
+@media (min-width: 1024px) {
+  .login-mobile-bg {
+    background-image: none !important;
+  }
+}
 
-html[data-theme="dark"] :is(.input, input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]), select, textarea):not(.report-document, .report-document *) { background-color: #101c2f; border-color: #40536e; color: #e2e8f0; }
-html[data-theme="dark"] :is(input, textarea):not(.report-document, .report-document *)::placeholder { color: #91a2bb; }
-html[data-theme="dark"] :is(.input, input, select, textarea):not(.report-document, .report-document *):focus { border-color: #80b7ff; box-shadow: 0 0 0 3px rgb(96 165 250 / .18); }
-html[data-theme="dark"] :is(input, select, textarea):not(.report-document, .report-document *):disabled { color: #93a3ba; background-color: #1e2a3d; }
-html[data-theme="dark"] :is(input[type="checkbox"], input[type="radio"]):not(.report-document, .report-document *) { accent-color: #60a5fa; }
-html[data-theme="dark"] :is(button, .ui-button)[data-button-variant]:not(:disabled):not([aria-disabled="true"]):not(.report-document, .report-document *):hover { color: #dbeafe; }
-html[data-theme="dark"] :is(button, .ui-button, input[type="submit"]):is(:disabled, [aria-disabled="true"]):not(.report-document, .report-document *) { color: #9cacc2; }
-html[data-theme="dark"] :is(button, .ui-button, input[type="submit"]):not(.report-document, .report-document *):focus-visible { box-shadow: 0 0 0 2px #0b1220; }
+/* Existing utility colors share a dark palette without changing page layouts. */
+html[data-theme="dark"] :is(.bg-white, [class~="bg-white/85"], [class~="bg-white/80"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #142136; }
+html[data-theme="dark"] :is(.bg-slate-50, .bg-slate-100):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #1b2a40; }
+html[data-theme="dark"] :is(.bg-slate-200, .bg-slate-300):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #33465f; }
+html[data-theme="dark"] :is(.border-slate-100, .border-slate-200, .border-slate-300, [class~="border-slate-300/90"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #34465f; }
+html[data-theme="dark"] .divide-slate-100 > :not(:last-child):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #2b3d56; }
+html[data-theme="dark"] :is(.text-slate-950, .text-slate-900, .text-slate-800):not(.login-page, .login-page *, .report-document, .report-document *) { color: #edf4ff; }
+html[data-theme="dark"] :is(.text-slate-700, .text-slate-600):not(.login-page, .login-page *, .report-document, .report-document *) { color: #bac9dd; }
+html[data-theme="dark"] :is(.text-slate-500, .text-slate-400):not(.login-page, .login-page *, .report-document, .report-document *) { color: #9cacc2; }
+html[data-theme="dark"] :is(.bg-blue-50, .bg-blue-100, [class~="bg-blue-50/40"], [class~="bg-blue-50/45"], [class~="bg-blue-50/60"], [class~="bg-blue-100/55"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #182f50; }
+html[data-theme="dark"] .bg-blue-200:not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #36577f; }
+html[data-theme="dark"] :is(.border-blue-100, .border-blue-200):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #345782; }
+html[data-theme="dark"] :is(.text-blue-700, .text-blue-800, .text-blue-900, .text-blue-950):not(.login-page, .login-page *, .report-document, .report-document *) { color: #99c7ff; }
+html[data-theme="dark"] :is(.bg-emerald-50, .bg-emerald-100, [class~="bg-emerald-50/50"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #113a34; }
+html[data-theme="dark"] .border-emerald-200:not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #286452; }
+html[data-theme="dark"] :is(.text-emerald-600, .text-emerald-700, .text-emerald-800, .text-emerald-950):not(.login-page, .login-page *, .report-document, .report-document *) { color: #8ce0bc; }
+html[data-theme="dark"] :is(.bg-amber-50, .bg-amber-100, [class~="bg-amber-50/50"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #3b2d1b; }
+html[data-theme="dark"] .border-amber-200:not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #765a30; }
+html[data-theme="dark"] :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950):not(.login-page, .login-page *, .report-document, .report-document *) { color: #f2cd83; }
+html[data-theme="dark"] :is(.bg-red-50, .bg-rose-50):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #41262e; }
+html[data-theme="dark"] :is(.border-red-100, .border-red-200):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #79414e; }
+html[data-theme="dark"] :is(.text-red-600, .text-red-700, .text-red-800, .text-rose-700, .text-rose-800):not(.login-page, .login-page *, .report-document, .report-document *) { color: #ffafb9; }
+
+html[data-theme="dark"] :is(.input, input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]), select, textarea):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #101c2f; border-color: #40536e; color: #e2e8f0; }
+html[data-theme="dark"] :is(input, textarea):not(.login-page, .login-page *, .report-document, .report-document *)::placeholder { color: #91a2bb; }
+html[data-theme="dark"] :is(.input, input, select, textarea):not(.login-page, .login-page *, .report-document, .report-document *):focus { border-color: #80b7ff; box-shadow: 0 0 0 3px rgb(96 165 250 / .18); }
+html[data-theme="dark"] :is(input, select, textarea):not(.login-page, .login-page *, .report-document, .report-document *):disabled { color: #93a3ba; background-color: #1e2a3d; }
+html[data-theme="dark"] :is(input[type="checkbox"], input[type="radio"]):not(.login-page, .login-page *, .report-document, .report-document *) { accent-color: #60a5fa; }
+html[data-theme="dark"] :is(button, .ui-button)[data-button-variant]:not(:disabled):not([aria-disabled="true"]):not(.login-page, .login-page *, .report-document, .report-document *):hover { color: #dbeafe; }
+html[data-theme="dark"] :is(button, .ui-button, input[type="submit"]):is(:disabled, [aria-disabled="true"]):not(.login-page, .login-page *, .report-document, .report-document *) { color: #9cacc2; }
+html[data-theme="dark"] :is(button, .ui-button, input[type="submit"]):not(.login-page, .login-page *, .report-document, .report-document *):focus-visible { box-shadow: 0 0 0 2px #0b1220; }
 html[data-theme="dark"] .app-page-content table:not(.report-document, .report-document table) th { background: #1d304b; color: #bed0e8; }
 html[data-theme="dark"] .app-page-content table:not(.report-document, .report-document table) tbody tr:nth-child(even) { background: #16263d; }
 html[data-theme="dark"] .app-page-content table:not(.report-document, .report-document table) tbody tr:hover { background: #203957; }
 html[data-theme="dark"] .app-page-content section:has(> a.ui-button):not(.report-document, .report-document *):hover { border-color: #426894; box-shadow: 0 5px 20px rgb(0 0 0 / .18); }
 
-html[data-theme="dark"] [class~="bg-[#f4f8ff]"] { background-color: #0b1424; }
-html[data-theme="dark"] .login-header { border-color: #2b3d56; }
-html[data-theme="dark"] .login-header img { border-radius: .5rem; background: white; padding: .25rem; }
-html[data-theme="dark"] .login-header [class~="text-[#405b82]"] { color: #b9cee9; }
-html[data-theme="dark"] .login-panel { --button-blue: #80b7ff; --button-hover: #1e5b9e; --button-active: #164878; }
-html[data-theme="dark"] .login-panel > .relative { border-color: #34465f; background-color: rgb(20 33 54 / .95); box-shadow: 0 28px 80px rgb(0 0 0 / .25); }
-html[data-theme="dark"] .login-panel [class~="text-[#0870e6]"] { color: #80b7ff; }
+html[data-theme="dark"] .login-page { color-scheme: light; }
 html[data-theme="dark"] .college-welcome { background: #0b1424; }
 html[data-theme="dark"] .college-welcome-content { color: #edf4ff; }
 html[data-theme="dark"] .college-welcome-logo { border-radius: 50%; background: white; padding: .35rem; }

@@ -30,6 +30,7 @@ management:
       show-details: never
       show-components: never
 server:
+  forward-headers-strategy: framework
   tomcat:
     max-swallow-size: 23MB
   port: ${SERVER_PORT:8080}

@@ -25,7 +25,8 @@ public class SecurityConfig {
     @Bean PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
     @Bean AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception { return config.getAuthenticationManager(); }
     @Bean CorsConfigurationSource corsConfigurationSource(@Value("${app.cors.allowed-origins}") List<String> origins) {
-        var config = new CorsConfiguration(); config.setAllowedOrigins(origins); config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        var cleanOrigins = origins.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
+        var config = new CorsConfiguration(); config.setAllowedOrigins(cleanOrigins); config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Content-Type", "Accept")); config.setAllowCredentials(true); config.setMaxAge(3600L);
         var source = new UrlBasedCorsConfigurationSource(); source.registerCorsConfiguration("/api/**", config); return source;
     }
