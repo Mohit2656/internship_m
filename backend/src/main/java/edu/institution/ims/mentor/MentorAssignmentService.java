@@ -30,8 +30,8 @@ public class MentorAssignmentService {
     @Transactional(readOnly = true)
     public MentorAssignmentWorkspaceResponse workspace(Long mentorUserId) {
         MentorProfile mentor = requireMentor(mentorUserId);
-        List<User> students = users.findAllByRoleOrderByEmailAsc(Role.STUDENT);
-        List<MentorStudentAssignment> activeAssignments = assignments.findAllByActiveTrue();
+        List<User> students = users.findAllByRoleOrderByEmailAsc(Role.STUDENT).stream().filter(User::isActive).toList();
+        List<MentorStudentAssignment> activeAssignments = assignments.findAllByActiveTrue().stream().filter(a->a.getStudent().isActive()).toList();
         Map<Long, MentorStudentAssignment> byStudent = activeAssignments.stream()
                 .collect(Collectors.toMap(a -> a.getStudent().getId(), Function.identity()));
         Map<Long, String> mentorNames = mentors.findAllByOrderByNameAsc().stream()
@@ -74,6 +74,7 @@ public class MentorAssignmentService {
             throw error(HttpStatus.BAD_REQUEST, "INVALID_STUDENT_ROLE", "Only STUDENT users may be assigned to a mentor");
         }
 
+        if(students.stream().anyMatch(user -> !user.isActive())) throw error(HttpStatus.CONFLICT,"STUDENT_ACCOUNT_INACTIVE","Deactivated students cannot receive new mentor assignments");
         Instant now = Instant.now();
         List<User> toAssign = new ArrayList<>();
         for (User student : students) {
@@ -113,6 +114,7 @@ public class MentorAssignmentService {
     public List<AssignmentStudentResponse> assignedTo(UserPrincipal principal) {
         requireMentor(principal.id());
         return assignments.findAllByMentorIdAndActiveTrueOrderByStudentEmailAsc(principal.id()).stream()
+                .filter(assignment -> assignment.getStudent().isActive())
                 .map(assignment -> studentResponse(assignment.getStudent(), assignment, Map.of()))
                 .toList();
     }

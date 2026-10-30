@@ -342,6 +342,13 @@ class OpportunityMatchIntegrationTest {
         body.put("facultyMentorName", "Faculty"); body.put("facultyMentorContact", "9876543213"); body.put("internshipCoordinatorName", "Coordinator"); body.put("internshipCoordinatorContact", "9876543214");
         body.put("cdcCoordinatorName", "CDC"); body.put("cdcCoordinatorContact", "9876543215"); body.put("academicYear", "2025-2026"); body.put("semester", semester);
         mvc.perform(post("/api/v1/student/profile").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body))).andExpect(status().isCreated());
+        // Self-service profile creation protects the institutional branch. Seed the requested
+        // authoritative branch explicitly so cross-branch matching filters exercise real data.
+        if (branch != Branch.COMPUTER_ENGINEERING) {
+            StudentProfile saved = studentProfiles.findByUserId(value.getId()).orElseThrow();
+            org.springframework.test.util.ReflectionTestUtils.setField(saved, "branch", branch);
+            studentProfiles.saveAndFlush(saved);
+        }
     }
     private Cookie login(String email, String password) throws Exception { return mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new LoginRequest(email, password)))).andExpect(status().isOk()).andReturn().getResponse().getCookie("ims_auth"); }
 }

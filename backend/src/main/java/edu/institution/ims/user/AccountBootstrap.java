@@ -10,6 +10,7 @@ import java.util.List;
 
 @Component
 public class AccountBootstrap implements ApplicationRunner {
+    @org.springframework.beans.factory.annotation.Autowired private edu.institution.ims.academicsession.AcademicSessionService sessions;
     private final UserRepository users; private final StudentAccountRepository students; private final PasswordEncoder encoder;
     private final String adminEmail; private final String adminPassword; private final List<String> studentEmails; private final List<String> studentPasswords;
     public AccountBootstrap(UserRepository users, StudentAccountRepository students, PasswordEncoder encoder,
@@ -29,7 +30,13 @@ public class AccountBootstrap implements ApplicationRunner {
         users.findByEmailIgnoreCase(email).ifPresentOrElse(existing -> {
             if (existing.getRole() == Role.STUDENT && !students.existsByUserId(existing.getId())) students.save(new StudentAccount(existing));
         }, () -> {
-            var saved = users.save(new User(email, encoder.encode(password), role, true));
+            if (role == Role.STUDENT && sessions.activeId() == null) {
+                org.slf4j.LoggerFactory.getLogger(AccountBootstrap.class).warn("Bootstrap student creation skipped: activate an academic session in IIIC Settings, then restart to create configured students.");
+                return;
+            }
+            var created = new User(email, encoder.encode(password), role, true);
+            if (role == Role.STUDENT) created.assignAcademicSession(sessions.activeForNewStudent());
+            var saved = users.save(created);
             if (role == Role.STUDENT) students.save(new StudentAccount(saved));
         });
     }

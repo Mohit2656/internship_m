@@ -294,7 +294,7 @@ test("internship form keeps the searched company address and confirmed location 
     react: h.hooks,
     "@/components/OpenStreetMapWorkplacePicker": { OpenStreetMapWorkplacePicker: Picker },
   });
-  const props = { initial: { companyName: "Company", companyAddress: saved.address, internshipMode: "OFFICE_REPORTING", workplace: saved }, saving: false, fieldErrors: {}, onSubmit: data => submissions.push(data) };
+  const props = { initial: { companyName: "Company", companyAddress: saved.address, startDate: "2026-11-01", endDate: "2026-12-30", internshipMode: "OFFICE_REPORTING", workplace: saved }, saving: false, fieldErrors: {}, onSubmit: data => submissions.push(data) };
   let tree = h.render(InternshipDetailsForm, props);
   let picker = nodes(tree).find(node => node.type === Picker);
   picker.props.onSelect(null); picker.props.onAddressChange(branch.address); picker.props.onPendingChange(true);
@@ -309,6 +309,7 @@ test("internship form keeps the searched company address and confirmed location 
   tree.props.onSubmit({ preventDefault() {} });
   assert.equal(submissions.length, 1);
   assert.equal(submissions[0].companyAddress, branch.address);
+  assert.equal(submissions[0].totalWeeks, "9");
   assert.equal(submissions[0].workplace.latitude, branch.latitude);
   assert.equal(submissions[0].workplace.longitude, branch.longitude);
   h.close();

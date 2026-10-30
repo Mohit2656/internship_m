@@ -106,6 +106,7 @@ public class InternshipLocationService {
 
     @Transactional
     public InternshipLocationResponse correctForAdmin(Long studentId, UserPrincipal principal, WorkplaceCorrection request) {
+        requireActiveStudent(studentId,principal);
         if (!"ADMIN".equals(principal.role())) throw error(HttpStatus.FORBIDDEN,"ADMIN_REQUIRED","Only the III Cell can correct workplaces");
         if (request.reason().strip().length()<5) throw error(HttpStatus.BAD_REQUEST,"CORRECTION_REASON_REQUIRED","Provide a correction reason of at least five characters");
         var internship=ownInternship(studentId);
@@ -125,6 +126,7 @@ public class InternshipLocationService {
 
     @Transactional
     public InternshipLocationResponse radiusForAdmin(Long studentId, UserPrincipal principal, java.math.BigDecimal radius) {
+        requireActiveStudent(studentId,principal);
         if (!"ADMIN".equals(principal.role())) throw error(HttpStatus.FORBIDDEN,"ADMIN_REQUIRED","Only the III Cell can configure the radius");
         var location=locations.findByInternshipId(ownInternship(studentId).getId()).orElseThrow(InternshipLocationService::notFound);
         if (location.getGeofenceRadiusMeters().compareTo(radius) == 0) return response(location);
@@ -142,6 +144,7 @@ public class InternshipLocationService {
 
     @Transactional
     public InternshipLocationResponse review(Long studentId,UserPrincipal principal,WorkplaceReview request) {
+        requireActiveStudent(studentId,principal);
         var actor=users.findById(principal.id()).filter(User::isActive).orElseThrow(() -> error(HttpStatus.FORBIDDEN,"REVIEWER_REQUIRED","An active reviewer is required"));
         if(actor.getRole()==Role.MENTOR) getForMentor(studentId,principal);
         else if(actor.getRole()!=Role.ADMIN) throw error(HttpStatus.FORBIDDEN,"REVIEWER_REQUIRED","Mentor or III Cell role is required");
@@ -152,7 +155,14 @@ public class InternshipLocationService {
         location.review(actor,request.decision().name(),request.remarks(),clock.instant());locations.saveAndFlush(location);
         jdbc.update("insert into workplace_review_audit(location_id,revision,reviewer_id,reviewer_role,decision,reviewed_at,remarks,latitude,longitude,radius_meters,place_id,workplace_address) values (?,?,?,?,?,?,?,?,?,?,?,?)",location.getId(),location.getRevision(),actor.getId(),actor.getRole().name(),request.decision().name(),java.sql.Timestamp.from(clock.instant()),request.remarks(),location.getLatitude(),location.getLongitude(),location.getGeofenceRadiusMeters(),location.getPlaceId(),location.getWorkplaceAddress());
         if (request.decision() == WorkplaceReview.Decision.APPROVE) notifications.internshipApproved(location, actor, fullyApproved(location));
+        else notifications.workplaceRejected(location,actor,request.remarks());
         return response(location);
+    }
+
+    private void requireActiveStudent(Long studentId,UserPrincipal principal) {
+        if(principal==null) throw error(HttpStatus.FORBIDDEN,"REVIEWER_REQUIRED","An active reviewer is required");
+        users.findByIdForWorkflowRead(principal.id()).filter(User::isActive).orElseThrow(()->error(HttpStatus.FORBIDDEN,"REVIEWER_REQUIRED","An active reviewer is required"));
+        if(!WorkflowUserLocks.student(jdbc,studentId,true)) throw error(HttpStatus.CONFLICT,"STUDENT_ACCOUNT_INACTIVE","Deactivated students cannot receive new workplace reviews or changes");
     }
 
     private InternshipDetails ownInternship(Long studentId) {

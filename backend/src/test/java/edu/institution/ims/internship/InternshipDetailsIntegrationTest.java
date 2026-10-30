@@ -27,7 +27,13 @@ class InternshipDetailsIntegrationTest {
     @Autowired StudentProfileRepository profiles; @Autowired InternshipOnboardingRepository onboardings;
     @Autowired InternshipDocumentRepository documents; @Autowired InternshipDetailsRepository details; @Autowired PasswordEncoder encoder;
     @Autowired edu.institution.ims.attendance.InternshipLocationRepository locations;
+    @Autowired edu.institution.ims.professionalprofile.StudentResumeRepository resumes;
+    @Autowired edu.institution.ims.professionalprofile.StudentProfessionalProfileRepository professionalProfiles;
     User admin; User studentA; User studentB; Cookie adminCookie; Cookie studentACookie; Cookie studentBCookie;
+
+    @AfterEach void cleanupProfessionalProfileFixture() {
+        if(studentA!=null) professionalProfiles.findByStudentId(studentA.getId()).ifPresent(professionalProfiles::delete);
+    }
 
     @BeforeEach void setUp() throws Exception {
         locations.deleteAll(); details.deleteAll(); documents.deleteAll(); onboardings.deleteAll(); profiles.deleteAll(); accounts.deleteAll(); users.deleteAll();
@@ -49,6 +55,37 @@ class InternshipDetailsIntegrationTest {
         completeProfile(studentACookie, "A", "UID-A", "a@college.edu");
         mvc.perform(post("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(internship("Acme Systems"))))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ONBOARDING_NOT_STARTED"));
+    }
+
+    @Test void totalWeeksIsCalculatedFromDatesAndLegacyClientValueIsOptional() throws Exception {
+        ready(studentACookie, "A", "UID-A", "a@college.edu");
+        Map<String,Object> data=internship("Calculated Company"); data.put("totalWeeks",9999);
+        mvc.perform(post("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(data)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.totalWeeks").value(26));
+        assertThat(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getTotalWeeks()).isEqualTo(26);
+        data.remove("totalWeeks"); data.put("endDate","2027-01-08");
+        mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(data)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalWeeks").value(2));
+    }
+
+    @Test void iiicDirectoryUsesSavedResumeInternshipAndWorkplaceTimestamps() throws Exception {
+        ready(studentACookie,"A","UID-A","a@college.edu");
+        var request=internship("Timestamp Company");
+        request.put("workplace",Map.of("placeId","timestamp-place","address","Approved office address","latitude",30.733315,"longitude",76.779419));
+        mvc.perform(post("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(request))).andExpect(status().isCreated());
+        var upload=mvc.perform(multipart("/api/v1/student/resume").file(pdf("timeline.pdf")).cookie(studentACookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var resumeId=json.readTree(upload).path("resume").path("id").asLong();
+        var resumeAt=resumes.findById(resumeId).orElseThrow().getUploadedAt().toString();
+        var internshipAt=details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getUpdatedAt();
+        var workplaceAt=locations.findAll().get(0).getUpdatedAt();
+        mvc.perform(get("/api/v1/admin/students").param("search","UID-A").cookie(adminCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].resumeUploadedAt").value(resumeAt))
+                .andExpect(jsonPath("$.content[0].internshipDetailsUpdatedAt").value(internshipAt.toString()))
+                .andExpect(jsonPath("$.content[0].workplaceUpdatedAt").value(workplaceAt.toString()));
+        mvc.perform(get("/api/v1/admin/students").param("search",studentB.getEmail()).cookie(adminCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].resumeUploadedAt").isEmpty())
+                .andExpect(jsonPath("$.content[0].internshipDetailsUpdatedAt").isEmpty())
+                .andExpect(jsonPath("$.content[0].workplaceUpdatedAt").isEmpty());
     }
 
     @Test void studentRetrievesTheirInternship() throws Exception {

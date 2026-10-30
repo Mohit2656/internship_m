@@ -25,6 +25,10 @@ public class MentorRecordDeletionService {
         // Lock assignment as well as the record: a concurrent reassignment cannot expand access.
         var assigned=jdbc.queryForList("select id from mentor_student_assignments where student_user_id=? and mentor_user_id=? and active=true for update", Long.class, students.get(0), user.id());
         if(assigned.isEmpty()) throw failure(HttpStatus.NOT_FOUND, "Record not found in your assigned scope");
+        if(monthly) {
+            String completion=jdbc.queryForObject("select completion_status from internship_details where id=(select student_internship_id from monthly_progress_reports where id=?) for update",String.class,id);
+            if("COMPLETED".equals(completion)) throw failure(HttpStatus.CONFLICT,"IIIC must reopen the completed internship before a mandatory report can be deleted");
+        }
         var now=Timestamp.from(clock.instant());
         if(jdbc.update("update "+table+" set deleted_at=?,active_slot=null where id=? and deleted_at is null",now,id)!=1) throw failure(HttpStatus.NOT_FOUND, "Record already deleted");
         try {

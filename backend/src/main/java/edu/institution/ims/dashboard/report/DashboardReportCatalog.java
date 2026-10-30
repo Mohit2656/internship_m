@@ -41,6 +41,11 @@ public class DashboardReportCatalog {
                 "case when p.aadhaar_last_four is null then null else concat('XXXX XXXX ', p.aadhaar_last_four) end", false, true);
         add("aadhaarNumber", "Aadhaar number (admin only)", "Personal and Emergency Contacts", Kind.TEXT, "p.aadhaar_encrypted", false, true);
         add("branch", "Branch", "Academic Information", Kind.TEXT, "p.branch", true, false);
+        add("academicSession", "Assigned academic session", "Academic Information", Kind.TEXT, "acs.name", false, false);
+        add("completionStatus", "Internship completion status", "Internship Completion", Kind.TEXT, "case when i.id is null then null else " + edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL + " end", false, false);
+        add("completionDate", "Official completion date", "Internship Completion", Kind.DATETIME, "i.completed_at", false, false);
+        add("completionReviewer", "IIIC completion reviewer", "Internship Completion", Kind.TEXT, "cr.email", false, true);
+        add("completionRemarks", "Completion remarks", "Internship Completion", Kind.TEXT, "i.completion_remarks", false, true);
         profile("academicYear", "Academic year", "academic_year", "Academic Information", false);
         add("semester", "Semester", "Academic Information", Kind.NUMBER, "coalesce(p.semester, sa.semester)", true, false);
         profile("facultyMentorName", "Faculty mentor (student profile)", "faculty_mentor_name", "Mentor and Coordinators", true);
@@ -144,6 +149,9 @@ public class DashboardReportCatalog {
         result.add(new Filter("search", "Student name, UID or email", "text", List.of(), "Contains text, case insensitive"));
         result.add(new Filter("studentId", "Student account ID", "number", List.of(), "Optional single student; checked against your access"));
         result.add(new Filter("branch", "Branch", "select", Arrays.stream(Branch.values()).map(b -> new Choice(b.name(), b.getLabel())).toList(), ""));
+        result.add(new Filter("completionSearch", "Completion student / UID / company", "text", List.of(), "Contains text, case insensitive"));
+        result.add(new Filter("academicSessionId", "Assigned academic session ID", "number", List.of(), "Uses backend account membership, separate from student-entered academic year"));
+        choice(result, "completionStatus", "Internship completion", "ALL", "NOT_STARTED", "IN_PROGRESS", "COMPLETION_PENDING", "COMPLETED");
         result.add(new Filter("academicYear", "Academic year", "text", List.of(), "Exact academic year, e.g. 2025-2026"));
         result.add(new Filter("semester", "Semester", "select", java.util.stream.IntStream.rangeClosed(1, 8).mapToObj(n -> new Choice("" + n, "" + n)).toList(), ""));
         choice(result, "profileStatus", "Profile status", "COMPLETE", "INCOMPLETE");

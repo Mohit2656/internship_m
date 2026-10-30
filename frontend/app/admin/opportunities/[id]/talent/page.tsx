@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { OpportunityMatchingReport } from "@/components/OpportunityMatchingReport";
 import { api, ApiError } from "@/lib/api";
 import { AdminSkillGapAnalysis, Branch, branchLabels, OpportunitySkillMatch, TalentCandidate, TalentDiscoveryPage, TalentEligibilityFilter } from "@/lib/opportunities";
 
@@ -75,7 +76,9 @@ function TalentDiscoveryContent() {
   return <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
     <Link href="/admin/opportunities" className="text-sm font-semibold text-blue-700">← Back to opportunities</Link>
     <div className="mt-5"><p className="text-sm font-semibold text-violet-700">III Cell talent discovery</p><h1 className="mt-2 text-3xl font-bold tracking-tight">{data?.opportunity.title || "Opportunity candidates"}</h1><p className="mt-2 text-slate-600">{data ? `${data.opportunity.companyName} · ${data.opportunity.status}` : "Review eligibility and professional alignment evidence."}</p></div>
-    <form onSubmit={submit} className="mt-8 rounded-2xl border border-slate-200 bg-white p-5"><div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+    <OpportunityMatchingReport opportunityId={opportunityId} />
+    <details className="mt-8"><summary className="cursor-pointer text-xl font-bold">Live professional alignment evidence and skill gaps</summary>
+    <form onSubmit={submit} className="mt-4 rounded-2xl border border-slate-200 bg-white p-5"><div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
       <label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Name or UID</span><input value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm" /></label>
       <label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Eligibility</span><select value={eligibility} onChange={event => setEligibility(event.target.value as TalentEligibilityFilter)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"><option value="ELIGIBLE_OR_UNKNOWN">Eligible + unknown</option><option value="ELIGIBLE">Eligible</option><option value="UNKNOWN">Unknown</option><option value="INELIGIBLE">Ineligible</option><option value="ALL">All</option></select></label>
       <label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Branch</span><select value={branch} onChange={event => setBranch(event.target.value as Branch | "")} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"><option value="">All branches</option>{Object.entries(branchLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -87,6 +90,7 @@ function TalentDiscoveryContent() {
     {data && <div className="mt-6 flex flex-wrap items-center justify-between gap-3"><p className="text-sm font-semibold text-slate-700">{data.totalElements} candidate{data.totalElements === 1 ? "" : "s"}</p><p className="max-w-3xl text-xs text-slate-500">Ordering: {data.orderingExplanation}</p></div>}
     {loading ? <p className="mt-8 rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">Analyzing candidate evidence…</p> : data?.candidates.length === 0 ? <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-10 text-center"><h2 className="text-lg font-bold">No matching candidates</h2><p className="mt-2 text-sm text-slate-500">Adjust the filters or review the opportunity eligibility rules.</p></div> : <section className="mt-5 grid gap-4">{data?.candidates.map(candidate => <CandidateCard key={candidate.studentId} candidate={candidate} />)}</section>}
     {data && data.totalPages > 1 && <div className="mt-6 flex justify-center gap-3"><button data-button-variant="outline" disabled={data.page === 0 || loading} onClick={() => void load(data.page - 1)} className="text-sm">Previous</button><span className="px-3 py-2 text-sm text-slate-600">Page {data.page + 1} of {data.totalPages}</span><button data-button-variant="outline" disabled={data.page + 1 >= data.totalPages || loading} onClick={() => void load(data.page + 1)} className="text-sm">Next</button></div>}
+    </details>
   </main>;
 }
 

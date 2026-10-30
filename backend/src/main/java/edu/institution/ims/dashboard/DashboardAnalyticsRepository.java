@@ -22,59 +22,59 @@ public interface DashboardAnalyticsRepository extends Repository<User, Long> {
               sum(case when o.workflowStatus = :diaryPendingStatus then 1 else 0 end) as diaryPending,
               sum(case when o.workflowStatus = :detailsPendingStatus and d.id is null then 1 else 0 end) as detailsPending
             from User u left join u.studentProfile p left join u.internshipOnboarding o left join o.internshipDetails d
-            where u.role = :role and u.active = true
+            where u.role = :role and u.active = true and (:sessionId is null or u.academicSessionId = :sessionId)
             """)
     DashboardCountsProjection counts(Role role, Collection<WorkflowStatus> documentsPendingStatuses,
             Collection<WorkflowStatus> documentsCompleteStatuses, Collection<WorkflowStatus> diaryIssuedStatuses,
-            WorkflowStatus detailsCompleteStatus, WorkflowStatus diaryPendingStatus, WorkflowStatus detailsPendingStatus);
+            WorkflowStatus detailsCompleteStatus, WorkflowStatus diaryPendingStatus, WorkflowStatus detailsPendingStatus, Long sessionId);
 
     @Query("""
             select o.source as value, count(o.id) as count
             from InternshipOnboarding o join o.student u
-            where u.role = :role and u.active = true and o.source is not null
+            where u.role = :role and u.active = true and (:sessionId is null or u.academicSessionId = :sessionId) and o.source is not null
             group by o.source
             """)
-    List<EnumCountProjection> sourceCounts(Role role);
+    List<EnumCountProjection> sourceCounts(Role role, Long sessionId);
 
     @Query("""
             select d.companyType as value, count(d.id) as count
             from InternshipDetails d join d.onboarding o join o.student u
-            where u.role = :role and u.active = true
+            where u.role = :role and u.active = true and (:sessionId is null or u.academicSessionId = :sessionId)
             group by d.companyType
             """)
-    List<EnumCountProjection> companyTypeCounts(Role role);
+    List<EnumCountProjection> companyTypeCounts(Role role, Long sessionId);
 
     @Query("""
             select d.internshipMode as value, count(d.id) as count
             from InternshipDetails d join d.onboarding o join o.student u
-            where u.role = :role and u.active = true
+            where u.role = :role and u.active = true and (:sessionId is null or u.academicSessionId = :sessionId)
             group by d.internshipMode
             """)
-    List<EnumCountProjection> modeCounts(Role role);
+    List<EnumCountProjection> modeCounts(Role role, Long sessionId);
 
     @Query("""
             select sum(case when d.stipendPerMonth > 0 then 1 else 0 end) as paid,
               sum(case when d.stipendPerMonth = 0 then 1 else 0 end) as unpaid,
               avg(case when d.stipendPerMonth > 0 then d.stipendPerMonth else null end) as averagePaidMonthlyStipend
             from InternshipDetails d join d.onboarding o join o.student u
-            where u.role = :role and u.active = true
+            where u.role = :role and u.active = true and (:sessionId is null or u.academicSessionId = :sessionId)
             """)
-    StipendProjection stipend(Role role);
+    StipendProjection stipend(Role role, Long sessionId);
 
     @Query("""
             select d.fullTimeEmploymentOffered as value, count(d.id) as count
             from InternshipDetails d join d.onboarding o join o.student u
-            where u.role = :role and u.active = true
+            where u.role = :role and u.active = true and (:sessionId is null or u.academicSessionId = :sessionId)
             group by d.fullTimeEmploymentOffered
             """)
-    List<BooleanCountProjection> fullTimeEmploymentCounts(Role role);
+    List<BooleanCountProjection> fullTimeEmploymentCounts(Role role, Long sessionId);
 
     @Query("""
             select min(trim(d.companyName)) as companyName, count(d.id) as studentCount
             from InternshipDetails d join d.onboarding o join o.student u
-            where u.role = :role and u.active = true
+            where u.role = :role and u.active = true and (:sessionId is null or u.academicSessionId = :sessionId)
             group by upper(trim(d.companyName))
             order by count(d.id) desc, min(trim(d.companyName)) asc
             """)
-    List<TopCompanyProjection> topCompanies(Role role, Pageable pageable);
+    List<TopCompanyProjection> topCompanies(Role role, Pageable pageable, Long sessionId);
 }

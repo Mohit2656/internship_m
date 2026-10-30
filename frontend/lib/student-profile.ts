@@ -47,6 +47,7 @@ export type StudentSummary = {
   semester: number | null; profileStatus: ProfileStatus; internshipStatus: WorkflowStatus; internshipSource: InternshipSource | null;
   internshipSourceLabel: string | null; documentsCompleted: number; documentsRequired: number; diaryIssued: boolean;
   profileLastStudentUpdatedAt: string | null; onboardingLastStudentUpdatedAt: string | null;
+  resumeUploadedAt: string | null; internshipDetailsUpdatedAt: string | null; workplaceUpdatedAt: string | null;
 };
 export type StudentDetail = { id: number; loginEmail: string; profileStatus: ProfileStatus; profile: StudentProfile | null; aadhaarNumber: string | null; internshipOnboarding: InternshipOnboarding; internshipDetails: InternshipDetails | null };
 export type MentorStudentProfile = {

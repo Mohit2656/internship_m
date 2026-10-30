@@ -77,6 +77,7 @@ test('admin professional view shows distinct profile, resume, and skill timestam
   } }, [{ id: 1, displayName: 'Java' }], false, false, ''];
   const { AdminProfessionalProfile } = load('components/AdminProfessionalProfile.tsx', {
     ...imports, react: { useEffect() {}, useState: () => [states[index++], () => {}] },
+    '@/components/ResumeCorrectionEditor': { ResumeCorrectionEditor: () => null },
     '@/lib/api': {}, '@/lib/professional-profile': { readableFileSize: () => '1 KB' },
   });
   const html = renderToStaticMarkup(React.createElement(AdminProfessionalProfile, { studentId: 1 }));

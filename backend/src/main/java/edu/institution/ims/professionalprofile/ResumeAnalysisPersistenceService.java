@@ -10,10 +10,13 @@ public class ResumeAnalysisPersistenceService {
     private final StudentResumeRepository resumes;
     private final ResumeAnalysisRepository analyses;
     private final SkillSuggestionGenerator suggestionGenerator;
+    private final edu.institution.ims.notification.NotificationService notifications;
 
     public ResumeAnalysisPersistenceService(StudentProfessionalProfileRepository profiles, StudentResumeRepository resumes,
-            ResumeAnalysisRepository analyses, SkillSuggestionGenerator suggestionGenerator) {
+            ResumeAnalysisRepository analyses, SkillSuggestionGenerator suggestionGenerator,
+            edu.institution.ims.notification.NotificationService notifications) {
         this.profiles = profiles; this.resumes = resumes; this.analyses = analyses; this.suggestionGenerator = suggestionGenerator;
+        this.notifications = notifications;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -44,6 +47,10 @@ public class ResumeAnalysisPersistenceService {
         resumes.save(resume);
         ResumeAnalysis saved = analyses.saveAndFlush(analysis);
         suggestionGenerator.generate(saved);
+        if(resume.isActive()) notifications.create(resume.getProfessionalProfile().getStudent().getId(),
+                "resume-parsed:"+resumeId,"RESUME_PARSED","Resume analysis complete",
+                "Review and correct your extracted resume information before using it for opportunity matching.",null,null,
+                "/student/professional-profile#resume-analysis",saved.getCompletedAt());
         return ResumeAnalysisResponse.from(saved);
     }
 
