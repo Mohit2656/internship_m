@@ -23,10 +23,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class StudentAccountImportIntegrationTest {
     @Autowired org.springframework.test.web.servlet.MockMvc mvc; @Autowired ObjectMapper json; @Autowired UserRepository users;
     @Autowired StudentAccountRepository accounts; @Autowired PasswordEncoder encoder;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     User admin; User student;
 
     @BeforeEach void setup() {
         accounts.deleteAll(); users.deleteAll();
+        String sessionName="IMPORT-"+java.util.UUID.randomUUID();
+        jdbc.update("insert into academic_sessions(name,start_date,end_date) values(?,DATE '2027-07-01',DATE '2028-06-30')",sessionName);
+        jdbc.update("update academic_session_settings set active_session_id=(select id from academic_sessions where name=?) where id=1",sessionName);
         admin = users.save(new User("incharge@example.edu", encoder.encode("AdminPassword!23"), Role.ADMIN, true));
         student = users.save(new User("student@example.edu", encoder.encode("StudentPassword!23"), Role.STUDENT, true)); accounts.save(new StudentAccount(student));
     }

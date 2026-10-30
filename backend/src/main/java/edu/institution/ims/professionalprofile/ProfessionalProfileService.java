@@ -18,15 +18,18 @@ public class ProfessionalProfileService {
     private final FileStorageService storage;
     private final ResumeFileValidator validator;
     private final StudentSkillRepository skills;
+    private final edu.institution.ims.notification.NotificationService notifications;
 
     public ProfessionalProfileService(StudentProfessionalProfileRepository profiles, StudentResumeRepository resumes,
-            UserRepository users, FileStorageService storage, ResumeFileValidator validator, StudentSkillRepository skills) {
+            UserRepository users, FileStorageService storage, ResumeFileValidator validator, StudentSkillRepository skills,
+            edu.institution.ims.notification.NotificationService notifications) {
         this.profiles = profiles;
         this.resumes = resumes;
         this.users = users;
         this.storage = storage;
         this.validator = validator;
         this.skills = skills;
+        this.notifications = notifications;
     }
 
     @Transactional(readOnly = true)
@@ -71,6 +74,9 @@ public class ProfessionalProfileService {
                 if (status != STATUS_COMMITTED) storage.delete(newKey);
             }
         });
+        notifications.notifyCoordinators(principal.id(), "resume-upload:"+resume.getId(),
+                previous==null?"RESUME_UPLOADED":"RESUME_UPDATED",previous==null?"Resume uploaded":"Resume updated",
+                previous==null?" uploaded their resume.":" updated their resume.",resume.getUploadedAt());
         return response(profile);
     }
 

@@ -61,7 +61,7 @@ public class LateAttendancePermissionService {
         Map<Long, LateAttendancePermission> byStudent = permissions
                 .findAllByStudentIdInAndAttendanceDate(studentIds, today).stream()
                 .collect(Collectors.toMap(value -> value.getStudent().getId(), Function.identity()));
-        return current.stream().map(assignment -> response(assignment,
+        return current.stream().filter(a -> a.getStudent().isActive()).map(assignment -> response(assignment,
                 byStudent.get(assignment.getStudent().getId()), today)).toList();
     }
 
@@ -71,6 +71,7 @@ public class LateAttendancePermissionService {
         requireMentor(principal);
         // Attendance submission and assignment changes take the same student lock first.
         users.findByIdForAttendanceUpdate(studentId)
+                .filter(u->u.getRole()==Role.STUDENT && u.isActive())
                 .orElseThrow(LateAttendancePermissionService::notAssigned);
         MentorStudentAssignment assignment = assignments
                 .findByStudentIdAndActiveTrueForLateAttendanceUpdate(studentId)

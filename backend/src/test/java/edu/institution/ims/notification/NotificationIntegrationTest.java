@@ -31,6 +31,7 @@ class NotificationIntegrationTest {
     @Autowired InternshipDetailsRepository internships;
     @Autowired OpportunityService opportunities;
     @Autowired OpportunityRepository opportunityRecords;
+    @Autowired edu.institution.ims.attendance.InternshipLocationRepository locations;
     private static final Instant NOW=Instant.parse("2026-10-22T07:00:00Z");
     private static final LocalDate TODAY=LocalDate.of(2026,10,22);
     private User first,second;
@@ -159,5 +160,26 @@ class NotificationIntegrationTest {
         assertThat(DeadlineNotificationScheduler.stage(TODAY,TODAY)).isEqualTo("DUE_TODAY");
         assertThat(DeadlineNotificationScheduler.stage(TODAY,TODAY.minusDays(1))).isEqualTo("OVERDUE");
         assertThat(DeadlineNotificationScheduler.stage(TODAY,TODAY.minusDays(2))).isNull();
+    }
+
+    @Test void workplaceRejectionKeepsReasonTimeRecipientAndDeduplicatesTheSameReview() {
+        var mentor=users.saveAndFlush(new User("notifications.workplace.mentor@example.test","unused",Role.MENTOR,true));
+        var onboarding=new InternshipOnboarding(first); onboarding.confirmDiary(); onboarding.markInternshipDetailsComplete(); onboardings.saveAndFlush(onboarding);
+        var internship=new InternshipDetails(onboarding);
+        internship.apply("Workplace Company",CompanyType.IT,null,"Address","1234567890","Supervisor","Manager","1234567890",1,TODAY.minusDays(5),TODAY.plusDays(50),8,InternshipMode.ONLINE,BigDecimal.ZERO,false);
+        internships.saveAndFlush(internship);
+        var workplace=new edu.institution.ims.attendance.InternshipLocation(internship,BigDecimal.ONE,BigDecimal.ONE,new BigDecimal("100"),NOW);
+        workplace.review(mentor,"REJECT","Select the actual workplace entrance",NOW);
+        locations.saveAndFlush(workplace);
+        notifications.workplaceRejected(workplace,mentor,"Select the actual workplace entrance");
+        notifications.workplaceRejected(workplace,mentor,"Select the actual workplace entrance");
+        var inbox=notifications.list(principal(first),0);
+        assertThat(inbox.totalElements()).isEqualTo(1);
+        assertThat(inbox.content().get(0).type()).isEqualTo("WORKPLACE_REJECTED");
+        assertThat(inbox.content().get(0).rejectionReason()).isEqualTo("Select the actual workplace entrance");
+        assertThat(inbox.content().get(0).message()).contains("faculty mentor","Workplace Company","fresh approvals");
+        assertThat(inbox.content().get(0).createdAt()).isEqualTo(NOW);
+        assertThat(inbox.content().get(0).actionUrl()).isEqualTo("/student/internship/details");
+        assertThat(notifications.unread(principal(second)).unreadCount()).isZero();
     }
 }

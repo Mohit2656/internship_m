@@ -30,6 +30,7 @@ function displayCell(field: Field, value: unknown): string {
 }
 function summaryLabel(key: string): string {
   const labels: Record<string, string> = {
+    totalStudents: "Students in report scope", totalInternships: "Total internships", completedInternships: "Completed internships", activeInternships: "Active internships", completionPending: "Completion pending", completionPercentage: "Completion (%)",
     absent: "Absent days", present: "Present days", records: "Daily records",
     presentRecordPercentage: "Present / stored records (%)",
     verified: "Liveness verified", unverified: "Liveness not confirmed",

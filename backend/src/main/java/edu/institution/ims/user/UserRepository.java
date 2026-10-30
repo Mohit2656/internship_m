@@ -14,6 +14,11 @@ import java.util.List;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificationExecutor<User> {
+    // Workflow reviewers take a shared mentor lock before the student write lock.
+    // PostgreSQL FOR SHARE remains compatible with notification FK KEY SHARE locks.
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findByIdForWorkflowRead(@Param("id") Long id);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.id = :id")
     Optional<User> findByIdForAttendanceUpdate(@Param("id") Long id);

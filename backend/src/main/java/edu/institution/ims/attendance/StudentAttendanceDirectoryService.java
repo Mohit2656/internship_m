@@ -31,8 +31,9 @@ public class StudentAttendanceDirectoryService {
     }
 
     public record Totals(long presentDays, long absentDays, long totalDays, BigDecimal percentage) {}
+    public record ReviewTotals(long submitted, long gpsVerified, long pending, long approved, long rejected, long manualReview) {}
     public record StudentRow(Long studentUserId, String uid, String studentName, String branch,
-            String facultyMentor, String company, String workflowStatus, Totals attendance) {}
+            String facultyMentor, String company, String workflowStatus, Totals attendance, ReviewTotals reviewSummary) {}
     public record History(Long studentUserId, String attendanceZone, Totals totals, List<AttendanceResponse> records) {}
 
     public List<StudentRow> students(UserPrincipal principal) {
@@ -42,8 +43,8 @@ public class StudentAttendanceDirectoryService {
         // Start from accounts/active assignments, never from a one-to-many attendance join.
         Map<Long, User> unique = new LinkedHashMap<>();
         if (principal.role().equals("ADMIN")) users.findAllByRoleOrderByEmailAsc(Role.STUDENT)
-                .forEach(student -> unique.put(student.getId(), student));
-        else current.forEach(assignment -> unique.put(assignment.getStudent().getId(), assignment.getStudent()));
+                .stream().filter(User::isActive).forEach(student -> unique.put(student.getId(), student));
+        else current.stream().filter(a -> a.getStudent().isActive()).forEach(assignment -> unique.put(assignment.getStudent().getId(), assignment.getStudent()));
         if (unique.isEmpty()) return List.of();
         Map<Long, String> mentors = new HashMap<>();
         current.forEach(a -> mentors.put(a.getStudent().getId(), a.getMentor().getEmail()));
@@ -59,7 +60,7 @@ public class StudentAttendanceDirectoryService {
                     profile == null ? null : profile.getBranch().getLabel(), mentors.get(student.getId()),
                     internship == null ? null : internship.getCompanyName(),
                     onboarding == null ? "NOT_SECURED" : onboarding.getWorkflowStatus().name(),
-                    totals(records.getOrDefault(student.getId(), List.of())));
+                    totals(records.getOrDefault(student.getId(), List.of())), reviewTotals(records.getOrDefault(student.getId(), List.of())));
         }).toList();
     }
 
@@ -88,6 +89,16 @@ public class StudentAttendanceDirectoryService {
         long present = days.values().stream().filter(r -> r == AttendanceResult.PRESENT).count();
         return new Totals(present, days.size() - present, days.size(), days.isEmpty() ? null :
                 BigDecimal.valueOf(present * 100).divide(BigDecimal.valueOf(days.size()), 1, RoundingMode.HALF_UP));
+    }
+
+    private ReviewTotals reviewTotals(List<AttendanceRecord> records) {
+        var submitted=records.stream().filter(r -> !r.isAutomaticAbsent() && r.getAttendanceResult()==AttendanceResult.PRESENT).toList();
+        return new ReviewTotals(submitted.size(),submitted.stream().filter(r -> r.getEvidence()!=null
+                && r.getEvidence().getLocationVerificationStatus()==LocationVerificationStatus.VERIFIED).count(),
+                submitted.stream().filter(r -> AttendanceReviewResponse.from(r).status()==AttendanceReviewStatus.PENDING).count(),
+                submitted.stream().filter(r -> AttendanceReviewResponse.from(r).status()==AttendanceReviewStatus.APPROVED).count(),
+                submitted.stream().filter(r -> AttendanceReviewResponse.from(r).status()==AttendanceReviewStatus.REJECTED).count(),
+                submitted.stream().filter(r -> AttendanceReviewResponse.from(r).status()==AttendanceReviewStatus.MANUAL_REVIEW).count());
     }
 
     private void requireRole(UserPrincipal principal) {

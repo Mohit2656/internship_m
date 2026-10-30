@@ -20,6 +20,7 @@ public class StudentAccountImportService {
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private final UserRepository users; private final StudentAccountRepository accounts; private final StudentProfileRepository profiles;
     private final PasswordEncoder encoder; private final TransactionTemplate transactions;
+    @org.springframework.beans.factory.annotation.Autowired private edu.institution.ims.academicsession.AcademicSessionService sessions;
     public StudentAccountImportService(UserRepository users, StudentAccountRepository accounts, StudentProfileRepository profiles, PasswordEncoder encoder,
             PlatformTransactionManager transactionManager) {
         this.users = users; this.accounts = accounts; this.profiles = profiles; this.encoder = encoder; this.transactions = new TransactionTemplate(transactionManager);
@@ -55,9 +56,11 @@ public class StudentAccountImportService {
                     transactions.executeWithoutResult(status -> create(candidate));
                     results.add(result(displayRow, candidate, "CREATED", null));
                 } catch (DataIntegrityViolationException e) { results.add(result(displayRow, candidate, "EXISTING", "Email or UID already exists")); }
+                  catch (org.springframework.web.server.ResponseStatusException e) { throw e; }
                   catch (RuntimeException e) { results.add(result(displayRow, candidate, "INVALID", "Account could not be created")); }
             }
-        } catch (IllegalArgumentException e) { throw e; }
+        } catch (org.springframework.web.server.ResponseStatusException e) { throw e; }
+          catch (IllegalArgumentException e) { throw e; }
           catch (Exception e) { throw new IllegalArgumentException("The uploaded file is not a valid .xlsx workbook"); }
         int created = (int) results.stream().filter(r -> r.status().equals("CREATED")).count();
         int existing = (int) results.stream().filter(r -> r.status().equals("EXISTING")).count();
@@ -66,7 +69,10 @@ public class StudentAccountImportService {
     }
 
     private void create(Candidate candidate) {
-        User user = users.saveAndFlush(new User(candidate.email(), encoder.encode(candidate.uid()), Role.STUDENT, true));
+        Long sessionId=sessions.activeForNewStudent();
+        User candidateUser=new User(candidate.email(),encoder.encode(candidate.uid()),Role.STUDENT,true);
+        candidateUser.assignAcademicSession(sessionId);
+        User user = users.saveAndFlush(candidateUser);
         user.requirePasswordChange(); users.saveAndFlush(user);
         accounts.saveAndFlush(new StudentAccount(user, candidate.name(), candidate.uid(), candidate.semester()));
     }

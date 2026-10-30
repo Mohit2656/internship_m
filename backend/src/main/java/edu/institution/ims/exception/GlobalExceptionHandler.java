@@ -26,6 +26,10 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    ResponseEntity<ApiError> workflowStatus(org.springframework.web.server.ResponseStatusException e) {
+        return ResponseEntity.status(e.getStatusCode()).body(new ApiError(Instant.now(),e.getStatusCode().value(),"WORKFLOW_REQUEST_FAILED",e.getReason(),null));
+    }
     @ExceptionHandler(edu.institution.ims.reports.ReportPdfText.UnrenderableTextException.class)
     ResponseEntity<ApiError> reportText(edu.institution.ims.reports.ReportPdfText.UnrenderableTextException e) { return error(HttpStatus.UNPROCESSABLE_ENTITY, "REPORT_TEXT_UNSUPPORTED", e.getMessage()); }
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class) ResponseEntity<ApiError> denied() { return error(HttpStatus.FORBIDDEN, "FORBIDDEN", "You do not have permission to access this resource"); }

@@ -35,6 +35,7 @@ class ResumeAnalysisIntegrationTest {
     @Autowired StudentResumeRepository resumes;
     @Autowired ResumeAnalysisRepository analyses;
     @Autowired FileStorageService storage;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @MockitoBean ResumeAiClient aiClient;
 
     User admin;
@@ -160,6 +161,55 @@ class ResumeAnalysisIntegrationTest {
     void unauthenticatedAnalysisIsRejected() throws Exception {
         mvc.perform(get("/api/v1/student/resume/analysis")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/v1/student/resume/analysis")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void correctionsPreserveOriginalFileAndExtractionTrackReviewerAndRejectStaleWrites() throws Exception {
+        Long resumeId=upload(studentACookie,"correctable.pdf");
+        when(aiClient.analyze(any(),anyString(),anyString())).thenReturn(result());
+        mvc.perform(post("/api/v1/student/resume/analysis").cookie(studentACookie)).andExpect(status().isOk());
+        String endpoint="/api/v1/student/resume/analysis/corrections";
+        String values="{\"skills\":[\"Spring Boot\"],\"experience\":[],\"education\":[{\"degree\":\"B.Tech\",\"institution\":\"Correct College\"}],\"certifications\":[]}";
+        String body="{\"resumeId\":"+resumeId+",\"revision\":0,\"values\":"+values+"}";
+        mvc.perform(put(endpoint).cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.revision").value(1))
+                .andExpect(jsonPath("$.source").value("STUDENT_CORRECTED"))
+                .andExpect(jsonPath("$.editorId").value(studentA.getId()))
+                .andExpect(jsonPath("$.editedAt").isNotEmpty())
+                .andExpect(jsonPath("$.original.skills[0]").value("Java"))
+                .andExpect(jsonPath("$.values.skills[0]").value("Spring Boot"));
+        mvc.perform(put(endpoint).cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isConflict());
+        String adminEndpoint="/api/v1/admin/students/"+studentA.getId()+"/resume/analysis/corrections";
+        mvc.perform(put(adminEndpoint).cookie(adminCookie).contentType(MediaType.APPLICATION_JSON).content(body.replace("\"revision\":0","\"revision\":1")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.revision").value(2))
+                .andExpect(jsonPath("$.source").value("IIIC_REVIEWED"))
+                .andExpect(jsonPath("$.history.length()").value(2));
+        mvc.perform(get(adminEndpoint).cookie(studentBCookie)).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/student/resume/analysis").cookie(studentACookie)).andExpect(status().isConflict());
+        mvc.perform(get(endpoint).cookie(studentACookie)).andExpect(jsonPath("$.values.skills[0]").value("Spring Boot"));
+        mvc.perform(get("/api/v1/student/resume/download").cookie(studentACookie)).andExpect(content().bytes(PDF));
+        mvc.perform(put(endpoint).cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"resumeId\":"+resumeId+",\"revision\":2,\"values\":{\"skills\":[\"\"],\"experience\":[],\"education\":[],\"certifications\":[]}}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void successfulResumeEventsRouteToIiicOnceAndUseDatabaseTimestamps() throws Exception {
+        Long first=upload(studentACookie,"first.pdf");
+        mvc.perform(get("/api/v1/admin/notifications").cookie(adminCookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1)).andExpect(jsonPath("$.content[0].type").value("RESUME_UPLOADED"));
+        var stored=resumes.findById(first).orElseThrow();
+        var at=jdbc.queryForObject("select created_at from student_notifications where student_user_id=? and event_key=?",java.sql.Timestamp.class,admin.getId(),"resume-upload:"+first).toInstant();
+        assertThat(at).isEqualTo(stored.getUploadedAt());
+        assertThat(jdbc.queryForObject("select count(*) from student_notifications where student_user_id=?",Long.class,studentB.getId())).isZero();
+        mvc.perform(multipart("/api/v1/student/resume").file(new MockMultipartFile("file","bad.txt","text/plain","bad".getBytes())).cookie(studentACookie))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("select count(*) from student_notifications where student_user_id=?",Long.class,admin.getId())).isEqualTo(1);
+        upload(studentACookie,"second.pdf");
+        mvc.perform(get("/api/v1/admin/notifications").cookie(adminCookie)).andExpect(jsonPath("$.unreadCount").value(2))
+                .andExpect(jsonPath("$.content[0].type").value("RESUME_UPDATED"));
+        mvc.perform(patch("/api/v1/admin/notifications/read-all").cookie(adminCookie)).andExpect(jsonPath("$.unreadCount").value(0));
+        mvc.perform(get("/api/v1/admin/notifications").cookie(studentACookie)).andExpect(status().isForbidden());
     }
 
     private Long upload(Cookie cookie, String filename) throws Exception {

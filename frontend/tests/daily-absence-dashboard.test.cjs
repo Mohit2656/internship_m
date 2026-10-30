@@ -44,6 +44,9 @@ function harness(file, name, props, api) {
     react: hooks,
     "@/lib/api": { api },
     "@/components/MentorRecordDelete": { MentorRecordDelete: ({ kind, id, description, onDeleted }) => React.createElement("button", { "data-delete-id": id, "data-delete-kind": kind, title: description, onClick: onDeleted }, "Delete") },
+    "@/components/AttendanceReviewPanel": { AttendanceReviewPanel: () => null, AttendanceReviewFeedback: () => null },
+    "@/components/AttendanceLocations": load("components/AttendanceLocations.tsx"),
+    "@/components/LocationVerificationResult": load("components/LocationVerificationResult.tsx"),
     "@/lib/attendance": load("lib/attendance.ts"),
     "next/link": { default: ({ children, ...rest }) => React.createElement("a", rest, children) }
   })[name];

@@ -20,11 +20,21 @@ public class MentorNotificationService {
     private static final String VISIBLE = "mentor_user_id=? and exists (select 1 from mentor_student_assignments a "
             + "where a.mentor_user_id=mentor_notifications.mentor_user_id "
             + "and a.student_user_id=mentor_notifications.student_user_id and a.active=true) "
-            + "and exists (select 1 from attendance_records r where r.id=mentor_notifications.attendance_id and r.deleted_at is null)";
+            + "and (attendance_id is null or exists (select 1 from attendance_records r where r.id=mentor_notifications.attendance_id and r.deleted_at is null))";
     private final JdbcTemplate jdbc;
     private final Clock clock;
 
     public MentorNotificationService(JdbcTemplate jdbc, Clock clock) { this.jdbc = jdbc; this.clock = clock; }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void workflowSubmitted(Long studentId, String eventKey, String type, String title, String message,
+            String actionUrl, java.time.Instant at) {
+        jdbc.update("insert into mentor_notifications(mentor_user_id,student_user_id,event_key,notification_type,title,message,action_url,created_at) "
+                + "select a.mentor_user_id,a.student_user_id,?,?,?,?,?,? from mentor_student_assignments a "
+                + "join users u on u.id=a.mentor_user_id and u.active=true and u.role='MENTOR' "
+                + "where a.student_user_id=? and a.active=true on conflict do nothing",
+                eventKey,type,title,message,actionUrl,Timestamp.from(at),studentId);
+    }
 
     // The caller's transaction includes attendance, evidence, audit and this event. A failure
     // later in submission rolls back the notification, and the unique key handles retries.

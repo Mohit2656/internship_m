@@ -6,4 +6,5 @@ public record AdminStudentSummaryResponse(Long id, String loginEmail, String stu
         String branch, String branchLabel, String instituteEmail, String phoneNumber, String academicYear, Integer semester,
         ProfileStatus profileStatus, String internshipStatus, String internshipSource, String internshipSourceLabel,
         int documentsCompleted, int documentsRequired, boolean diaryIssued,
-        java.time.Instant profileLastStudentUpdatedAt, java.time.Instant onboardingLastStudentUpdatedAt) {}
+        java.time.Instant profileLastStudentUpdatedAt, java.time.Instant onboardingLastStudentUpdatedAt,
+        java.time.Instant resumeUploadedAt, java.time.Instant internshipDetailsUpdatedAt, java.time.Instant workplaceUpdatedAt) {}

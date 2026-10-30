@@ -98,7 +98,7 @@ test("empty mentor inbox explains attendance submissions and links to attendance
   browser(t);
   const h = harness("components/NotificationsContent.tsx", "NotificationsContent", { async get() { return { data: { content: [], totalPages: 0, unreadCount: 0 } }; } }, { props: { role: "MENTOR" } });
   const cleanup = await h.mount();
-  assert.match(h.html(), /No notifications yet/); assert.match(h.html(), /Attendance submissions from your assigned students will appear here/);
+  assert.match(h.html(), /No notifications yet/); assert.match(h.html(), /Attendance and progress submissions from your assigned students will appear here/);
   assert.match(h.html(), /href="\/mentor\/attendance"/); assert.doesNotMatch(h.html(), /Browse opportunities/);
   assert.equal(h.button("Mark all as read").props.disabled, true); cleanup();
 });
@@ -140,15 +140,14 @@ test("mentor notification route enforces mentor access and passes mentor scope t
   assert.equal(page.props.role, "MENTOR"); assert.equal(page.props.children.props.children.props.role, "MENTOR");
 });
 
-test("app navigation enables notification bell for mentors and students only", () => {
+test("app navigation enables notification bell for IIIC, mentors and students", () => {
   for (const role of ["STUDENT", "MENTOR", "ADMIN"]) {
     const h = harness("components/AppFrame.tsx", "AppFrame", {}, { imports: {
       "@/lib/auth": { useAuth: () => ({ user: { id: 5, role, roleLabel: role }, async logout() {} }) },
       "@/components/ThemeToggle": { ThemeToggle: () => null },
       "@/components/NotificationMenu": { NotificationMenu: ({ role: notificationRole }) => React.createElement("span", { "data-notification-role": notificationRole }) },
     } });
-    if (role === "ADMIN") assert.doesNotMatch(h.html(), /data-notification-role/);
-    else assert.ok(h.html().includes(`data-notification-role="${role}"`));
+    assert.ok(h.html().includes(`data-notification-role="${role}"`));
   }
 });
 
@@ -244,5 +243,37 @@ test("opening each student approval marks only its own notification read and pre
   assert.equal(updates.length, 2, "Opening an already read approval must not repeat the read update");
   assert.equal(h.paths.at(-1), "/student/internship/details");
   assert.deepEqual(requests, Array(3).fill("/student/notifications"));
+  cleanup();
+});
+
+
+test("IIIC inbox shows resume event time and opens the identified student profile", async t => {
+  browser(t); const calls = [];
+  const resume = { ...item, id: 81, type: "RESUME_UPDATED", title: "Resume updated", message: "Student Example has updated their resume.", rejectionReason: null, mentorName: null, actionUrl: "/admin/students/42#resume-analysis" };
+  const h = harness("components/NotificationsContent.tsx", "NotificationsContent", {
+    async get(url) { calls.push(url); return { data: { content: [resume], page: 0, totalPages: 1, unreadCount: 1 } }; },
+    async patch(url) { calls.push(url); return { data: { unreadCount: 0 } }; },
+  }, { props: { role: "ADMIN" } });
+  const cleanup = await h.mount();
+  assert.match(h.html(), /Student Example has updated their resume/);
+  assert.match(h.html(), /Resume updated/);
+  assert.match(h.html(), /dateTime="2026-10-22T07:00:00Z"/i);
+  h.button("Open task").props.onClick(); await flush();
+  assert.deepEqual(calls, ["/admin/notifications", "/admin/notifications/81/read"]);
+  assert.deepEqual(h.paths, ["/admin/students/42#resume-analysis"]);
+  cleanup();
+});
+
+test("IIIC dashboard activity uses backend timestamps and limits recent entries", async t => {
+  browser(t); const calls = [];
+  const h = harness("components/NotificationsContent.tsx", "RecentNotifications", {
+    async get(url) { calls.push(url); return { data: { content: [1, 2, 3, 4].map(id => ({ ...item, id, title: `Resume update ${id}`, actionUrl: `/admin/students/${id}#resume-analysis` })), unreadCount: 4 } }; },
+  }, { props: { role: "ADMIN" } });
+  const cleanup = await h.mount();
+  assert.deepEqual(calls, ["/admin/notifications"]);
+  assert.match(h.html(), /4 unread/);
+  assert.match(h.html(), /Resume update 3/); assert.doesNotMatch(h.html(), /Resume update 4/);
+  assert.ok(h.html().includes('href="/admin/students/1#resume-analysis"'));
+  assert.match(h.html(), /dateTime="2026-10-22T07:00:00Z"/i);
   cleanup();
 });

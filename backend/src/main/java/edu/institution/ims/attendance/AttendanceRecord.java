@@ -94,6 +94,9 @@ public class AttendanceRecord {
     void updateTimestamp() { updatedAt = Instant.now(); }
 
     @OneToOne(mappedBy="attendance", fetch=FetchType.LAZY) private AttendanceEvidence evidence;
+    @OneToOne(mappedBy="attendance", fetch=FetchType.LAZY) private AttendanceReview review;
+    public AttendanceReview getReview() { return review; }
+    public void attachReview(AttendanceReview review) { this.review = review; }
     public AttendanceEvidence getEvidence() { return evidence; }
     public void attachEvidence(AttendanceEvidence evidence) { this.evidence = evidence; }
     public Long getId() { return id; }

@@ -19,19 +19,19 @@ async function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export function DashboardReportExport({ role }: { role: "ADMIN" | "MENTOR" }) {
+export function DashboardReportExport({ role, initialFilters = {} }: { role: "ADMIN" | "MENTOR"; initialFilters?: Record<string, string> }) {
   const [open, setOpen] = useState(false);
   return <>
     <button type="button" onClick={() => setOpen(true)} className="text-sm">Export Report</button>
-    {open && <ReportDialog role={role} onClose={() => setOpen(false)} />}
+    {open && <ReportDialog role={role} initialFilters={initialFilters} onClose={() => setOpen(false)} />}
   </>;
 }
 
-function ReportDialog({ role, onClose }: { role: "ADMIN" | "MENTOR"; onClose: () => void }) {
+function ReportDialog({ role, initialFilters, onClose }: { role: "ADMIN" | "MENTOR"; initialFilters: Record<string, string>; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [options, setOptions] = useState<Options | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filters, setFilters] = useState<Record<string, string>>(initialFilters);
   const [format, setFormat] = useState<"XLSX" | "CSV" | "PDF">("XLSX");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewing, setPreviewing] = useState(false);
