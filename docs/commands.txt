@@ -1,3 +1,27 @@
 COMMAND TO CONNECT THE db :
 
 "psql -h 127.0.0.1 -U springapp_user -d springapp_db"
+
+
+after pull 
+
+IN backend do 
+
+    1. mvn clean package -DskipTests
+    2. pm2 restart ims-backend
+
+
+IN frontend do
+
+
+    1. cd ../frontend
+    2. npm install            # (only if package.json dependencies changed)
+    3. npm run build
+    4. pm2 restart ims-frontend
+
+
+IN ai-service do
+
+    1. cd ../ai-service
+    2. pm2 restart ims-ai-service
+    
