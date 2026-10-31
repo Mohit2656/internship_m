@@ -120,9 +120,9 @@ public class InstitutionalReportService {
         Map<String,String> filters=request.filters()==null?new LinkedHashMap<>():new LinkedHashMap<>(request.filters());
         for(var entry:filters.entrySet()) {
             var f=options.filters().stream().filter(v->v.id().equals(entry.getKey())).findFirst().orElseThrow(()->new IllegalArgumentException("Unsupported report filter"));
-            if(entry.getValue()==null||entry.getValue().length()>254) throw new IllegalArgumentException("Invalid report filter");
-            if(!entry.getValue().isBlank()&&f.type().equals("select")&&f.choices().stream().noneMatch(c->c.value().equals(entry.getValue()))) throw new IllegalArgumentException("Invalid filter value");
+            entry.setValue(DashboardReportCatalog.filterValue(f,entry.getValue()));
         }
+        filters.entrySet().removeIf(entry->entry.getValue().isEmpty());
         for(String id:List.of("historyFrom","historyTo","attendanceStatus","verificationStatus")) if(!attendance&&filters.containsKey(id)&&!filters.get(id).isBlank()) throw new IllegalArgumentException("Attendance filters require an attendance report");
         Map<String,String> studentFilters=new LinkedHashMap<>(filters);
         for(String id:List.of("historyFrom","historyTo","attendanceStatus","verificationStatus")) studentFilters.remove(id);
@@ -153,8 +153,8 @@ public class InstitutionalReportService {
         String window="";
         LocalDate from=null,to=null;
         try {
-            if(filters.containsKey("historyFrom")&&!filters.get("historyFrom").isBlank()) from=LocalDate.parse(filters.get("historyFrom"));
-            if(filters.containsKey("historyTo")&&!filters.get("historyTo").isBlank()) to=LocalDate.parse(filters.get("historyTo"));
+            if(filters.containsKey("historyFrom")) from=DashboardReportRepository.date(filters.get("historyFrom"));
+            if(filters.containsKey("historyTo")) to=DashboardReportRepository.date(filters.get("historyTo"));
         } catch(RuntimeException ex) {throw new IllegalArgumentException("Attendance dates must use YYYY-MM-DD");}
         if(from!=null&&to!=null&&from.isAfter(to)) throw new IllegalArgumentException("Attendance from must be on or before through");
         if(from!=null) {window+=" and ar.attendance_date >= :reportFrom";params.addValue("reportFrom",java.sql.Date.valueOf(from));}
@@ -189,17 +189,18 @@ public class InstitutionalReportService {
             if(new HashSet<>(request.fields()).size()!=request.fields().size()) throw new IllegalArgumentException("Duplicate report fields");
             selected=request.fields().stream().map(id->type.fields().stream().filter(f->f.id().equals(id)).findFirst().orElseThrow(()->new IllegalArgumentException("Unsupported report field"))).toList();
         }
-        return new Query(type,selected,sql,params,repository.count(scope));
+        long studentCount=Objects.requireNonNull(jdbc.queryForObject("select count(*) from ("+studentSql+") report_students",params,Long.class));
+        return new Query(type,selected,sql,params,studentCount);
     }
     private static String sums() {return "sum(case when stipend>0 then 1 else 0 end) as paid,sum(case when stipend=0 then 1 else 0 end) as unpaid";}
     private static String sources(String condition) {
-        return "sum(case when source='DEPARTMENT' and "+condition+" then 1 else 0 end) as department,sum(case when source='CDC' and "+condition+" then 1 else 0 end) as cdc,sum(case when source='SELF' and "+condition+" then 1 else 0 end) as self,sum(case when source='UNRECORDED' and "+condition+" then 1 else 0 end) as \"unknown\",sum(case when "+condition+" then 1 else 0 end) as total";
+        return "coalesce(sum(case when source='DEPARTMENT' and "+condition+" then 1 else 0 end),0) as department,coalesce(sum(case when source='CDC' and "+condition+" then 1 else 0 end),0) as cdc,coalesce(sum(case when source='SELF' and "+condition+" then 1 else 0 end),0) as self,coalesce(sum(case when source='UNRECORDED' and "+condition+" then 1 else 0 end),0) as \"unknown\",coalesce(sum(case when "+condition+" then 1 else 0 end),0) as total";
     }
     private static String comparison(String base) {
         return List.of(new String[]{"Total Students","1=1"},new String[]{"Stipend Students","stipend>0"},new String[]{"Non-Stipend Students","stipend=0"},new String[]{"Placement Offers","offer=true"},new String[]{"Diary Issued","diary=true"},new String[]{"Details Complete","workflow='INTERNSHIP_DETAILS_COMPLETE'"}).stream().map(p->"select '"+p[0]+"' as parameter,"+sources(p[1])+" from "+base).collect(Collectors.joining(" union all "));
     }
     private List<Map<String,Object>> rows(Query query,int offset,int size) {
-        String order=query.type().id().equals("ATTENDANCE")?"date,studentId,recordId":Set.of("ATTENDANCE_SUMMARY","ROSTER","COMPLETIONS").contains(query.type().id())?"studentId":"1";
+        String order=query.type().id().equals("ATTENDANCE")?"date,studentId,recordId":query.type().id().equals("MONTHLY_PROGRESS")?"studentId,monthNumber,recordId":Set.of("ATTENDANCE_SUMMARY","ROSTER","COMPLETIONS").contains(query.type().id())?"studentId":"1";
         return jdbc.query("select * from ("+query.sql()+") report order by "+order+" limit :reportSize offset :reportOffset",new MapSqlParameterSource(query.params().getValues()).addValue("reportSize",size).addValue("reportOffset",offset),(rs,num)->{
             Map<String,Object> row=new LinkedHashMap<>();
             for(var f:query.fields()) {Object value=rs.getObject(f.id());if(value instanceof java.sql.Timestamp t) value=t.toInstant().atZone(clock.getZone()).toOffsetDateTime();row.put(f.id(),value);}return row;

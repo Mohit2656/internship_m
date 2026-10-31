@@ -74,7 +74,7 @@ export function ReportsCenter({ role, attendanceOnly = false }: { role: "ADMIN" 
   const config = JSON.stringify({ reportType: type, fields: role === "MENTOR" && type === "ATTENDANCE" ? [...new Set([...selected, "recordId", "studentName", "uid", "date"])] : selected, filters: Object.fromEntries(Object.entries(filters).filter(([, value]) => value.trim())), studentIds: ids.trim() ? ids.split(",").map(value => Number(value.trim())) : [], page, format: "XLSX" });
   useEffect(() => {
     const abort = new AbortController();
-    api.get<Options>(`${base}/types`, { signal: abort.signal }).then(({ data }) => { setOptions(data); setError(""); }).catch(async e => { if (!abort.signal.aborted) setError(await message(e)); });
+    api.get<Options>(`${base}/types`, { signal: abort.signal }).then(({ data }) => { if (!abort.signal.aborted) { setOptions(data); setError(""); } }).catch(async e => { if (!abort.signal.aborted) setError(await message(e)); });
     return () => abort.abort();
   }, [base, reload]);
   useEffect(() => { if (report) setSelected(report.fields.filter(field => report.id !== "MONTHLY_PROGRESS" || field.defaultSelected).map(field => field.id)); }, [report]);
@@ -82,7 +82,7 @@ export function ReportsCenter({ role, attendanceOnly = false }: { role: "ADMIN" 
     if (!pickerOpen) return;
     const abort = new AbortController(); setPicker(null); setPickerError("");
     const timer = window.setTimeout(() => api.post<Table>(`${base}/table`, { reportType: "ROSTER", fields: ["studentId", "uid", "studentName", "company"], filters: pickerSearch ? { search: pickerSearch } : {}, studentIds: [], page: pickerPage, format: "XLSX" }, { signal: abort.signal })
-      .then(({ data }) => setPicker(data)).catch(async e => { if (!abort.signal.aborted) setPickerError(await message(e)); }), 250);
+      .then(({ data }) => { if (!abort.signal.aborted) setPicker(data); }).catch(async e => { if (!abort.signal.aborted) setPickerError(await message(e)); }), 250);
     return () => { window.clearTimeout(timer); abort.abort(); };
   }, [base, pickerOpen, pickerSearch, pickerPage]);
   useEffect(() => {
@@ -90,7 +90,7 @@ export function ReportsCenter({ role, attendanceOnly = false }: { role: "ADMIN" 
     if (!report?.available || !selected.length) { setPreviewBusy(false); return; }
     const abort = new AbortController(); setPreviewBusy(true);
     const timer = window.setTimeout(() => {
-      api.post<Table>(`${base}/table`, JSON.parse(config), { signal: abort.signal }).then(({ data }) => { setTable(data); setReviewed(config); setError(""); })
+      api.post<Table>(`${base}/table`, JSON.parse(config), { signal: abort.signal }).then(({ data }) => { if (!abort.signal.aborted) { setTable(data); setReviewed(config); setError(""); } })
         .catch(async e => { if (!abort.signal.aborted) setError(await message(e)); }).finally(() => { if (!abort.signal.aborted) setPreviewBusy(false); });
     }, 350);
     return () => { window.clearTimeout(timer); abort.abort(); };
