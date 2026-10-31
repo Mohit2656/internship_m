@@ -5,6 +5,7 @@ import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.studentprofile.Branch;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
+import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.*;
 
 /** The only supported export columns and filter expressions. Never accept SQL from a caller. */
@@ -16,8 +17,10 @@ public class DashboardReportCatalog {
     public record Choice(String value, String label) {}
     public record Filter(String id, String label, String type, List<Choice> choices, String description) {}
     private final List<Field> fields = new ArrayList<>();
+    private final JdbcTemplate jdbc;
 
-    public DashboardReportCatalog() {
+    public DashboardReportCatalog(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
         add("studentId", "Student account ID", "Student Information", Kind.TEXT, "u.id", false, false);
         add("studentName", "Student name", "Student Information", Kind.TEXT, "coalesce(p.student_name, sa.student_name)", true, false);
         add("uid", "Student UID", "Student Information", Kind.TEXT, "coalesce(p.uid, sa.uid)", true, false);
@@ -150,9 +153,12 @@ public class DashboardReportCatalog {
         result.add(new Filter("studentId", "Student account ID", "number", List.of(), "Optional single student; checked against your access"));
         result.add(new Filter("branch", "Branch", "select", Arrays.stream(Branch.values()).map(b -> new Choice(b.name(), b.getLabel())).toList(), ""));
         result.add(new Filter("completionSearch", "Completion student / UID / company", "text", List.of(), "Contains text, case insensitive"));
-        result.add(new Filter("academicSessionId", "Assigned academic session ID", "number", List.of(), "Uses backend account membership, separate from student-entered academic year"));
+        String sessionSql="select s.id,s.name from academic_sessions s";
+        if (!admin) sessionSql+=" where exists(select 1 from users u join mentor_student_assignments a on a.student_user_id=u.id and a.active=true where u.academic_session_id=s.id and a.mentor_user_id=?)";
+        List<Choice> sessions=jdbc.query(sessionSql+" order by s.name desc,s.id desc",(rs,row)->new Choice(Long.toString(rs.getLong("id")),rs.getString("name")),admin?new Object[]{}:new Object[]{user.id()});
+        result.add(new Filter("academicSessionId", "Assigned academic session", "select", sessions, "Uses the student's assigned session, including closed historical sessions; independent of profile academic year"));
         choice(result, "completionStatus", "Internship completion", "ALL", "NOT_STARTED", "IN_PROGRESS", "COMPLETION_PENDING", "COMPLETED");
-        result.add(new Filter("academicYear", "Academic year", "text", List.of(), "Exact academic year, e.g. 2025-2026"));
+        result.add(new Filter("academicYear", "Profile academic year", "text", List.of(), "Student-entered profile year, e.g. 2025-2026; independent of the assigned academic session"));
         result.add(new Filter("semester", "Semester", "select", java.util.stream.IntStream.rangeClosed(1, 8).mapToObj(n -> new Choice("" + n, "" + n)).toList(), ""));
         choice(result, "profileStatus", "Profile status", "COMPLETE", "INCOMPLETE");
         choice(result, "workflowStatus", "Internship workflow", "NOT_SECURED", "INTERNSHIP_SECURED", "DOCUMENTS_PENDING", "DOCUMENTS_COMPLETE", "DIARY_ISSUED", "INTERNSHIP_DETAILS_COMPLETE");
@@ -176,5 +182,14 @@ public class DashboardReportCatalog {
     }
     private void choice(List<Filter> result, String id, String label, String... values) {
         result.add(new Filter(id, label, "select", Arrays.stream(values).map(v -> new Choice(v, v.replace('_', ' '))).toList(), ""));
+    }
+    /** One normalization rule for dashboard exports and institutional report tables. */
+    static String filterValue(Filter filter,String raw) {
+        if(raw==null || raw.length()>254) throw new IllegalArgumentException("Invalid value for "+filter.label());
+        String value=raw.trim();
+        if(value.isEmpty() || (filter.type().equals("select") && value.equalsIgnoreCase("ALL"))) return "";
+        if(filter.type().equals("select")) return filter.choices().stream().filter(c->c.value().equalsIgnoreCase(value)).findFirst()
+                .orElseThrow(()->new IllegalArgumentException("Invalid value for "+filter.label())).value();
+        return value;
     }
 }

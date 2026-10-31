@@ -77,6 +77,6 @@ test('completion exports carry the selected session, status and the same company
 test('session settings show active and historical counts and offer historical calendar setup', () => {
   const h = hooks({ 0: [{ id: 4, name: '2026-2027', active: true, startDate: '2026-07-01', endDate: '2027-06-30', studentCount: 5 }, { id: 2, name: '2025-2026', active: false, startDate: null, endDate: null, studentCount: 8 }], 1: false });
   const pass = ({ children }) => children;
-  const Page = load('app/admin/settings/academic-sessions/page.tsx', { react: h.react, '@/lib/api': {}, '@/components/AppFrame': { AppFrame: pass }, '@/components/ProtectedRoute': { ProtectedRoute: pass } }).default;
+  const Page = load('app/admin/settings/academic-sessions/page.tsx', { react: h.react, '@/lib/api': {}, '@/components/AcademicSessionDeletionDialog': { SessionDeletionDialog: pass }, '@/components/AppFrame': { AppFrame: pass }, '@/components/ProtectedRoute': { ProtectedRoute: pass } }).default;
   const html = renderToStaticMarkup(Page()); assert.match(html, /Current active academic session/); assert.match(html, /2026-2027/); assert.match(html, /Set Dates/); assert.match(html, /Start New Academic Session/);
 });

@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-export type AcademicSession = { id: number; name: string; startDate: string | null; endDate: string | null; description: string | null; active: boolean; studentCount: number };
+export type AcademicSession = { id: number; name: string; startDate: string | null; endDate: string | null; description: string | null; active: boolean; studentCount: number; status: "ACTIVE" | "CLOSED" | "INACTIVE"; closedAt: string | null; closedById: number | null; closedBy: string | null };
+export type SessionDeletionPreview = { session: AcademicSession; records: Record<string, number>; recordCount: number; canDelete: boolean; explanation: string };
 export function useAcademicSessions() {
   const [sessions, setSessions] = useState<AcademicSession[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
