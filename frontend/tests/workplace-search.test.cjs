@@ -14,6 +14,7 @@ function load(relative, imports = {}) {
 }
 
 const location = load("lib/workplace-location.ts");
+const internship = load("lib/internship-details.ts");
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const nodes = tree => !tree || typeof tree !== "object" ? [] : [tree, ...[tree.props?.children].flat(Infinity).flatMap(nodes)];
 const text = tree => tree == null || typeof tree === "boolean" ? "" : typeof tree !== "object" ? String(tree) : [tree.props?.children].flat(Infinity).map(text).join("");
@@ -336,6 +337,7 @@ test("internship form keeps the searched company address and confirmed location 
   function Picker() { return null; }
   const { InternshipDetailsForm } = load("components/InternshipDetailsForm.tsx", {
     react: h.hooks,
+    "@/lib/internship-details": internship,
     "@/components/OpenStreetMapWorkplacePicker": { OpenStreetMapWorkplacePicker: Picker },
   });
   const props = { initial: { companyName: "Company", companyAddress: saved.address, startDate: "2026-11-01", endDate: "2026-12-30", internshipMode: "OFFICE_REPORTING", workplace: saved }, saving: false, fieldErrors: {}, onSubmit: data => submissions.push(data) };

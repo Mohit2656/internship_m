@@ -19,6 +19,7 @@ const workplace = { name: "Actual branch", placeId: "legacy-google-place", addre
 function pickerHarness(initial = {}) {
   const states = [], refs = [], dependencies = [], pendingEffects = [], selections = [], pending = [];
   let stateIndex = 0, refIndex = 0, effectIndex = 0;
+  function Search() { return null; }
   const hooks = {
     useState(initial) { const i = stateIndex++; if (!(i in states)) states[i] = typeof initial === "function" ? initial() : initial; return [states[i], value => { states[i] = typeof value === "function" ? value(states[i]) : value; }]; },
     useRef(initial) { const i = refIndex++; return refs[i] ??= { current: initial }; },
@@ -28,6 +29,7 @@ function pickerHarness(initial = {}) {
   let dynamicOptions;
   const { OpenStreetMapWorkplacePicker } = load("components/OpenStreetMapWorkplacePicker.tsx", {
     react: hooks, "next/dynamic": (loader, options) => { dynamicOptions = options; return "WorkplaceMap"; }, "@/lib/workplace-location": location,
+    "@/components/WorkplaceLocationSearch": { WorkplaceLocationSearch: Search },
   });
   return { props, selections, pending, dynamicOptions, render() { stateIndex = 0; refIndex = 0; effectIndex = 0; const tree = OpenStreetMapWorkplacePicker(props); pendingEffects.splice(0).forEach(effect => effect()); return tree; } };
 }
