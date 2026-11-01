@@ -47,6 +47,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ProfileNotFoundException.class) ResponseEntity<ApiError> profileNotFound(ProfileNotFoundException e) { return error(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", e.getMessage()); }
     @ExceptionHandler(OnboardingException.class) ResponseEntity<ApiError> onboarding(OnboardingException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
     @ExceptionHandler(InternshipDetailsException.class) ResponseEntity<ApiError> internshipDetails(InternshipDetailsException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
+    @ExceptionHandler(edu.institution.ims.editing.EditPermissionException.class) ResponseEntity<ApiError> editPermission(edu.institution.ims.editing.EditPermissionException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
     @ExceptionHandler(MonthlyProgressException.class) ResponseEntity<ApiError> monthlyProgress(MonthlyProgressException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
     @ExceptionHandler(MaxUploadSizeExceededException.class) ResponseEntity<ApiError> oversized() { return error(HttpStatus.PAYLOAD_TOO_LARGE, "DOCUMENT_TOO_LARGE", "Upload exceeds the configured file or total request size limit"); }
     @ExceptionHandler(HttpMessageNotReadableException.class) ResponseEntity<ApiError> unreadable() { return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "Request contains an invalid value"); }

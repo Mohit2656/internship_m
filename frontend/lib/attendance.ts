@@ -1,4 +1,4 @@
-export type AttendanceResult = "PRESENT" | "ABSENT";
+export type AttendanceResult = "PRESENT" | "PENDING_MENTOR_REVIEW" | "ABSENT";
 export type VerificationStatus = "UNVERIFIED" | "VERIFIED";
 export type LivenessStatus = "VERIFIED" | "FAILED" | "NOT_PERFORMED" | "HISTORICAL" | "NOT_APPLICABLE";
 export type AttendanceSubmissionType = "BASIC" | "PHYSICAL_CAPTURE" | "REMOTE_CAPTURE" | "AUTO_ABSENT";
@@ -47,7 +47,8 @@ export type Attendance = {
 };
 
 export function attendanceLabel(attendance: Attendance) {
-  if (attendance.attendanceResult !== "PRESENT") return "Absent";
+  if (attendance.attendanceResult === "PENDING_MENTOR_REVIEW") return "Pending mentor review";
+  if (attendance.attendanceResult === "ABSENT") return "Absent";
   return `Present — ${livenessLabel(attendance.livenessStatus)}`;
 }
 
@@ -139,7 +140,7 @@ export type AiVerificationEvidence = {
   modelVersion: string;
 };
 
-export type InternshipLocationStatus = "PENDING" | "CONFIRMED" | "APPROVED" | "REJECTED";
+export type InternshipLocationStatus = "PENDING" | "PENDING_MENTOR_APPROVAL" | "CONFIRMED" | "APPROVED" | "REJECTED";
 
 export type InternshipLocation = {
   id: number;
@@ -157,4 +158,5 @@ export type InternshipLocation = {
   workplaceName: string | null;
   companyName: string;
   revision: number; mentorDecision: "APPROVE" | "REJECT" | null; mentorReviewerId: number | null; mentorReviewedAt: string | null; mentorRemarks: string | null; iiicDecision: "APPROVE" | "REJECT" | null; iiicRemarks: string | null;
+  coordinatesLocked: boolean;
 };

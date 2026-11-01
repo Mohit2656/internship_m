@@ -6,10 +6,10 @@ import { api, ApiError } from "@/lib/api";
 import { initialProfileForm, profileReadOnlyFields, ProfileFormData, ProfilePrefill, StudentProfile } from "@/lib/student-profile";
 
 type Options = { branches: { value: string; label: string }[]; bloodGroups: string[]; minimumSemester: number; maximumSemester: number };
-type FieldProps = { label: string; name: keyof ProfileFormData; value: string; error?: string; type?: string; optional?: boolean; placeholder?: string; readOnly?: boolean; onChange: (name: keyof ProfileFormData, value: string) => void };
-function Field({ label, name, value, error, type = "text", optional, placeholder, readOnly = false, onChange }: FieldProps) {
+type FieldProps = { label: string; name: keyof ProfileFormData; value: string; error?: string; type?: string; optional?: boolean; placeholder?: string; readOnly?: boolean; min?: number; max?: number; step?: number; onChange: (name: keyof ProfileFormData, value: string) => void };
+function Field({ label, name, value, error, type = "text", optional, placeholder, readOnly = false, min, max, step, onChange }: FieldProps) {
   return <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">{label}{optional && <span className="ml-1 font-normal text-slate-400">(optional)</span>}</span>
-    <input name={name} type={type} value={value} readOnly={readOnly} aria-readonly={readOnly || undefined} aria-describedby={readOnly ? `${name}-institutional` : undefined} onChange={readOnly ? undefined : e => onChange(name, e.target.value)} required={!optional} placeholder={placeholder} className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${readOnly ? "bg-slate-50 text-slate-800" : "bg-white"} ${error ? "border-red-400 focus:border-red-500 focus:ring-red-100" : "border-slate-300 focus:border-blue-600 focus:ring-blue-100"}`}/>
+    <input name={name} type={type} value={value} min={min} max={max} step={step} readOnly={readOnly} aria-readonly={readOnly || undefined} aria-describedby={readOnly ? `${name}-institutional` : undefined} onChange={readOnly ? undefined : e => onChange(name, e.target.value)} required={!optional} placeholder={placeholder} className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:ring-4 ${readOnly ? "bg-slate-50 text-slate-800" : "bg-white"} ${error ? "border-red-400 focus:border-red-500 focus:ring-red-100" : "border-slate-300 focus:border-blue-600 focus:ring-blue-100"}`}/>
     {readOnly && <span id={`${name}-institutional`} className="mt-1.5 block text-xs text-slate-500">Institution provided · Read-only</span>}
     {error && <span className="mt-1.5 block text-xs text-red-600">{error}</span>}
   </label>;
@@ -28,7 +28,7 @@ export function ProfileForm({ existing, institutional, onSaved, onCancel }: { ex
   async function submit(event: FormEvent) {
     event.preventDefault(); setSaving(true); setErrors({}); setMessage("");
     try {
-      const payload = { ...form, semester: Number(form.semester) };
+      const payload = { ...form, semester: Number(form.semester), currentCgpa: form.currentCgpa === "" ? null : Number(form.currentCgpa) };
       const { data } = existing ? await api.put<StudentProfile>("/student/profile", payload) : await api.post<StudentProfile>("/student/profile", payload);
       onSaved(data);
     } catch (cause) {
@@ -48,6 +48,7 @@ export function ProfileForm({ existing, institutional, onSaved, onCancel }: { ex
       <Field label="Institute Email ID" name="instituteEmail" type="email" value={form.instituteEmail} error={errors.instituteEmail} readOnly onChange={update}/>
       <Field label="Academic Year" name="academicYear" value={form.academicYear} error={errors.academicYear} placeholder="2026-2027" onChange={update}/>
       {readOnlyFields.has("semester") ? <Field label="Semester" name="semester" value={form.semester} error={errors.semester} readOnly onChange={update}/> : <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">Semester</span><select name="semester" required value={form.semester} onChange={e => update("semester", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"><option value="">Select semester</option>{Array.from({ length: (options?.maximumSemester ?? 8) }, (_, i) => i + 1).map(value => <option key={value} value={value}>{value}</option>)}</select>{errors.semester && <span className="mt-1.5 block text-xs text-red-600">{errors.semester}</span>}</label>}
+      <Field label="Current CGPA" name="currentCgpa" type="number" min={0} max={10} step={0.01} value={form.currentCgpa} error={errors.currentCgpa} optional placeholder="0.00 to 10.00" onChange={update}/>
     </FormSection>
     <FormSection title="Address" description="Current internship address can be added later if it is not yet known.">
       {([['Permanent Address','permanentAddress',false],['Current Address During Internship','currentAddress',true]] as const).map(([label,name,optional]) => <label key={name} className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">{label}{optional && <span className="ml-1 font-normal text-slate-400">(optional)</span>}</span><textarea rows={4} required={!optional} value={form[name]} onChange={e => update(name,e.target.value)} className="w-full resize-y rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"/>{errors[name] && <span className="mt-1.5 block text-xs text-red-600">{errors[name]}</span>}</label>)}

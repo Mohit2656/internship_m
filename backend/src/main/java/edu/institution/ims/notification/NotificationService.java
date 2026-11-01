@@ -26,46 +26,44 @@ public class NotificationService {
     /** ADMIN is the existing institution-wide IIIC authority; no department scope exists. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void notifyCoordinators(Long studentId, String key, String type, String title, String event, Instant at) {
+        notifyCoordinators(studentId,key,type,title,event,"/admin/students/"+studentId+"#resume-analysis",at);
+    }
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void notifyCoordinators(Long studentId, String key, String type, String title, String event, String actionUrl, Instant at) {
         String name=jdbc.queryForList("select coalesce(p.student_name,sa.student_name,u.email) from users u "
                 + "left join student_profiles p on p.user_id=u.id left join student_accounts sa on sa.user_id=u.id where u.id=?",
                 String.class,studentId).stream().findFirst().orElse("Student");
         for(Long coordinator:jdbc.queryForList("select id from users where role='ADMIN' and active=true order by id",Long.class))
-            create(coordinator,key,type,title,"Student "+name+event,null,null,"/admin/students/"+studentId+"#resume-analysis",at);
+            create(coordinator,key,type,title,"Student "+name+event,null,null,actionUrl,at);
     }
     public record Notification(Long id, String type, String title, String message, String rejectionReason,
             String mentorName, String actionUrl, Instant createdAt, Instant readAt) {}
     public record Inbox(List<Notification> content, int page, long totalElements, int totalPages, long unreadCount) {}
     public record Count(long unreadCount) {}
 
-    /** Each reviewer approves independently; an alert does not imply both have approved. */
+    /** Workplace verification is complete when the assigned mentor approves it. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void internshipApproved(InternshipLocation location, User reviewer, boolean fullyApproved) {
-        boolean mentor = reviewer.getRole() == Role.MENTOR;
-        if (!mentor && reviewer.getRole() != Role.ADMIN) throw new IllegalArgumentException("Reviewer role is invalid");
-        String authority = mentor ? "faculty mentor" : "IIIC coordinator";
-        String remaining = mentor ? "IIIC coordinator" : "faculty mentor";
-        String message = "Your " + authority + " has approved your internship workplace at "
+    public void workplaceApprovedByMentor(InternshipLocation location, User reviewer) {
+        if (reviewer.getRole() != Role.MENTOR) throw new IllegalArgumentException("Reviewer must be a mentor");
+        String message = "Your faculty mentor has approved your internship workplace at "
                 + location.getInternship().getCompanyName() + " (revision " + location.getRevision() + "). "
-                + (fullyApproved ? "Both mentor and IIIC coordinator approvals are complete."
-                    : "Approval from your " + remaining + " is still required. Check the workplace panel for the current status.");
+                + "The coordinates are verified for attendance and are now locked against student editing.";
         create(location.getInternship().getOnboarding().getStudent().getId(),
                 "internship-approved:" + location.getId() + ":" + location.getRevision() + ":"
                         + reviewer.getRole() + ":" + reviewer.getId(),
-                mentor ? "INTERNSHIP_MENTOR_APPROVED" : "INTERNSHIP_IIIC_APPROVED",
-                "Internship approved by " + authority, message, null, null,
-                "/student/internship/details", mentor ? location.getMentorReviewedAt() : location.getConfirmedAt());
+                "INTERNSHIP_MENTOR_APPROVED", "Workplace approved by faculty mentor", message, null, null,
+                "/student/internship/details", location.getMentorReviewedAt());
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void workplaceRejected(InternshipLocation location, User reviewer, String reason) {
-        boolean mentor=reviewer.getRole()==Role.MENTOR;
-        if (!mentor && reviewer.getRole()!=Role.ADMIN) throw new IllegalArgumentException("Reviewer role is invalid");
+        if (reviewer.getRole()!=Role.MENTOR) throw new IllegalArgumentException("Reviewer must be a mentor");
         create(location.getInternship().getOnboarding().getStudent().getId(),
                 "workplace-rejected:"+location.getId()+":"+location.getRevision()+":"+reviewer.getRole()+":"+reviewer.getId(),
                 "WORKPLACE_REJECTED","Workplace requires correction",
-                "Your "+(mentor?"faculty mentor":"IIIC coordinator")+" rejected the workplace at "
+                "Your faculty mentor rejected the workplace at "
                         +location.getInternship().getCompanyName()+". Review the feedback and correct your workplace details; fresh approvals are required.",
-                reason,null,"/student/internship/details",mentor?location.getMentorReviewedAt():location.getConfirmedAt());
+                reason,null,"/student/internship/details",location.getMentorReviewedAt());
     }
 
     @Transactional

@@ -41,9 +41,17 @@ class StudentProfileIntegrationTest {
     }
 
     @Test void studentUpdatesOwnProfileWithoutResendingAadhaar() throws Exception {
-        create(studentACookie, profile("A", "UID-A", "a@college.edu")); Map<String,Object> update = profile("A", "UID-A", "a@college.edu"); update.put("studentName", "Student A Updated"); update.put("aadhaarNumber", "");
+        create(studentACookie, profile("A", "UID-A", "a@college.edu")); Map<String,Object> update = profile("A", "UID-A", "a@college.edu"); update.put("studentName", "Student A Updated"); update.put("aadhaarNumber", ""); update.put("currentCgpa", 8.75);
         mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.studentName").value("Student A Updated")).andExpect(jsonPath("$.maskedAadhaar").value("XXXX XXXX 9012"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.studentName").value("Student A Updated")).andExpect(jsonPath("$.currentCgpa").value(8.75)).andExpect(jsonPath("$.maskedAadhaar").value("XXXX XXXX 9012"));
+        mvc.perform(get("/api/v1/student/profile").cookie(studentACookie)).andExpect(status().isOk()).andExpect(jsonPath("$.currentCgpa").value(8.75));
+    }
+
+    @Test void currentCgpaIsOptionalAndValidatedToTwoDecimals() throws Exception {
+        create(studentACookie, profile("A", "UID-A", "a@college.edu"));
+        Map<String,Object> update = profile("A", "UID-A", "a@college.edu"); update.put("aadhaarNumber", ""); update.put("currentCgpa", 10.001);
+        mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.currentCgpa").exists());
     }
 
     @Test void repeatedCreateCannotCreateDuplicateProfile() throws Exception {

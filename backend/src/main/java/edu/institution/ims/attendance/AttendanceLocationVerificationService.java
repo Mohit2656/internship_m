@@ -87,7 +87,7 @@ public class AttendanceLocationVerificationService {
             return result(LocationVerificationStatus.WORKPLACE_NOT_APPROVED, null, null);
         BigDecimal distance = PhysicalVerificationPolicy.haversineMeters(submitted.latitude(), submitted.longitude(),
                 approvedWorkplace.getLatitude(), approvedWorkplace.getLongitude());
-        if (capturedAt != null && capturedAt.isBefore(clock.instant().minus(maxAge)))
+        if (capturedAt == null || capturedAt.isBefore(clock.instant().minus(maxAge)))
             return result(LocationVerificationStatus.STALE_LOCATION, distance, false);
         if (submitted.accuracyMeters() == null || submitted.accuracyMeters().compareTo(maxAccuracy) > 0)
             return result(LocationVerificationStatus.INSUFFICIENT_ACCURACY, distance, false);

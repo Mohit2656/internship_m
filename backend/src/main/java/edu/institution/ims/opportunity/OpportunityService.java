@@ -55,6 +55,7 @@ public class OpportunityService {
         if (opportunity.getStatus() == OpportunityStatus.PUBLISHED) validatePublishable(opportunity);
         opportunities.saveAndFlush(opportunity);
         replaceSkills(opportunity, request);
+        if(opportunity.getStatus()==OpportunityStatus.PUBLISHED) matching.rerun(opportunity.getId());
         return response(opportunity);
     }
 
@@ -101,10 +102,6 @@ public class OpportunityService {
     }
 
     private void validateRequest(OpportunityRequest request) {
-        if (new HashSet<>(request.eligibleBranches()).size() != request.eligibleBranches().size())
-            throw error(HttpStatus.BAD_REQUEST, "DUPLICATE_ELIGIBLE_BRANCH", "Eligible branches must not contain duplicates");
-        if (new HashSet<>(request.eligibleSemesters()).size() != request.eligibleSemesters().size())
-            throw error(HttpStatus.BAD_REQUEST, "DUPLICATE_ELIGIBLE_SEMESTER", "Eligible semesters must not contain duplicates");
         String website = request.companyWebsite();
         if (website != null && !website.isBlank()) {
             try {

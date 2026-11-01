@@ -12,8 +12,11 @@ public class InternshipDetailsController {
     private final InternshipDetailsService service;
     public InternshipDetailsController(InternshipDetailsService service) { this.service = service; }
     @GetMapping public InternshipDetailsResponse get(@AuthenticationPrincipal UserPrincipal principal) { return service.getOwn(principal); }
+    @GetMapping("/all") public java.util.List<InternshipDetailsResponse> all(@AuthenticationPrincipal UserPrincipal principal) { return service.getAllOwn(principal); }
     @PostMapping public ResponseEntity<InternshipDetailsResponse> create(@AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody InternshipDetailsRequest request) { return ResponseEntity.status(HttpStatus.CREATED).body(service.createOwn(principal, request)); }
+    @PostMapping("/second") public ResponseEntity<InternshipDetailsResponse> createSecond(@AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody InternshipDetailsRequest request) { return ResponseEntity.status(HttpStatus.CREATED).body(service.createSecond(principal, request)); }
     @PutMapping public InternshipDetailsResponse update(@AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody InternshipDetailsRequest request) { return service.updateOwn(principal, request); }
 }

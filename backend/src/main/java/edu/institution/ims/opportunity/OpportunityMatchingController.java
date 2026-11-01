@@ -17,4 +17,6 @@ public class OpportunityMatchingController {
     public OpportunityMatchingService.Run rerun(@PathVariable Long id) { return service.rerun(id); }
     @GetMapping("/api/v1/student/opportunities/{id}/matching-score")
     public OpportunityMatchingService.Candidate own(@PathVariable Long id,@AuthenticationPrincipal UserPrincipal user) { return service.ownScore(user,id); }
+    @PostMapping("/api/v1/admin/opportunities/{id}/recommended-students/{studentId}/notify")
+    public void notifyCandidate(@PathVariable Long id,@PathVariable Long studentId) { service.notifyCandidate(id,studentId); }
 }

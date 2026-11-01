@@ -90,8 +90,8 @@ class AttendanceLocationVerificationServiceTest {
         service.validateCaptureTime(null);
     }
 
-    @Test void missingCaptureTimestampCurrentlyRetainsLegacyCompatibilityWithoutFreshnessProof() {
-        assertThat(check("0", "0", "5", null).status()).isEqualTo(LocationVerificationStatus.VERIFIED);
+    @Test void missingCaptureTimestampCannotPassWithoutFreshnessProof() {
+        assertThat(check("0", "0", "5", null).status()).isEqualTo(LocationVerificationStatus.STALE_LOCATION);
     }
 
     @Test void haversineRemainsFiniteAcrossDateLineAndAtPoles() {

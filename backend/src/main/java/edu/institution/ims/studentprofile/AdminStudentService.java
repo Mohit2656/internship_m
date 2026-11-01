@@ -33,9 +33,9 @@ public class AdminStudentService {
         Specification<User> spec = (root, query, cb) -> {
             var profile = root.<User, StudentProfile>join("studentProfile", JoinType.LEFT);
             var account = root.<User, StudentAccount>join("studentAccount", JoinType.LEFT);
-            var onboarding = root.<User, InternshipOnboarding>join("internshipOnboarding", JoinType.LEFT);
+            var onboarding = root.<User, InternshipOnboarding>join("internshipOnboardings", JoinType.LEFT);
             var details = onboarding.<InternshipOnboarding, InternshipDetails>join("internshipDetails", JoinType.LEFT);
-            var predicate = cb.and(cb.equal(root.get("role"), Role.STUDENT),cb.isTrue(root.get("active")));
+            var predicate = cb.and(cb.equal(root.get("role"), Role.STUDENT),cb.isTrue(root.get("active")),cb.or(cb.isNull(onboarding.get("id")),cb.equal(onboarding.get("internshipNumber"),1)));
             if (academicSessionId != null) predicate=cb.and(predicate,cb.equal(root.get("academicSessionId"),academicSessionId));
             if (search != null && !search.isBlank()) {
                 String value = "%" + search.trim().toLowerCase() + "%";
@@ -64,7 +64,7 @@ public class AdminStudentService {
                 "select u.id,r.uploaded_at,d.updated_at as internship_at,l.updated_at as workplace_at from users u "
                 + "left join student_professional_profiles p on p.student_user_id=u.id "
                 + "left join student_resumes r on r.professional_profile_id=p.id and r.is_active=true "
-                + "left join internship_onboarding o on o.student_user_id=u.id left join internship_details d on d.onboarding_id=o.id "
+                + "left join internship_onboarding o on o.student_user_id=u.id and o.internship_number=1 left join internship_details d on d.onboarding_id=o.id "
                 + "left join internship_locations l on l.internship_id=d.id where u.id in (:ids)",
                 java.util.Map.of("ids",result.getContent().stream().map(User::getId).toList()),
                 (org.springframework.jdbc.core.RowCallbackHandler) row -> {

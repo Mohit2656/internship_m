@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs"), path = require("node:path"), ts = require("typescript");
 const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
 const flush = () => new Promise(resolve => setImmediate(resolve));
-const candidate = { studentId: 7, studentName: "First Student", uid: "UID7", branch: "COMPUTER_ENGINEERING", semester: 7, matchScore: 100, eligibility: "ELIGIBLE", eligibilityReasons: ["Configured requirements met"], matchedSkills: ["Java"], missingRequiredSkills: [], matchedPreferredSkills: ["Docker"], contextEvidence: ["Education: BE"], resumeAvailable: true, strongMatch: true };
+const candidate = { studentId: 7, studentName: "First Student", uid: "UID7", branch: "COMPUTER_ENGINEERING", semester: 7, matchScore: 100, eligibility: "ELIGIBLE", eligibilityReasons: ["Configured requirements met"], matchedSkills: ["Java"], missingRequiredSkills: [], matchedPreferredSkills: ["Docker"], contextEvidence: ["Education: BE"], resumeAvailable: true, skillsAvailable: true, strongMatch: true };
 const other = { ...candidate, studentId: 8, studentName: "Other Student", uid: "UID8", branch: "CIVIL", matchScore: 40, eligibility: "INELIGIBLE", matchedSkills: [], missingRequiredSkills: ["Java"], strongMatch: false };
 const summary = { id: 11, triggerType: "PUBLICATION", algorithmVersion: "exact-skills-v1", createdAt: "2026-10-30T08:00:00Z" };
 const run = { ...summary, opportunityId: 42, report: { title: "Software Intern", companyName: "Example Company", strongMatchThreshold: 75, scoringExplanation: "Required skills 80%, preferred skills 20%. A score is not a selection decision.", candidates: [candidate, other] } };

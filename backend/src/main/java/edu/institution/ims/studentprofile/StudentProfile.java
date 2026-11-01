@@ -3,6 +3,7 @@ package edu.institution.ims.studentprofile;
 import edu.institution.ims.user.User;
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "student_profiles", uniqueConstraints = {
@@ -42,6 +43,7 @@ public class StudentProfile {
     @Column(name = "cdc_coordinator_contact", nullable = false, length = 25) private String cdcCoordinatorContact;
     @Column(name = "academic_year", nullable = false, length = 9) private String academicYear;
     @Column(nullable = false) private int semester;
+    @Column(name = "current_cgpa", precision = 4, scale = 2) private BigDecimal currentCgpa;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
@@ -59,6 +61,7 @@ public class StudentProfile {
     public String getInternshipCoordinatorName() { return internshipCoordinatorName; } public String getInternshipCoordinatorContact() { return internshipCoordinatorContact; }
     public String getCdcCoordinatorName() { return cdcCoordinatorName; } public String getCdcCoordinatorContact() { return cdcCoordinatorContact; }
     public String getAcademicYear() { return academicYear; } public int getSemester() { return semester; }
+    public BigDecimal getCurrentCgpa() { return currentCgpa; }
     public Instant getCreatedAt() { return createdAt; } public Instant getUpdatedAt() { return updatedAt; }
     public String getAadhaarEncrypted() { return aadhaarEncrypted; }
 
@@ -75,5 +78,6 @@ public class StudentProfile {
         this.updatedAt = Instant.now();
     }
     public void setEncryptedAadhaar(String encrypted, String lastFour) { this.aadhaarEncrypted = encrypted; this.aadhaarLastFour = lastFour; }
+    public void setCurrentCgpa(BigDecimal currentCgpa) { this.currentCgpa = currentCgpa; }
 }
 

@@ -95,7 +95,7 @@ class OpportunityManagementIntegrationTest {
                 .andExpect(jsonPath("$.status").value("CLOSED"));
     }
 
-    @Test void rejectsInvalidMoneyCgpaWebsiteAndDuplicateStructuredValues() throws Exception {
+    @Test void rejectsInvalidMoneyCgpaWebsiteAndDuplicateSkillsButIgnoresDuplicateLegacyEligibility() throws Exception {
         OpportunityRequest negative = new OpportunityRequest("Microsoft", "Intern", "Description", null, null, OpportunityMode.REMOTE,
                 2, new BigDecimal("-1"), "INR", LocalDate.now().plusDays(5), null, List.of(), List.of(), List.of(), List.of());
         createExpectingBadRequest(negative, "VALIDATION_FAILED");
@@ -110,7 +110,9 @@ class OpportunityManagementIntegrationTest {
 
         OpportunityRequest duplicateEligibility = request("Intern", "Description", OpportunityMode.REMOTE, List.of(), List.of(),
                 List.of(Branch.COMPUTER_ENGINEERING, Branch.COMPUTER_ENGINEERING), List.of(7, 7));
-        createExpectingBadRequest(duplicateEligibility, "DUPLICATE_ELIGIBLE_BRANCH");
+        mvc.perform(post("/api/v1/admin/opportunities").cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(duplicateEligibility))).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.eligibleBranches.length()").value(1)).andExpect(jsonPath("$.eligibleSemesters.length()").value(1));
 
         OpportunityRequest website = new OpportunityRequest("Microsoft", "Intern", "Description", "javascript:alert(1)", null,
                 OpportunityMode.REMOTE, 2, BigDecimal.ZERO, "INR", LocalDate.now().plusDays(5), null,

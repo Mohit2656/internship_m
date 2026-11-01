@@ -52,21 +52,20 @@ public class AttendanceReviewService {
         var assignment=assignments.findByStudentIdAndActiveTrueForLateAttendanceUpdate(studentId)
                 .filter(a -> a.getMentor().getId().equals(actor.getId())).orElseThrow(AttendanceReviewService::missing);
         AttendanceRecord record=attendance.findForReviewUpdate(id).orElseThrow(AttendanceReviewService::missing);
-        if (record.isAutomaticAbsent() || record.getAttendanceResult()!=AttendanceResult.PRESENT)
-            throw error(HttpStatus.CONFLICT,"ATTENDANCE_NOT_SUBMITTED","Only student-submitted present attendance can be reviewed");
+        if (record.isAutomaticAbsent() || record.getEvidence()==null)
+            throw error(HttpStatus.CONFLICT,"ATTENDANCE_NOT_SUBMITTED","Only student-submitted attendance can be reviewed");
         AttendanceReviewResponse previous=AttendanceReviewResponse.from(record);
         if (request.revision()!=previous.revision())
             throw error(HttpStatus.CONFLICT,"ATTENDANCE_REVIEW_CHANGED","This attendance review changed. Reload before reviewing it");
         if (previous.status()==AttendanceReviewStatus.APPROVED || previous.status()==AttendanceReviewStatus.REJECTED
                 || previous.status()==request.status())
             throw error(HttpStatus.CONFLICT,"INVALID_REVIEW_TRANSITION","This attendance decision cannot be repeated or changed");
-        if (request.status()==AttendanceReviewStatus.APPROVED && !AttendanceReviewResponse.approvalAllowed(record))
-            throw error(HttpStatus.CONFLICT,"ATTENDANCE_VERIFICATION_REQUIRED","Approval requires the original GPS/workplace checks and any required liveness verification to pass. Flag this entry for manual review instead");
         String name=jdbc.queryForList("select name from mentor_profiles where user_id=?",String.class,actor.getId())
                 .stream().findFirst().orElse(actor.getEmail());
         Instant at=clock.instant();
         AttendanceReview review=record.getReview()==null?new AttendanceReview(record):record.getReview();
         review.decide(request.status(),actor.getId(),name,at,reason);
+        record.applyMentorDecision(request.status());
         reviews.saveAndFlush(review);
         jdbc.update("insert into attendance_review_audit(attendance_id,assignment_id,revision,previous_status,status,reviewer_id,reviewer_name,reviewed_at,reason) values (?,?,?,?,?,?,?,?,?)",
                 id,assignment.getId(),review.getRevision(),previous.status().name(),review.getStatus().name(),actor.getId(),name,Timestamp.from(at),reason);

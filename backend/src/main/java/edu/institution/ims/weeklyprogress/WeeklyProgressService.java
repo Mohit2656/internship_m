@@ -82,8 +82,12 @@ public class WeeklyProgressService {
 
     @Transactional
     public Overview ownOverview(UserPrincipal principal) {
+        return ownOverview(principal,null);
+    }
+    @Transactional
+    public Overview ownOverview(UserPrincipal principal,Long internshipId) {
         role(principal, "STUDENT");
-        InternshipDetails internship = internships.findForUpdateByStudentId(principal.id()).orElseThrow(() ->
+        InternshipDetails internship = (internshipId==null?internships.findForUpdateByStudentId(principal.id()):internships.findForUpdateByIdAndStudentId(internshipId,principal.id())).orElseThrow(() ->
                 error(HttpStatus.CONFLICT, "WEEKLY_PROGRESS_NOT_ELIGIBLE", "Complete internship registration to generate weekly records"));
         eligible(internship); synchronize(internship);
         return new Overview(internship.getId(), internship.getCompanyName(), internship.getStartDate(), internship.getEndDate(),

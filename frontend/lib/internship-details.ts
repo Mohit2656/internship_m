@@ -16,7 +16,7 @@ export function internshipWeeks(start: string, end: string): number | null {
 
 export type InternshipDetails = {
   workplace?: RegisteredWorkplace | null;
-  id: number; onboardingId: number; companyName: string; companyType: CompanyType; companyTypeLabel: string;
+  id: number; onboardingId: number; internshipNumber: number; companyName: string; companyType: CompanyType; companyTypeLabel: string;
   otherCompanyType: string | null; companyAddress: string; companyPhone: string; industrySupervisorName: string;
   industrySupervisorDesignation: string; industrySupervisorContact: string; durationMonths: number; startDate: string;
   endDate: string; totalWeeks: number; internshipMode: InternshipMode; internshipModeLabel: string;

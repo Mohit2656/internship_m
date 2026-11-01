@@ -12,7 +12,7 @@ public class StudentWeeklyProgressController {
     private final WeeklyProgressService service;
     public StudentWeeklyProgressController(WeeklyProgressService service) { this.service = service; }
     public record SubmitRequest(@NotBlank @Size(max=3000) String workDescription, @Positive Integer revision) {}
-    @GetMapping public WeeklyProgressService.Overview overview(@AuthenticationPrincipal UserPrincipal principal) { return service.ownOverview(principal); }
+    @GetMapping public WeeklyProgressService.Overview overview(@AuthenticationPrincipal UserPrincipal principal,@RequestParam(required=false) Long internshipId) { return service.ownOverview(principal,internshipId); }
     @PostMapping("/{periodId}") public WeeklyProgressService.Week submit(@AuthenticationPrincipal UserPrincipal principal,
             @PathVariable Long periodId, @Valid @RequestBody SubmitRequest request) {
         return service.submit(principal, periodId, request.revision(), request.workDescription());

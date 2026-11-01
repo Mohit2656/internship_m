@@ -32,16 +32,18 @@ public class StudentAttendanceController {
 
     @PostMapping("/today")
     public ResponseEntity<AttendanceResponse> submitToday(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required=false) Long internshipId,
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(required = false) BigDecimal accuracy,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant locationCapturedAt) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.submitToday(principal, latitude, longitude, accuracy, locationCapturedAt));
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.submitToday(principal,internshipId, latitude, longitude, accuracy, locationCapturedAt));
     }
 
     @PostMapping(value = "/today/physical", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<AttendanceResponse> submitPhysicalToday(
             @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required=false) Long internshipId,
             @RequestPart(value = "photo", required = false) MultipartFile photo,
             @RequestPart(value = "aiEvidence", required = false) @Valid AiVerificationEvidenceRequest aiEvidence,
             @RequestParam(required = false) BigDecimal latitude,
@@ -49,12 +51,13 @@ public class StudentAttendanceController {
             @RequestParam(required = false) BigDecimal accuracy,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant locationCapturedAt) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(physicalService.submitToday(principal, photo, aiEvidence, latitude, longitude, accuracy, locationCapturedAt));
+                .body(physicalService.submitToday(principal,internshipId, photo, aiEvidence, latitude, longitude, accuracy, locationCapturedAt));
     }
 
     @PostMapping(value = "/today/remote", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<AttendanceResponse> submitRemoteToday(
             @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required=false) Long internshipId,
             @RequestPart(value = "photo", required = false) MultipartFile photo,
             @RequestPart(value = "aiEvidence", required = false) @Valid AiVerificationEvidenceRequest aiEvidence,
             @RequestParam(required = false) String dailyWorkSummary,
@@ -63,27 +66,27 @@ public class StudentAttendanceController {
             @RequestParam(required = false) BigDecimal accuracy,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant locationCapturedAt) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(remoteService.submitToday(principal, photo, aiEvidence, dailyWorkSummary, latitude, longitude, accuracy, locationCapturedAt));
+                .body(remoteService.submitToday(principal,internshipId, photo, aiEvidence, dailyWorkSummary, latitude, longitude, accuracy, locationCapturedAt));
     }
 
     @PostMapping("/verification-session")
     public ResponseEntity<AiVerificationSessionResponse> createVerificationSession(
-            @AuthenticationPrincipal UserPrincipal principal) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(aiVerificationService.create(principal));
+            @AuthenticationPrincipal UserPrincipal principal,@RequestParam(required=false) Long internshipId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(aiVerificationService.create(principal,internshipId));
     }
 
     @GetMapping("/today/policy")
-    public AttendancePolicyResponse policy(@AuthenticationPrincipal UserPrincipal principal) {
-        return policyService.today(principal);
+    public AttendancePolicyResponse policy(@AuthenticationPrincipal UserPrincipal principal,@RequestParam(required=false) Long internshipId) {
+        return policyService.today(principal,internshipId);
     }
 
     @GetMapping("/today")
-    public TodayAttendanceResponse today(@AuthenticationPrincipal UserPrincipal principal) {
-        return service.today(principal);
+    public TodayAttendanceResponse today(@AuthenticationPrincipal UserPrincipal principal,@RequestParam(required=false) Long internshipId) {
+        return service.today(principal,internshipId);
     }
 
     @GetMapping
-    public List<AttendanceResponse> history(@AuthenticationPrincipal UserPrincipal principal) {
-        return service.history(principal);
+    public List<AttendanceResponse> history(@AuthenticationPrincipal UserPrincipal principal,@RequestParam(required=false) Long internshipId) {
+        return service.history(principal,internshipId);
     }
 }

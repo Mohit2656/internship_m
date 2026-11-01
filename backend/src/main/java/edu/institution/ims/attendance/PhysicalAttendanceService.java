@@ -51,10 +51,17 @@ public class PhysicalAttendanceService {
     public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
             AiVerificationEvidenceRequest aiEvidence, BigDecimal latitude, BigDecimal longitude,
             BigDecimal accuracyMeters, Instant locationCapturedAt) {
+        return submitToday(principal,null,photo,aiEvidence,latitude,longitude,accuracyMeters,locationCapturedAt);
+    }
+    @Transactional
+    public AttendanceResponse submitToday(UserPrincipal principal,Long internshipId, MultipartFile photo,
+            AiVerificationEvidenceRequest aiEvidence, BigDecimal latitude, BigDecimal longitude,
+            BigDecimal accuracyMeters, Instant locationCapturedAt) {
         ValidatedCameraImage image = imageValidator.validate(photo);
         User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
-        InternshipDetails internship = eligibleInternship(student.getId());
+        InternshipDetails internship = internshipId==null?eligibleInternship(student.getId()):internships.findByIdAndOnboardingStudentId(internshipId,student.getId())
+                .orElseThrow(() -> error(HttpStatus.CONFLICT,"ATTENDANCE_NOT_ELIGIBLE","Selected internship is unavailable"));
         LocalDate today = LocalDate.now(clock);
         requireWithinInternship(internship, today);
         policies.requireSubmissionOpen(student.getId(), today);
@@ -78,6 +85,8 @@ public class PhysicalAttendanceService {
                 decision.status(), AttendanceSubmissionType.PHYSICAL_CAPTURE);
         locationVerification.save(new AttendanceEvidence(record, input, null, decision, aiDecision, serverTime),
                 internship, submitted, locationCapturedAt, true, accuracyMeters);
+        record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
+        attendance.saveAndFlush(record);
         return AttendanceService.response(record);
     }
 

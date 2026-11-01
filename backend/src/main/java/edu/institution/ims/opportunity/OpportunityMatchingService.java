@@ -31,7 +31,7 @@ public class OpportunityMatchingService {
     public record Candidate(Long studentId, String studentName, String uid, Branch branch, int semester,
             double matchScore, String eligibility, List<String> eligibilityReasons,
             List<String> matchedSkills, List<String> missingRequiredSkills, List<String> matchedPreferredSkills,
-            List<String> contextEvidence, boolean resumeAvailable, boolean strongMatch) {}
+            List<String> contextEvidence, boolean resumeAvailable, boolean skillsAvailable, boolean strongMatch) {}
     public record Report(String title, String companyName, String scoringExplanation, double strongMatchThreshold,
             List<Candidate> candidates) {}
     public record Run(Long id, Long opportunityId, String triggerType, String algorithmVersion, Instant createdAt, Report report) {}
@@ -79,6 +79,23 @@ public class OpportunityMatchingService {
         return generate(opportunity,"MANUAL");
     }
 
+    /** Rebuilds current published recommendations after a confirmed student-skill change. */
+    @Transactional
+    public void skillsChanged() {
+        opportunities.findAllCurrentlyAvailable(OpportunityStatus.PUBLISHED,LocalDate.now(clock))
+                .forEach(opportunity -> generate(opportunity,"SKILL_UPDATE"));
+    }
+
+    @Transactional
+    public void notifyCandidate(Long opportunityId,Long studentId) {
+        Opportunity opportunity=opportunities.findById(opportunityId).orElseThrow(() -> missing("Opportunity"));
+        StudentProfile student=studentProfiles.findByUserId(studentId).orElseThrow(() -> missing("Student"));
+        notifications.create(studentId,"opportunity-candidate-contact:"+opportunityId+":"+studentId,
+                "OPPORTUNITY_MATCH","Opportunity recommended by III Cell",
+                "III Cell recommends that you review "+opportunity.getTitle()+" at "+opportunity.getCompanyName()+". This is a recommendation, not company selection.",
+                null,null,"/student/opportunities/"+opportunityId,clock.instant());
+    }
+
     @Transactional(readOnly=true)
     public List<Summary> history(Long opportunityId) {
         opportunities.findById(opportunityId).orElseThrow(() -> missing("Opportunity"));
@@ -101,7 +118,7 @@ public class OpportunityMatchingService {
         StudentProfile profile=studentProfiles.findByUserId(principal.id()).orElse(null);
         if(profile==null) return new Candidate(principal.id(),null,null,null,0,0,"UNKNOWN",List.of("Complete the institutional profile to verify eligibility"),
                 List.of(),opportunitySkills.findAllByOpportunityIdOrderByRequirementTypeAscDisplayNameAsc(opportunityId).stream()
-                    .filter(s -> s.getRequirementType()==OpportunitySkillType.REQUIRED).map(OpportunitySkill::getDisplayName).toList(),List.of(),List.of(),false,false);
+                    .filter(s -> s.getRequirementType()==OpportunitySkillType.REQUIRED).map(OpportunitySkill::getDisplayName).toList(),List.of(),List.of(),false,false,false);
         return evaluate(opportunity,List.of(profile)).get(0);
     }
 
@@ -158,6 +175,7 @@ public class OpportunityMatchingService {
             Long profileId=professional==null?null:professional.getId();
             StudentResume resume=activeResumes.get(profileId);
             ResumeCorrectionService.Values extracted=resume==null?null:values.get(resume.getId());
+            boolean skillsAvailable=extracted!=null;
             Set<String> own=new HashSet<>();
             skills.getOrDefault(profileId,List.of()).stream()
                     .filter(s -> extracted==null || s.getSource()!=StudentSkillSource.AI_EXTRACTED)
@@ -177,11 +195,11 @@ public class OpportunityMatchingService {
             if(opportunity.getMinimumCgpa()!=null) reasons.add("Minimum CGPA cannot be verified from the authoritative student profile");
             String eligibility=ineligible?"INELIGIBLE":opportunity.getMinimumCgpa()!=null?"UNKNOWN":"ELIGIBLE";
             if(reasons.isEmpty()) reasons.add("All configured branch and semester requirements are met; no unverified CGPA restriction");
-            boolean strong="ELIGIBLE".equals(eligibility) && score>=threshold && missing.isEmpty() && !criteria.isEmpty() && (!matched.isEmpty() || !matchedPreferred.isEmpty());
+            boolean strong=skillsAvailable && "ELIGIBLE".equals(eligibility) && score>=threshold && missing.isEmpty() && !criteria.isEmpty() && (!matched.isEmpty() || !matchedPreferred.isEmpty());
             return new Candidate(profile.getUser().getId(),profile.getStudentName(),profile.getUid(),profile.getBranch(),profile.getSemester(),
-                    score,eligibility,List.copyOf(reasons),matched,missing,matchedPreferred,context(extracted),resume!=null,strong);
+                    score,eligibility,List.copyOf(reasons),matched,missing,matchedPreferred,context(extracted),resume!=null,skillsAvailable,strong);
         }).sorted(Comparator.comparingInt((Candidate c) -> "ELIGIBLE".equals(c.eligibility())?0:"UNKNOWN".equals(c.eligibility())?1:2)
-                .thenComparing(Candidate::matchScore,Comparator.reverseOrder()).thenComparing(Candidate::studentName,String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(Candidate::skillsAvailable,Comparator.reverseOrder()).thenComparing(Candidate::matchScore,Comparator.reverseOrder()).thenComparing(Candidate::studentName,String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(Candidate::studentId)).toList();
     }
 

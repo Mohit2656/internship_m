@@ -3,7 +3,7 @@ package edu.institution.ims.internship.dto;
 import java.math.BigDecimal;
 import java.time.*;
 
-public record InternshipDetailsResponse(Long id, Long onboardingId, String companyName, String companyType,
+public record InternshipDetailsResponse(Long id, Long onboardingId, int internshipNumber, String companyName, String companyType,
         String companyTypeLabel, String otherCompanyType, String companyAddress, String companyPhone,
         String industrySupervisorName, String industrySupervisorDesignation, String industrySupervisorContact,
         Integer durationMonths, LocalDate startDate, LocalDate endDate, Integer totalWeeks, String internshipMode,

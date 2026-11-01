@@ -29,11 +29,15 @@ public class AttendancePolicyService {
 
     @Transactional(readOnly = true)
     public AttendancePolicyResponse today(UserPrincipal principal) {
-        InternshipDetails internship = eligibleInternship(principal.id());
+        return today(principal,null);
+    }
+    @Transactional(readOnly = true)
+    public AttendancePolicyResponse today(UserPrincipal principal,Long internshipId) {
+        InternshipDetails internship = eligibleInternship(principal.id(),internshipId);
         LocalDate today = LocalDate.now(clock);
         ResolvedAttendancePolicy policy = resolve(internship, today);
         return new AttendancePolicyResponse(internship.getInternshipMode(), policy.todayWorkMode(),
-                policy.verificationMethod(), attendance.findByStudentIdAndAttendanceDate(principal.id(), today)
+                policy.verificationMethod(), attendance.findByStudentIdAndInternshipIdAndAttendanceDate(principal.id(),internship.getId(), today)
                         .map(record -> !canReplaceAutomaticAbsence(record, principal.id(), today)).orElse(false),
                 policy.configurationReady(), today, locationVerification.maxGpsAccuracyMeters());
     }
@@ -78,7 +82,10 @@ public class AttendancePolicyService {
     }
 
     InternshipDetails eligibleInternship(Long studentId) {
-        InternshipDetails internship = internships.findByOnboardingStudentId(studentId)
+        return eligibleInternship(studentId,null);
+    }
+    InternshipDetails eligibleInternship(Long studentId,Long internshipId) {
+        InternshipDetails internship = (internshipId==null?internships.findByOnboardingStudentId(studentId):internships.findByIdAndOnboardingStudentId(internshipId,studentId))
                 .orElseThrow(() -> error(HttpStatus.CONFLICT, "ATTENDANCE_NOT_ELIGIBLE",
                         "Complete internship registration before submitting attendance"));
         if (internship.getOnboarding().getWorkflowStatus() != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE) {

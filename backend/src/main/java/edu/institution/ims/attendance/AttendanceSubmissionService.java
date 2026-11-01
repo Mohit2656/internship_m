@@ -49,7 +49,7 @@ public class AttendanceSubmissionService {
             audit(record, "AUTO_ABSENT");
             record.replaceAutomaticAbsence(status, type, clock.instant());
         } else {
-            record = new AttendanceRecord(student, internship, date, AttendanceResult.PRESENT,
+            record = new AttendanceRecord(student, internship, date, AttendanceResult.PENDING_MENTOR_REVIEW,
                     status, type, clock.instant());
         }
         record.useLivenessVerification();

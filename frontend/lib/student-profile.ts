@@ -8,7 +8,7 @@ export type StudentProfile = {
   permanentAddress: string; currentAddress: string | null; personalEmail: string; instituteEmail: string; phoneNumber: string;
   guardianName: string; guardianContact: string; emergencyContact: string; bloodGroup: string; maskedAadhaar: string;
   facultyMentorName: string; facultyMentorContact: string; internshipCoordinatorName: string; internshipCoordinatorContact: string;
-  cdcCoordinatorName: string; cdcCoordinatorContact: string; academicYear: string; semester: number; profileStatus: ProfileStatus;
+  cdcCoordinatorName: string; cdcCoordinatorContact: string; academicYear: string; semester: number; currentCgpa: number | null; profileStatus: ProfileStatus;
   createdAt: string; updatedAt: string;
 };
 
@@ -17,19 +17,19 @@ export type ProfilePrefill = {
   semester: number | null; readOnlyFields: Array<keyof ProfileFormData>;
 };
 
-export type ProfileFormData = Omit<StudentProfile, "id" | "branchLabel" | "maskedAadhaar" | "profileStatus" | "createdAt" | "updatedAt" | "semester" | "currentAddress"> & {
-  currentAddress: string; semester: string; aadhaarNumber: string;
+export type ProfileFormData = Omit<StudentProfile, "id" | "branchLabel" | "maskedAadhaar" | "profileStatus" | "createdAt" | "updatedAt" | "semester" | "currentAddress" | "currentCgpa"> & {
+  currentAddress: string; semester: string; currentCgpa: string; aadhaarNumber: string;
 };
 
 export const emptyProfile: ProfileFormData = {
   studentName: "", branch: "", uid: "", rollNumber: "", permanentAddress: "", currentAddress: "", personalEmail: "",
   instituteEmail: "", phoneNumber: "", guardianName: "", guardianContact: "", emergencyContact: "", bloodGroup: "",
   aadhaarNumber: "", facultyMentorName: "", facultyMentorContact: "", internshipCoordinatorName: "",
-  internshipCoordinatorContact: "", cdcCoordinatorName: "", cdcCoordinatorContact: "", academicYear: "", semester: ""
+  internshipCoordinatorContact: "", cdcCoordinatorName: "", cdcCoordinatorContact: "", academicYear: "", semester: "", currentCgpa: ""
 };
 
 export function initialProfileForm(existing?: StudentProfile, institutional?: ProfilePrefill): ProfileFormData {
-  if (existing) return { ...emptyProfile, ...existing, currentAddress: existing.currentAddress ?? "", semester: String(existing.semester), aadhaarNumber: "" };
+  if (existing) return { ...emptyProfile, ...existing, currentAddress: existing.currentAddress ?? "", semester: String(existing.semester), currentCgpa: existing.currentCgpa == null ? "" : String(existing.currentCgpa), aadhaarNumber: "" };
   return { ...emptyProfile, studentName: institutional?.studentName ?? "", branch: institutional?.branch ?? "COMPUTER_ENGINEERING",
     uid: institutional?.uid ?? "", instituteEmail: institutional?.instituteEmail ?? "",
     semester: institutional?.semester == null ? "" : String(institutional.semester) };

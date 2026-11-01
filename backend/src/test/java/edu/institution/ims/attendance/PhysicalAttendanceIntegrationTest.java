@@ -99,12 +99,12 @@ class PhysicalAttendanceIntegrationTest {
         Cookie studentSession = loginCookie(verifiedStudent.getEmail(), "StudentPassword!21");
         mvc.perform(multipart("/api/v1/student/attendance/today/physical")
                         .file(photo()).file(aiEvidence(studentSession, 1, true, true))
-                        .param("latitude","18.5204").param("longitude","73.8567").param("accuracy","0")
+                        .param("latitude","18.5204").param("longitude","73.8567").param("accuracy","0").param("locationCapturedAt", NOW.toString())
                         .param("attendanceDate", "1999-01-01").cookie(studentSession))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.attendanceDate").value(TODAY.toString()))
                 .andExpect(jsonPath("$.serverSubmittedAt").value(NOW.toString()))
-                .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.attendanceResult").value("PENDING_MENTOR_REVIEW"))
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.verificationBasis").value("LIVENESS"))
@@ -156,9 +156,9 @@ class PhysicalAttendanceIntegrationTest {
         mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo())
                         .file(aiEvidence(session, 1, true, true))
                         .param("latitude", "18.520400").param("longitude", "73.856700")
-                        .param("accuracy", "206").cookie(session))
+                        .param("accuracy", "206").param("locationCapturedAt", NOW.toString()).cookie(session))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.attendanceResult").value("PENDING_MENTOR_REVIEW"))
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.evidence.verificationReason").value("EDGE_AI_VERIFIED"))
@@ -171,7 +171,7 @@ class PhysicalAttendanceIntegrationTest {
         mvc.perform(get("/api/v1/mentor/attendance/today")
                         .cookie(loginCookie(mentorA.getEmail(), "MentorPassword!23")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].todayAttendance.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$[0].todayAttendance.attendanceResult").value("PENDING_MENTOR_REVIEW"))
                 .andExpect(jsonPath("$[0].todayAttendance.livenessStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$[0].todayAttendance.evidence.gpsAccuracyMeters").value(206))
                 .andExpect(jsonPath("$[0].todayAttendance.evidence.verificationReason").value("EDGE_AI_VERIFIED"));
@@ -190,9 +190,9 @@ class PhysicalAttendanceIntegrationTest {
         mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo())
                         .file(aiEvidence(session, 1, true, false))
                         .param("latitude", "18.520400").param("longitude", "73.856700")
-                        .param("accuracy", "10").cookie(session))
+                        .param("accuracy", "10").param("locationCapturedAt", NOW.toString()).cookie(session))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.attendanceResult").value("PENDING_MENTOR_REVIEW"))
                 .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("FAILED"))
                 .andExpect(jsonPath("$.evidence.locationCheckPassed").value(true))
@@ -201,7 +201,7 @@ class PhysicalAttendanceIntegrationTest {
     }
 
     @Test
-    void locationsAndApprovalDoNotAffectSuccessfulLivenessOrAttendanceResult() throws Exception {
+    void failedLocationChecksRemainPendingDespiteSuccessfulLiveness() throws Exception {
         saveLocation(outsideStudent, true);
         saveLocation(inaccurateStudent, true);
         saveLocation(noGpsStudent, true);
@@ -217,7 +217,7 @@ class PhysicalAttendanceIntegrationTest {
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("REMOTE_ATTENDANCE_REQUIRED"));
 
         assertThat(attendance.findAll()).allSatisfy(record -> {
-            assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+            assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
             assertThat(record.getVerificationStatus()).isEqualTo(VerificationStatus.VERIFIED);
         });
         mvc.perform(get("/api/v1/mentor/attendance/today")
@@ -231,14 +231,14 @@ class PhysicalAttendanceIntegrationTest {
     }
 
     @Test
-    void onlyAdminCanConfirmAndLocationValidationIsEnforced() throws Exception {
+    void legacyConfirmationIsDisabledAndIiicCannotReviewWorkplaces() throws Exception {
         Cookie studentSession = loginCookie(pendingStudent.getEmail(), "StudentPassword!25");
         Cookie mentorSession = loginCookie(mentorA.getEmail(), "MentorPassword!23");
         mvc.perform(put("/api/v1/student/internship/location").cookie(studentSession).contentType(MediaType.APPLICATION_JSON).content(locationJson("18.5204","73.8567","200"))).andExpect(status().isConflict());
         saveLocation(pendingStudent,false);
         mvc.perform(post("/api/v1/admin/students/{id}/internship/location/confirm",pendingStudent.getId()).cookie(studentSession)).andExpect(status().isForbidden());
         mvc.perform(post("/api/v1/admin/students/{id}/internship/location/confirm",pendingStudent.getId()).cookie(adminSession)).andExpect(status().isConflict());
-        mvc.perform(post("/api/v1/admin/students/{id}/internship/location/review",pendingStudent.getId()).cookie(adminSession).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":1,\"decision\":\"APPROVE\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING"));
+        mvc.perform(post("/api/v1/admin/students/{id}/internship/location/review",pendingStudent.getId()).cookie(adminSession).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":1,\"decision\":\"APPROVE\"}")).andExpect(status().isNotFound());
         mvc.perform(put("/api/v1/admin/students/{id}/internship/location",outsideStudent.getId()).cookie(adminSession).contentType(MediaType.APPLICATION_JSON).content(locationJson("91","73","200"))).andExpect(status().isBadRequest());
     }
 
@@ -291,10 +291,10 @@ class PhysicalAttendanceIntegrationTest {
             .andExpect(status().isBadRequest());
         assertThat(attendance.findAll()).isEmpty();
         mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo()).file(ai)
-                .param("latitude", "18.5204").param("longitude", "73.8567").param("accuracy", "-1").cookie(session))
+                .param("latitude", "18.5204").param("longitude", "73.8567").param("accuracy", "-1").param("locationCapturedAt", NOW.toString()).cookie(session))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.evidence.gpsAccuracyMeters").isEmpty())
             .andExpect(jsonPath("$.evidence.locationVerificationStatus").value("INSUFFICIENT_ACCURACY"))
-            .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+            .andExpect(jsonPath("$.attendanceResult").value("PENDING_MENTOR_REVIEW"))
             .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
         assertThat(jdbc.queryForObject("select location_status from attendance_location_verification_audit", String.class))
             .isEqualTo("INSUFFICIENT_ACCURACY");
@@ -350,7 +350,7 @@ class PhysicalAttendanceIntegrationTest {
                         .param("accuracy", "1").param("verificationStatus", "VERIFIED")
                         .param("livenessStatus", "VERIFIED").cookie(session))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.attendanceResult").value("PENDING_MENTOR_REVIEW"))
                 .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("NOT_PERFORMED"))
                 .andExpect(jsonPath("$.evidence.verificationReason").value("EDGE_AI_EVIDENCE_MISSING"));
@@ -486,9 +486,9 @@ class PhysicalAttendanceIntegrationTest {
         Cookie session = loginCookie(student.getEmail(), password);
         mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo())
                         .file(aiEvidence(session, 1, true, true))
-                        .param("latitude", latitude).param("longitude", longitude).param("accuracy", accuracy)
+                        .param("latitude", latitude).param("longitude", longitude).param("accuracy", accuracy).param("locationCapturedAt", NOW.toString())
                         .param("insideGeofence", "true").cookie(session))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceResult").value("PENDING_MENTOR_REVIEW"))
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.evidence.latitude").value(new BigDecimal(latitude).doubleValue()))
@@ -527,7 +527,7 @@ class PhysicalAttendanceIntegrationTest {
         var internship=internships.findByOnboardingStudentId(student.getId()).orElseThrow();
         var location=new InternshipLocation(internship,COMPANY_LATITUDE,COMPANY_LONGITUDE,new BigDecimal("200"),NOW);
         location.selectedPlace("test-place-"+student.getId(),"Actual test workplace address");
-        if(confirm) { location.review(mentorA,"APPROVE",null,NOW); location.review(admin,"APPROVE",null,NOW); }
+        if(confirm) location.review(mentorA,"APPROVE",null,NOW);
         locations.saveAndFlush(location);
         if(confirm && assignments.findByStudentIdAndActiveTrue(student.getId()).isEmpty()) assignments.saveAndFlush(new MentorStudentAssignment(mentorA,student,admin,NOW));
     }

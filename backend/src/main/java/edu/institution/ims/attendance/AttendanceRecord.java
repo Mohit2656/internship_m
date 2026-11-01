@@ -36,7 +36,7 @@ public class AttendanceRecord {
     private LocalDate attendanceDate;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "attendance_result", nullable = false, length = 20)
+    @Column(name = "attendance_result", nullable = false, length = 30)
     private AttendanceResult attendanceResult;
 
     @Enumerated(EnumType.STRING)
@@ -116,10 +116,18 @@ public class AttendanceRecord {
     void replaceAutomaticAbsence(VerificationStatus status, AttendanceSubmissionType type, Instant submittedAt) {
         if (!isAutomaticAbsent() || evidence != null) throw new IllegalStateException("Only an automatic absence can be replaced");
         automaticAbsentAt = serverSubmittedAt;
-        attendanceResult = AttendanceResult.PRESENT;
+        attendanceResult = AttendanceResult.PENDING_MENTOR_REVIEW;
         verificationStatus = status;
         submissionType = type;
         serverSubmittedAt = submittedAt;
+    }
+    void finalizeSubmission(boolean verificationPassed) {
+        if (isAutomaticAbsent()) throw new IllegalStateException("Automatic absence is not a student submission");
+        attendanceResult = verificationPassed ? AttendanceResult.PRESENT : AttendanceResult.PENDING_MENTOR_REVIEW;
+    }
+    void applyMentorDecision(AttendanceReviewStatus status) {
+        if (status == AttendanceReviewStatus.APPROVED) attendanceResult = AttendanceResult.PRESENT;
+        else if (status == AttendanceReviewStatus.REJECTED) attendanceResult = AttendanceResult.ABSENT;
     }
 
     void recordLatePermission(User authorizedBy, Instant authorizedAt) {

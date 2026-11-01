@@ -12,7 +12,10 @@ public record AttendanceReviewResponse(AttendanceReviewStatus status, int revisi
                     review.getReviewerName(), review.getReviewedAt(), review.getReason(), approvalAllowed(record));
     }
     public static boolean approvalAllowed(AttendanceRecord record) {
-        if (record.isAutomaticAbsent() || record.getAttendanceResult() != AttendanceResult.PRESENT || record.getEvidence() == null) return false;
+        return !record.isAutomaticAbsent() && record.getEvidence() != null;
+    }
+    public static boolean submissionVerificationPassed(AttendanceRecord record) {
+        if (record.getEvidence() == null) return false;
         var gps = record.getEvidence().getLocationVerificationStatus();
         if (gps != LocationVerificationStatus.VERIFIED && gps != LocationVerificationStatus.NOT_APPLICABLE) return false;
         return record.getSubmissionType() == AttendanceSubmissionType.BASIC || record.getLivenessStatus() == LivenessStatus.VERIFIED;

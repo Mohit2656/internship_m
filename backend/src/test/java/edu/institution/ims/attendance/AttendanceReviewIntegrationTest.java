@@ -94,25 +94,27 @@ class AttendanceReviewIntegrationTest {
         decide(record,otherMentor,"APPROVED",0,null).andExpect(status().isOk());
     }
 
-    @Test void gpsFailuresAndMissingWorkplaceApprovalCannotBeOverriddenByMentorApproval() throws Exception {
+    @Test void gpsFailuresRemainVisibleAndAssignedMentorCanResolvePendingSubmissionAsPresent() throws Exception {
         for (LocationVerificationStatus status : List.of(LocationVerificationStatus.WORKPLACE_NOT_APPROVED,
                 LocationVerificationStatus.OUTSIDE_RADIUS,LocationVerificationStatus.INSUFFICIENT_ACCURACY,
                 LocationVerificationStatus.STALE_LOCATION,LocationVerificationStatus.LOCATION_UNAVAILABLE)) {
             var owner=account(Role.STUDENT); var details=internship(owner);
             assignments.saveAndFlush(new MentorStudentAssignment(mentor,owner,admin,clock.instant()));
             var record=record(owner,details,status,AttendanceSubmissionType.BASIC);
-            decide(record,mentor,"APPROVED",0,null).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_VERIFICATION_REQUIRED"));
+            assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
+            decide(record,mentor,"APPROVED",0,null).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.attendanceResult").value("PRESENT"));
             assertThat(attendance.findById(record.getId()).orElseThrow().getEvidence().getLocationVerificationStatus()).isEqualTo(status);
         }
-        assertThat(jdbc.queryForObject("select count(*) from attendance_reviews",Long.class)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from attendance_reviews",Long.class)).isEqualTo(5);
     }
 
-    @Test void captureAttendanceRequiresExistingLivenessVerificationEvenWhenGpsPassed() throws Exception {
+    @Test void failedCaptureVerificationRequiresMentorDecisionAndEvidenceRemainsVisible() throws Exception {
         var record=record(student,internship,LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.PHYSICAL_CAPTURE);
-        decide(record,mentor,"APPROVED",0,null).andExpect(status().isConflict());
-        decide(record,mentor,"MANUAL_REVIEW",0,"Please discuss the missing liveness verification.").andExpect(status().isOk());
-        assertThat(jdbc.queryForObject("select message from student_notifications where student_user_id=? and notification_type='ATTENDANCE_MANUAL_REVIEW'",String.class,student.getId()))
-                .contains("Contact your mentor","original submission remains available").doesNotContain("resubmit");
+        assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
+        decide(record,mentor,"REJECTED",0,"Required liveness verification is missing.").andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendanceResult").value("ABSENT"));
+        assertThat(attendance.findById(record.getId()).orElseThrow().getEvidence().getLocationVerificationStatus()).isEqualTo(LocationVerificationStatus.VERIFIED);
     }
 
     @Test void manualReviewCanBeResolvedButStaleAndRepeatedDecisionsCreateNoExtraEvents() throws Exception {
@@ -187,7 +189,8 @@ class AttendanceReviewIntegrationTest {
         return internships.saveAndFlush(details);
     }
     private AttendanceRecord record(User owner,InternshipDetails details,LocationVerificationStatus gps,AttendanceSubmissionType type) {
-        var record=attendance.saveAndFlush(new AttendanceRecord(owner,details,LocalDate.now(clock),AttendanceResult.PRESENT,VerificationStatus.UNVERIFIED,type,clock.instant()));
+        var initial=gps==LocationVerificationStatus.VERIFIED && type==AttendanceSubmissionType.BASIC?AttendanceResult.PRESENT:AttendanceResult.PENDING_MENTOR_REVIEW;
+        var record=attendance.saveAndFlush(new AttendanceRecord(owner,details,LocalDate.now(clock),initial,VerificationStatus.UNVERIFIED,type,clock.instant()));
         var captured=new AttendanceEvidence(record,SubmissionLocation.require(new BigDecimal("18.52"),new BigDecimal("73.85"),BigDecimal.TEN),clock.instant());
         captured.recordLocationVerification(null,new LocationVerificationDecision(gps,BigDecimal.ONE,gps==LocationVerificationStatus.VERIFIED),clock.instant());
         evidence.saveAndFlush(captured); return record;

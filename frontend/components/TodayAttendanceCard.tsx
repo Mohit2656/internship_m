@@ -8,8 +8,11 @@ import { challengeLabel, EdgeAiAnalyzer, EdgeAiFrameState, EDGE_AI_MODEL_VERSION
 import { AttendanceLocations, validSubmissionCoordinates } from "@/components/AttendanceLocations";
 import { LocationVerificationResult } from "@/components/LocationVerificationResult";
 import { captureAttendanceLocation, accuracyDescription, usableAccuracy, type AttendanceLocationSample } from "@/lib/attendance-location";
+import type { InternshipDetails } from "@/lib/internship-details";
 
 export function TodayAttendanceCard() {
+  const [internships,setInternships]=useState<InternshipDetails[]>([]);
+  const [internshipId,setInternshipId]=useState<number|null>(null);
   const [today, setToday] = useState<TodayAttendance | null>(null);
   const [policy, setPolicy] = useState<AttendancePolicy | null>(null);
   const [schedule, setSchedule] = useState<HybridSchedule | null>(null);
@@ -37,6 +40,7 @@ export function TodayAttendanceCard() {
   const statusVersionRef = useRef(0);
   const locationCaptureRef = useRef<{ cancel: () => void } | null>(null);
   const [windowClosed, setWindowClosed] = useState(false);
+  useEffect(()=>{api.get<InternshipDetails[]>("/student/internship/all").then(r=>{setInternships(r.data);setInternshipId(current=>current??r.data[0]?.id??null)}).catch(()=>{})},[]);
 
   useEffect(() => {
     if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); stopCamera(); setLocating(false); setFlowOpen(false); return; }
@@ -58,8 +62,8 @@ export function TodayAttendanceCard() {
     function refreshStatus(initial = false) {
       const version = statusVersionRef.current;
       return Promise.all([
-        api.get<TodayAttendance>("/student/attendance/today"),
-        api.get<AttendancePolicy>("/student/attendance/today/policy")
+        api.get<TodayAttendance>("/student/attendance/today",{params:{internshipId:internshipId??undefined}}),
+        api.get<AttendancePolicy>("/student/attendance/today/policy",{params:{internshipId:internshipId??undefined}})
       ]).then(([attendanceResponse, policyResponse]) => {
         if (cancelled || version !== statusVersionRef.current) return;
         setToday(attendanceResponse.data); setPolicy(policyResponse.data);
@@ -84,7 +88,7 @@ export function TodayAttendanceCard() {
     };
     // The cleanup intentionally owns camera, animation-frame, model and timer lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [internshipId]);
 
   useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
 
@@ -125,7 +129,7 @@ export function TodayAttendanceCard() {
       return;
     }
     try {
-      const sessionResponse = await api.post<AiVerificationSession>("/student/attendance/verification-session");
+      const sessionResponse = await api.post<AiVerificationSession>("/student/attendance/verification-session",null,{params:{internshipId:internshipId??undefined}});
       setAiSession(sessionResponse.data);
       setCameraStatus("Requesting camera permission…");
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -230,7 +234,7 @@ export function TodayAttendanceCard() {
     }
     setSubmitting(true); setError("");
     try {
-      const { data } = await api.post<Attendance>("/student/attendance/today", null, { params: { latitude: submissionLocation.latitude, longitude: submissionLocation.longitude, accuracy: Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? submissionLocation.accuracy : undefined, ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {}) } });
+      const { data } = await api.post<Attendance>("/student/attendance/today", null, { params: { internshipId:internshipId??undefined, latitude: submissionLocation.latitude, longitude: submissionLocation.longitude, accuracy: Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? submissionLocation.accuracy : undefined, ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {}) } });
       statusVersionRef.current += 1;
       setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
       stopCamera(); setFlowOpen(false);
@@ -250,6 +254,7 @@ export function TodayAttendanceCard() {
     form.append("photo", photo, "attendance-capture.jpg");
     appendAiEvidence(form);
     appendSubmissionLocation(form);
+    if(internshipId) form.append("internshipId",String(internshipId));
     try {
       const { data } = await api.post<Attendance>("/student/attendance/today/physical", form,
         { headers: { "Content-Type": "multipart/form-data" } });
@@ -276,6 +281,7 @@ export function TodayAttendanceCard() {
     appendAiEvidence(form);
     appendSubmissionLocation(form);
     form.append("dailyWorkSummary", summary);
+    if(internshipId) form.append("internshipId",String(internshipId));
     try {
       const { data } = await api.post<Attendance>("/student/attendance/today/remote", form,
         { headers: { "Content-Type": "multipart/form-data" } });
@@ -297,6 +303,7 @@ export function TodayAttendanceCard() {
   const locationCaptureControl = <div className="mt-4 text-sm text-slate-600"><button data-button-variant="text" type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="hover:underline">{locating ? "Capturing submission location..." : poorAccuracy ? "Retry GPS capture" : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance.{!remote && typeof policy?.maxGpsAccuracyMeters === "number" && ` Required GPS accuracy: ${policy.maxGpsAccuracyMeters} m or better.`}</p>{locationNotice && <p role={poorAccuracy ? "alert" : "status"} className={`mt-2 ${poorAccuracy ? "text-amber-800" : ""}`}>{locationNotice}</p>}</div>;
   return (
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-7 lg:col-span-2">
+      {internships.length>1&&<label className="mb-5 block text-sm font-semibold">Attendance internship<select className="input mt-2" value={internshipId??""} onChange={e=>{setInternshipId(Number(e.target.value));setToday(null);setPolicy(null);setLoading(true)}}>{internships.map(i=><option key={i.id} value={i.id}>Internship {i.internshipNumber} — {i.companyName}</option>)}</select></label>}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Today&apos;s Attendance</p><h2 className="mt-3 text-xl font-bold">{loading ? "Checking attendance…" : attendance ? attendanceLabel(attendance) : "Not submitted"}</h2></div>
         {attendance && attendance.attendanceResult === "PRESENT" && <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${attendance.livenessStatus === "VERIFIED" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{livenessLabel(attendance.livenessStatus)}</span>}

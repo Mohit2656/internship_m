@@ -11,7 +11,7 @@ public class SkillNormalizer {
     private static final Pattern HAS_TEXT = Pattern.compile(".*[\\p{L}\\p{N}].*");
     private static final Map<String, String> CANONICAL = Map.ofEntries(
             Map.entry("java", "Java"), Map.entry("spring boot", "Spring Boot"), Map.entry("postgresql", "PostgreSQL"),
-            Map.entry("mysql", "MySQL"), Map.entry("javascript", "JavaScript"), Map.entry("typescript", "TypeScript"),
+            Map.entry("mysql", "MySQL"), Map.entry("js", "JavaScript"), Map.entry("javascript", "JavaScript"), Map.entry("typescript", "TypeScript"),
             Map.entry("git hub", "GitHub"), Map.entry("github", "GitHub"), Map.entry("node.js", "Node.js"),
             Map.entry("html", "HTML"), Map.entry("css", "CSS"), Map.entry("html/css", "HTML/CSS"),
             Map.entry("docker", "Docker"), Map.entry("kubernetes", "Kubernetes"), Map.entry("aws", "AWS"),

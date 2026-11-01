@@ -81,6 +81,25 @@ public class InternshipLocationService {
         locations.saveAndFlush(location);
     }
 
+    /**
+     * Enforces the permanent student coordinate lock for a revision that has been
+     * approved by an assigned mentor. The caller must hold the workflow student lock.
+     * Returns true when location metadata must also remain untouched by the student.
+     */
+    @Transactional
+    public boolean validateStudentWorkplaceUpdate(InternshipDetails internship,
+            edu.institution.ims.internship.dto.RegisteredWorkplaceRequest place) {
+        var existing = locations.findByInternshipId(internship.getId());
+        if (existing.isEmpty() || !mentorCoordinatesLocked(existing.get())) return false;
+        var current = existing.get();
+        if (place != null && (current.getLatitude().compareTo(normalizeLatitude(place.latitude())) != 0
+                || current.getLongitude().compareTo(normalizeLongitude(place.longitude())) != 0)) {
+            throw error(HttpStatus.CONFLICT, "WORKPLACE_COORDINATES_LOCKED",
+                    "Location approved by mentor — coordinates locked. Ask the III Cell to use the audited correction workflow if the workplace is wrong.");
+        }
+        return true;
+    }
+
     /** Company edits cannot silently retain approval of a different workplace. */
     @Transactional
     public void invalidateForCompanyChange(InternshipDetails internship, boolean addressChanged,
@@ -99,9 +118,14 @@ public class InternshipLocationService {
 
     @Transactional(readOnly=true)
     public InternshipLocationResponse getForMentor(Long studentId, UserPrincipal principal) {
+        return getForMentor(studentId,null,principal);
+    }
+    @Transactional(readOnly=true)
+    public InternshipLocationResponse getForMentor(Long studentId,Long internshipId, UserPrincipal principal) {
         if (!"MENTOR".equals(principal.role()) || assignments.findByStudentIdAndActiveTrue(studentId).filter(a -> a.getMentor().getId().equals(principal.id())).isEmpty())
             throw error(HttpStatus.NOT_FOUND,"INTERNSHIP_LOCATION_NOT_FOUND","Workplace was not found in your assigned scope");
-        return getForAdmin(studentId);
+        var internship=ownInternship(studentId,internshipId);
+        return locations.findByInternshipId(internship.getId()).map(InternshipLocationService::response).orElseThrow(InternshipLocationService::notFound);
     }
 
     @Transactional
@@ -137,24 +161,36 @@ public class InternshipLocationService {
     @Transactional(readOnly=true)
     public boolean fullyApproved(InternshipLocation location) {
         if(location!=null && location.getId()!=null) location=locations.findById(location.getId()).orElse(null);
-        if(location==null || !location.dualApproved()) return false;
+        if(location==null || !location.mentorApproved()) return false;
         var approvingMentor=location.getMentorReviewer().getId();
         return assignments.findByStudentIdAndActiveTrue(location.getInternship().getOnboarding().getStudent().getId()).filter(a -> a.getMentor().getId().equals(approvingMentor)).isPresent();
     }
 
     @Transactional
     public InternshipLocationResponse review(Long studentId,UserPrincipal principal,WorkplaceReview request) {
+        return review(studentId,null,principal,request);
+    }
+    @Transactional
+    public InternshipLocationResponse review(Long studentId,Long internshipId,UserPrincipal principal,WorkplaceReview request) {
         requireActiveStudent(studentId,principal);
         var actor=users.findById(principal.id()).filter(User::isActive).orElseThrow(() -> error(HttpStatus.FORBIDDEN,"REVIEWER_REQUIRED","An active reviewer is required"));
-        if(actor.getRole()==Role.MENTOR) getForMentor(studentId,principal);
-        else if(actor.getRole()!=Role.ADMIN) throw error(HttpStatus.FORBIDDEN,"REVIEWER_REQUIRED","Mentor or III Cell role is required");
-        var location=locations.findByInternshipId(ownInternship(studentId).getId()).orElseThrow(InternshipLocationService::notFound);
+        if(actor.getRole()==Role.MENTOR) getForMentor(studentId,internshipId,principal);
+        else throw error(HttpStatus.FORBIDDEN,"MENTOR_REVIEW_REQUIRED","Only the student's assigned mentor may approve or reject workplace coordinates");
+        var location=locations.findByInternshipId(ownInternship(studentId,internshipId).getId()).orElseThrow(InternshipLocationService::notFound);
         if(location.getRevision()!=request.revision()) throw error(HttpStatus.CONFLICT,"WORKPLACE_REVISION_CHANGED","Refresh the changed workplace before reviewing");
         if(location.getWorkplaceAddress()==null) throw error(HttpStatus.CONFLICT,"MAP_REGISTRATION_REQUIRED","Register the actual workplace on the map before approval");
+        if (actor.getRole() == Role.MENTOR && mentorCoordinatesLocked(location)) {
+            if (request.decision() == WorkplaceReview.Decision.APPROVE
+                    && location.getMentorReviewer() != null
+                    && location.getMentorReviewer().getId().equals(actor.getId())) return response(location);
+            if (request.decision() == WorkplaceReview.Decision.REJECT)
+                throw error(HttpStatus.CONFLICT, "WORKPLACE_COORDINATES_LOCKED",
+                        "This workplace revision was already approved by a mentor. The III Cell must use the audited correction workflow to change it.");
+        }
         if(request.decision()==WorkplaceReview.Decision.REJECT && (request.remarks()==null || request.remarks().strip().length()<5)) throw error(HttpStatus.BAD_REQUEST,"REJECTION_REASON_REQUIRED","Provide a rejection reason of at least five characters");
         location.review(actor,request.decision().name(),request.remarks(),clock.instant());locations.saveAndFlush(location);
         jdbc.update("insert into workplace_review_audit(location_id,revision,reviewer_id,reviewer_role,decision,reviewed_at,remarks,latitude,longitude,radius_meters,place_id,workplace_address) values (?,?,?,?,?,?,?,?,?,?,?,?)",location.getId(),location.getRevision(),actor.getId(),actor.getRole().name(),request.decision().name(),java.sql.Timestamp.from(clock.instant()),request.remarks(),location.getLatitude(),location.getLongitude(),location.getGeofenceRadiusMeters(),location.getPlaceId(),location.getWorkplaceAddress());
-        if (request.decision() == WorkplaceReview.Decision.APPROVE) notifications.internshipApproved(location, actor, fullyApproved(location));
+        if (request.decision() == WorkplaceReview.Decision.APPROVE) notifications.workplaceApprovedByMentor(location, actor);
         else notifications.workplaceRejected(location,actor,request.remarks());
         return response(location);
     }
@@ -166,7 +202,10 @@ public class InternshipLocationService {
     }
 
     private InternshipDetails ownInternship(Long studentId) {
-        return internships.findByOnboardingStudentId(studentId)
+        return ownInternship(studentId,null);
+    }
+    private InternshipDetails ownInternship(Long studentId,Long internshipId) {
+        return (internshipId==null?internships.findByOnboardingStudentId(studentId):internships.findByIdAndOnboardingStudentId(internshipId,studentId))
                 .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "INTERNSHIP_DETAILS_NOT_FOUND",
                         "Internship details were not found"));
     }
@@ -175,11 +214,35 @@ public class InternshipLocationService {
         return request.geofenceRadiusMeters() == null ? defaultRadius : request.geofenceRadiusMeters();
     }
 
+    private boolean mentorCoordinatesLocked(InternshipLocation location) {
+        if (location.currentMentorApprovalRecorded()) return true;
+        if (location.getId() == null) return false;
+        Integer approvals = jdbc.queryForObject("select count(*) from workplace_review_audit where location_id=? and revision=? and reviewer_role='MENTOR' and decision='APPROVE'",
+                Integer.class, location.getId(), location.getRevision());
+        return approvals != null && approvals > 0;
+    }
+
+    private static BigDecimal normalizeLatitude(BigDecimal value) {
+        return value.setScale(6, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal normalizeLongitude(BigDecimal value) {
+        return value.setScale(6, java.math.RoundingMode.HALF_UP);
+    }
+
     private InternshipLocationResponse response(InternshipLocation location) {
         return new InternshipLocationResponse(location.getId(), location.getInternship().getId(),
                 location.getLatitude(), location.getLongitude(), location.getGeofenceRadiusMeters(),
-                location.getStatus()==InternshipLocationStatus.APPROVED && !fullyApproved(location) ? InternshipLocationStatus.PENDING : location.getStatus(), location.getCreatedAt(), location.getUpdatedAt(), location.getConfirmedAt(),
-                location.getConfirmedBy() == null ? null : location.getConfirmedBy().getId(), location.getPlaceId(), location.getWorkplaceAddress(), location.getWorkplaceName(), location.getInternship().getCompanyName(), location.getRevision(),location.getMentorDecision(),location.getMentorReviewer()==null?null:location.getMentorReviewer().getId(),location.getMentorReviewedAt(),location.getMentorRemarks(),location.getIiicDecision(),location.getIiicRemarks());
+                effectiveStatus(location), location.getCreatedAt(), location.getUpdatedAt(), location.getConfirmedAt(),
+                location.getConfirmedBy() == null ? null : location.getConfirmedBy().getId(), location.getPlaceId(), location.getWorkplaceAddress(), location.getWorkplaceName(), location.getInternship().getCompanyName(), location.getRevision(),location.getMentorDecision(),location.getMentorReviewer()==null?null:location.getMentorReviewer().getId(),location.getMentorReviewedAt(),location.getMentorRemarks(),location.getIiicDecision(),location.getIiicRemarks(),mentorCoordinatesLocked(location));
+    }
+
+    private InternshipLocationStatus effectiveStatus(InternshipLocation location) {
+        if (location.getStatus() == InternshipLocationStatus.APPROVED && !fullyApproved(location))
+            return InternshipLocationStatus.PENDING_MENTOR_APPROVAL;
+        if (location.getStatus() == InternshipLocationStatus.PENDING)
+            return InternshipLocationStatus.PENDING_MENTOR_APPROVAL;
+        return location.getStatus();
     }
 
     private static AttendanceException notFound() {

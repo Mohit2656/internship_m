@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
+import edu.institution.ims.opportunity.OpportunityMatchingService;
 
 @Service
 public class StudentSkillService {
@@ -16,12 +17,13 @@ public class StudentSkillService {
     private final StudentSkillSuggestionRepository suggestions;
     private final UserRepository users;
     private final SkillNormalizer normalizer;
+    private final OpportunityMatchingService matching;
 
     public StudentSkillService(StudentProfessionalProfileRepository profiles, StudentResumeRepository resumes,
             ResumeAnalysisRepository analyses, StudentSkillRepository skills, StudentSkillSuggestionRepository suggestions,
-            UserRepository users, SkillNormalizer normalizer) {
+            UserRepository users, SkillNormalizer normalizer, OpportunityMatchingService matching) {
         this.profiles = profiles; this.resumes = resumes; this.analyses = analyses; this.skills = skills;
-        this.suggestions = suggestions; this.users = users; this.normalizer = normalizer;
+        this.suggestions = suggestions; this.users = users; this.normalizer = normalizer; this.matching=matching;
     }
 
     @Transactional(readOnly = true)
@@ -44,6 +46,7 @@ public class StudentSkillService {
         NormalizedSkill value = normalizer.normalize(request.name());
         ensureUnique(profile.getId(), value.normalizedName(), null);
         skills.saveAndFlush(new StudentSkill(profile, value, StudentSkillSource.STUDENT_ADDED, null));
+        matching.skillsChanged();
         return response(profile);
     }
 
@@ -54,6 +57,7 @@ public class StudentSkillService {
         ensureUnique(skill.getProfessionalProfile().getId(), value.normalizedName(), skill.getId());
         skill.rename(value);
         skills.saveAndFlush(skill);
+        matching.skillsChanged();
         return response(skill.getProfessionalProfile());
     }
 
@@ -62,6 +66,7 @@ public class StudentSkillService {
         StudentSkill skill = ownActiveSkill(principal.id(), skillId);
         skill.deactivate();
         skills.saveAndFlush(skill);
+        matching.skillsChanged();
         return response(skill.getProfessionalProfile());
     }
 
@@ -70,7 +75,7 @@ public class StudentSkillService {
         StudentSkillSuggestion suggestion = ownCurrentSuggestion(principal.id(), suggestionId);
         if (suggestion.getReviewStatus() == SkillReviewStatus.REJECTED)
             throw error(HttpStatus.CONFLICT, "SUGGESTION_ALREADY_REJECTED", "This suggestion has already been removed");
-        if (suggestion.getReviewStatus() == SkillReviewStatus.PENDING) confirm(suggestion);
+        if (suggestion.getReviewStatus() == SkillReviewStatus.PENDING) { confirm(suggestion); matching.skillsChanged(); }
         return response(suggestion.getProfessionalProfile());
     }
 
@@ -97,6 +102,7 @@ public class StudentSkillService {
             pending.forEach(this::confirm);
             suggestions.saveAll(pending);
             suggestions.flush();
+            if(!pending.isEmpty()) matching.skillsChanged();
         }
         return response(profile);
     }

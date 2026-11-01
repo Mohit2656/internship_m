@@ -12,7 +12,11 @@ import java.util.ArrayList;
 @Service
 public class StudentProfileService {
     private final StudentProfileRepository profiles; private final UserRepository users; private final AadhaarEncryptionService encryption;
-    public StudentProfileService(StudentProfileRepository profiles, UserRepository users, AadhaarEncryptionService encryption) { this.profiles = profiles; this.users = users; this.encryption = encryption; }
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    public StudentProfileService(StudentProfileRepository profiles, UserRepository users, AadhaarEncryptionService encryption,
+            org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.profiles = profiles; this.users = users; this.encryption = encryption; this.jdbc = jdbc;
+    }
 
     @Transactional(readOnly = true) public StudentProfileResponse getOwn(UserPrincipal principal) {
         return response(profiles.findByUserId(principal.id()).orElseThrow(ProfileNotFoundException::new));
@@ -48,6 +52,8 @@ public class StudentProfileService {
         return save(profile);
     }
     @Transactional public StudentProfileResponse updateOwn(UserPrincipal principal, StudentProfileRequest request) {
+        if (!WorkflowUserLocks.student(jdbc, principal.id(), true))
+            throw new ProfileConflictException("STUDENT_ACCOUNT_INACTIVE", "Deactivated students cannot change their profile");
         StudentProfile profile = profiles.findByUserId(principal.id()).orElseThrow(ProfileNotFoundException::new);
         StudentAccount account = profile.getUser().getStudentAccount();
         String studentName = account != null && hasValue(account.getStudentName()) ? profile.getStudentName() : clean(request.studentName());
@@ -77,6 +83,7 @@ public class StudentProfileService {
                 clean(r.emergencyContact()), r.bloodGroup(), clean(r.facultyMentorName()), clean(r.facultyMentorContact()),
                 clean(r.internshipCoordinatorName()), clean(r.internshipCoordinatorContact()), clean(r.cdcCoordinatorName()),
                 clean(r.cdcCoordinatorContact()), r.academicYear(), semester);
+        p.setCurrentCgpa(r.currentCgpa());
     }
     private void protectAadhaar(StudentProfile p, String aadhaar) { p.setEncryptedAadhaar(encryption.encrypt(aadhaar), aadhaar.substring(8)); }
     private static String authoritativeUid(User user, String submittedUid) {
@@ -93,6 +100,6 @@ public class StudentProfileService {
                 p.getPermanentAddress(), p.getCurrentAddress(), p.getPersonalEmail(), p.getInstituteEmail(), p.getPhoneNumber(), p.getGuardianName(),
                 p.getGuardianContact(), p.getEmergencyContact(), p.getBloodGroup(), "XXXX XXXX " + p.getAadhaarLastFour(), p.getFacultyMentorName(),
                 p.getFacultyMentorContact(), p.getInternshipCoordinatorName(), p.getInternshipCoordinatorContact(), p.getCdcCoordinatorName(),
-                p.getCdcCoordinatorContact(), p.getAcademicYear(), p.getSemester(), ProfileStatus.COMPLETE, p.getCreatedAt(), p.getUpdatedAt());
+                p.getCdcCoordinatorContact(), p.getAcademicYear(), p.getSemester(), p.getCurrentCgpa(), ProfileStatus.COMPLETE, p.getCreatedAt(), p.getUpdatedAt());
     }
 }

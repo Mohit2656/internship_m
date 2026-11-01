@@ -29,7 +29,6 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
   var mentor=student.getId().equals(studentA.getId()) ? mentorA : mentorB;
   var location=locations.findByInternshipId(internships.findByOnboardingStudentId(student.getId()).orElseThrow().getId()).orElseThrow();
   locationService.review(student.getId(),UserPrincipal.from(mentor),new WorkplaceReview(location.getRevision(),WorkplaceReview.Decision.APPROVE,null));
-  locationService.review(student.getId(),UserPrincipal.from(admin),new WorkplaceReview(location.getRevision(),WorkplaceReview.Decision.APPROVE,null));
  }
  long submitPhoto(User u,String password) throws Exception {
   var result=mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(new MockMultipartFile("photo","test.jpg","image/jpeg",ProgressPhotoValidatorTest.fixture(true,true,21))).file(new MockMultipartFile("workDescription","","text/plain","GPS comparison test".getBytes())).cookie(login(u,password))).andExpect(status().isCreated()).andReturn();
@@ -93,7 +92,7 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
   var correction=new WorkplaceCorrection(new RegisteredWorkplaceRequest("test-corrected","Corrected test address",new BigDecimal("19.076"),new BigDecimal("72.8777"),"Corrected branch"),new BigDecimal("150"),"Incorrect branch selected");
   for(var user:new User[]{mentorA,studentA}) mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/correction").cookie(login(user,user==mentorA?"MentorPassword!23":"StudentPassword!23")).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(correction))).andExpect(status().isForbidden());
   mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content("{\"latitude\":19.076,\"longitude\":72.8777,\"geofenceRadiusMeters\":150}")).andExpect(status().isConflict());
-  mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/correction").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(correction))).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING"));
+  mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/correction").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(correction))).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING_MENTOR_APPROVAL"));
   var original=reports.findById(id).orElseThrow();assertThat(original.getWorkplaceLatitude()).isEqualByComparingTo("21.125");assertThat(original.getWorkplaceVerificationStatus()).isEqualTo("WITHIN_RADIUS");
   assertThat(jdbc.queryForObject("select count(*) from workplace_correction_audit",Integer.class)).isEqualTo(1);
  }
@@ -123,6 +122,6 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
  @Test void assignedMentorOnlyCanReadWorkplaceAndRadiusChangesRequireReconfirmation() throws Exception {
   register(studentA,"21.125","79.0875","Branch A");approve(studentA);
   mvc.perform(get("/api/v1/mentor/students/"+studentA.getId()+"/internship/location").cookie(login(mentorB,"MentorPassword!24"))).andExpect(status().isNotFound());
-  mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/radius").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content("{\"radiusMeters\":300}")).andExpect(status().isOk()).andExpect(jsonPath("$.geofenceRadiusMeters").value(300)).andExpect(jsonPath("$.workplaceName").value("Branch A")).andExpect(jsonPath("$.status").value("PENDING"));
+  mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/radius").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content("{\"radiusMeters\":300}")).andExpect(status().isOk()).andExpect(jsonPath("$.geofenceRadiusMeters").value(300)).andExpect(jsonPath("$.workplaceName").value("Branch A")).andExpect(jsonPath("$.status").value("PENDING_MENTOR_APPROVAL"));
  }
 }

@@ -71,9 +71,7 @@ export default function ProfessionalProfilePage() {
       const { data } = await api.post<ProfessionalProfile>("/student/resume", body,
         { headers: { "Content-Type": "multipart/form-data" } });
       setProfile(data);
-      setAnalysis(data.resume ? notParsedAnalysis(data.resume.id) : null);
-      setSkillRefreshKey(value => value + 1);
-      setNotice(replacing ? "Resume re-uploaded securely. Analyze the new version when ready." : "Resume uploaded securely.");
+      if(data.resume){setAnalysis({...notParsedAnalysis(data.resume.id),status:"PENDING"});setAnalysisLoading(true);try{const analyzed=await api.post<ResumeAnalysis>("/student/resume/analysis");setAnalysis(analyzed.data);setSkillRefreshKey(value=>value+1);setNotice(replacing?"Resume updated and skills extracted for your review.":"Resume uploaded and skills extracted for your review.")}catch(cause){setAnalysis({...notParsedAnalysis(data.resume.id),status:"FAILED"});setError(resumeError(cause,"Resume uploaded, but skills could not be extracted. Retry analysis when ready."))}finally{setAnalysisLoading(false)}}
     } catch (cause) {
       setError(resumeError(cause, "Your resume could not be uploaded."));
     } finally { setBusy(""); }

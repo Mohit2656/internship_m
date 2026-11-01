@@ -39,8 +39,12 @@ public class AiVerificationService {
 
     @Transactional
     public AiVerificationSessionResponse create(UserPrincipal principal) {
+        return create(principal,null);
+    }
+    @Transactional
+    public AiVerificationSessionResponse create(UserPrincipal principal,Long internshipId) {
         User student = student(principal.id());
-        InternshipDetails internship = policies.eligibleInternship(student.getId());
+        InternshipDetails internship = policies.eligibleInternship(student.getId(),internshipId);
         LocalDate today = LocalDate.now(clock);
         requireWithinInternship(internship, today);
         policies.requireSubmissionOpen(student.getId(), today);

@@ -29,14 +29,19 @@ class InternshipDetailsIntegrationTest {
     @Autowired edu.institution.ims.attendance.InternshipLocationRepository locations;
     @Autowired edu.institution.ims.professionalprofile.StudentResumeRepository resumes;
     @Autowired edu.institution.ims.professionalprofile.StudentProfessionalProfileRepository professionalProfiles;
+    @Autowired edu.institution.ims.mentor.MentorStudentAssignmentRepository assignments;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     User admin; User studentA; User studentB; Cookie adminCookie; Cookie studentACookie; Cookie studentBCookie;
 
     @AfterEach void cleanupProfessionalProfileFixture() {
         if(studentA!=null) professionalProfiles.findByStudentId(studentA.getId()).ifPresent(professionalProfiles::delete);
+        jdbc.update("delete from student_edit_permission_audit"); jdbc.update("delete from student_edit_permissions");
+        assignments.deleteAll();
     }
 
     @BeforeEach void setUp() throws Exception {
-        locations.deleteAll(); details.deleteAll(); documents.deleteAll(); onboardings.deleteAll(); profiles.deleteAll(); accounts.deleteAll(); users.deleteAll();
+        jdbc.update("delete from student_edit_permission_audit"); jdbc.update("delete from student_edit_permissions");
+        jdbc.update("delete from second_internship_requests"); locations.deleteAll(); details.deleteAll(); documents.deleteAll(); onboardings.deleteAll(); profiles.deleteAll(); assignments.deleteAll(); accounts.deleteAll(); users.deleteAll();
         admin = users.save(new User("incharge@example.edu", encoder.encode("AdminPassword!23"), Role.ADMIN, true));
         studentA = student("student.a@example.edu", "StudentAPassword!23"); studentB = student("student.b@example.edu", "StudentBPassword!23");
         adminCookie = login(admin.getEmail(), "AdminPassword!23"); studentACookie = login(studentA.getEmail(), "StudentAPassword!23"); studentBCookie = login(studentB.getEmail(), "StudentBPassword!23");
@@ -49,6 +54,48 @@ class InternshipDetailsIntegrationTest {
                 .andExpect(jsonPath("$.internshipModeLabel").value("Hybrid")).andExpect(jsonPath("$.stipendPerMonth").value(15000.00));
         mvc.perform(get("/api/v1/student/internship-onboarding").cookie(studentACookie)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.workflowStatus").value("INTERNSHIP_DETAILS_COMPLETE"));
+    }
+
+    @Test void iiicApprovalAllowsExactlyOneIsolatedSecondInternship() throws Exception {
+        readyAndCreate(studentACookie,"A","UID-A","a@college.edu","Internship One");
+        mvc.perform(post("/api/v1/student/internship/second").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(internship("Unauthorized")))).andExpect(status().isConflict());
+        mvc.perform(post("/api/v1/student/second-internship-requests").cookie(studentACookie)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+        Long requestId=jdbc.queryForObject("select id from second_internship_requests where student_user_id=?",Long.class,studentA.getId());
+        assertThat(jdbc.queryForObject("select action_url from student_notifications where student_user_id=? and notification_type='SECOND_INTERNSHIP_REQUEST'",String.class,admin.getId()))
+                .isEqualTo("/admin/second-internship-requests/"+requestId);
+        mvc.perform(post("/api/v1/student/second-internship-requests").cookie(studentACookie)).andExpect(status().isConflict());
+        mvc.perform(get("/api/v1/admin/second-internship-requests").cookie(adminCookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].company").value("Internship One"));
+        mvc.perform(put("/api/v1/admin/second-internship-requests/{id}",requestId).cookie(studentACookie)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true}")) .andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/admin/second-internship-requests/{id}",requestId).cookie(adminCookie)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":true}")) .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/admin/second-internship-requests/{id}",requestId).cookie(adminCookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED")).andExpect(jsonPath("$.studentId").value(studentA.getId()));
+        mvc.perform(get("/api/v1/admin/second-internship-requests/999999").cookie(adminCookie)).andExpect(status().isNotFound());
+        mvc.perform(post("/api/v1/student/internship/second").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(internship("Internship Two")))).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.internshipNumber").value(2));
+        mvc.perform(post("/api/v1/student/internship/second").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(internship("Duplicate")))).andExpect(status().isConflict());
+        mvc.perform(get("/api/v1/student/internship/all").cookie(studentACookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].companyName").value("Internship One"))
+                .andExpect(jsonPath("$[1].companyName").value("Internship Two"));
+        assertThat(details.findAllByOnboardingStudentIdOrderByOnboardingInternshipNumber(studentA.getId())).hasSize(2);
+        assertThat(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getCompanyName()).isEqualTo("Internship One");
+
+        readyAndCreate(studentBCookie,"B","UID-B","b@college.edu","Rejected Internship One");
+        mvc.perform(post("/api/v1/student/second-internship-requests").cookie(studentBCookie)).andExpect(status().isCreated());
+        Long rejectedId=jdbc.queryForObject("select id from second_internship_requests where student_user_id=?",Long.class,studentB.getId());
+        mvc.perform(get("/api/v1/admin/second-internship-requests/{id}",rejectedId).cookie(studentBCookie)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/admin/second-internship-requests/{id}",rejectedId).cookie(adminCookie)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"approved\":false,\"reason\":\"Dates overlap with the current internship\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("REJECTED"));
+        mvc.perform(get("/api/v1/student/second-internship-requests").cookie(studentBCookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("REJECTED"))
+                .andExpect(jsonPath("$[0].rejectionReason").value("Dates overlap with the current internship"));
     }
 
     @Test void studentBeforeDiaryIssuedCannotCreateDetails() throws Exception {
@@ -108,6 +155,88 @@ class InternshipDetailsIntegrationTest {
         mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update)))
                 .andExpect(status().isBadRequest());
         assertThat(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(updated);
+    }
+
+    @Test void startedInternshipRequiresAssignedMentorSingleUseScopedEditPermission() throws Exception {
+        readyAndCreate(studentACookie, "A", "UID-A", "a@college.edu", "Acme Systems");
+        jdbc.update("update internship_details set start_date=?,end_date=? where id=?",
+                java.time.LocalDate.now().minusDays(2), java.time.LocalDate.now().plusMonths(3),
+                details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getId());
+        User mentor = users.save(new User("mentor.edit@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
+        User otherMentor = users.save(new User("other.mentor@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
+        assignments.saveAndFlush(new edu.institution.ims.mentor.MentorStudentAssignment(mentor, studentA, admin, java.time.Instant.now()));
+        Cookie mentorCookie = login(mentor.getEmail(), "MentorPassword!23");
+        Cookie otherCookie = login(otherMentor.getEmail(), "MentorPassword!23");
+        Map<String,Object> update = internship("Allowed Once");
+        update.put("startDate", java.time.LocalDate.now().minusDays(2).toString());
+        update.put("endDate", java.time.LocalDate.now().plusMonths(3).toString());
+
+        mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(update))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EDIT_PERMISSION_REQUIRED"));
+        mvc.perform(put("/api/v1/mentor/students/{id}/edit-permissions", studentA.getId()).cookie(otherCookie)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"scope\":\"INTERNSHIP_DETAILS\",\"enabled\":true}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/mentor/students/{id}/edit-permissions", studentA.getId()).cookie(mentorCookie)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"scope\":\"INTERNSHIP_DETAILS\",\"enabled\":true}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].editable").value(true))
+                .andExpect(jsonPath("$.length()").value(1));
+
+        Map<String,Object> invalid = new LinkedHashMap<>(update); invalid.put("endDate", "2020-01-01");
+        mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(invalid))).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/student/edit-permissions").cookie(studentACookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].editable").value(true));
+        mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(update))).andExpect(status().isOk());
+        mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(update))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EDIT_PERMISSION_REQUIRED"));
+        mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(profile("A", "UID-A", "a@college.edu"))))
+                .andExpect(status().isOk());
+
+        assertThat(jdbc.queryForObject("select count(*) from student_edit_permission_audit where student_user_id=? and event_type='CONSUMED' and before_value is not null and after_value is not null", Integer.class, studentA.getId())).isEqualTo(1);
+    }
+
+    @Test void editPermissionCanBeRevokedExpiresAndOnlyOneConcurrentSaveWins() throws Exception {
+        readyAndCreate(studentACookie, "A", "UID-A", "a@college.edu", "Acme Systems");
+        Long internshipId = details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getId();
+        jdbc.update("update internship_details set start_date=?,end_date=? where id=?",
+                java.time.LocalDate.now().minusDays(2), java.time.LocalDate.now().plusMonths(3), internshipId);
+        User mentor = users.save(new User("mentor.concurrent@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
+        assignments.saveAndFlush(new edu.institution.ims.mentor.MentorStudentAssignment(mentor, studentA, admin, java.time.Instant.now()));
+        Cookie mentorCookie = login(mentor.getEmail(), "MentorPassword!23");
+
+        String profileGrant = "{\"scope\":\"STUDENT_PROFILE\",\"enabled\":true}";
+        mvc.perform(put("/api/v1/mentor/students/{id}/edit-permissions", studentA.getId()).cookie(mentorCookie)
+                .contentType(MediaType.APPLICATION_JSON).content(profileGrant)).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/student/edit-permissions").cookie(studentACookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+        Map<String,Object> profileUpdate = profile("A", "UID-A", "a@college.edu"); profileUpdate.put("aadhaarNumber", "");
+        profileUpdate.put("phoneNumber", "+91 98765 43219");
+        mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(profileUpdate))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.phoneNumber").value("+91 98765 43219"));
+        mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(profileUpdate))).andExpect(status().isOk());
+
+        mvc.perform(put("/api/v1/mentor/students/{id}/edit-permissions", studentA.getId()).cookie(mentorCookie)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"scope\":\"INTERNSHIP_DETAILS\",\"enabled\":true}"))
+                .andExpect(status().isOk());
+        Map<String,Object> update = internship("Concurrent Company");
+        update.put("startDate", java.time.LocalDate.now().minusDays(2).toString());
+        update.put("endDate", java.time.LocalDate.now().plusMonths(3).toString());
+        String body = json.writeValueAsString(update);
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var first = executor.submit(() -> mvc.perform(put("/api/v1/student/internship").cookie(studentACookie)
+                    .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getStatus());
+            var second = executor.submit(() -> mvc.perform(put("/api/v1/student/internship").cookie(studentACookie)
+                    .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getStatus());
+            assertThat(List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 409);
+        } finally { executor.shutdownNow(); }
+        assertThat(jdbc.queryForObject("select count(*) from student_edit_permission_audit where student_user_id=? and scope='STUDENT_PROFILE'", Integer.class, studentA.getId())).isZero();
     }
 
     @Test void duplicateInternshipDetailsCannotBeCreated() throws Exception {
@@ -195,8 +324,8 @@ class InternshipDetailsIntegrationTest {
         mvc.perform(get("/api/v1/student/internship/location").cookie(studentACookie)).andExpect(status().isOk())
             .andExpect(jsonPath("$.latitude").value(30.733315)).andExpect(jsonPath("$.longitude").value(76.779419));
         var location = locations.findAll().get(0);
-        assertThat(location.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING);
-        assertThat(location.getGeofenceRadiusMeters()).isEqualByComparingTo("100");
+        assertThat(location.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING_MENTOR_APPROVAL);
+        assertThat(location.getGeofenceRadiusMeters()).isEqualByComparingTo("200");
         assertThat(location.getInternship().getId()).isEqualTo(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getId());
         assertThat(details.findByOnboardingStudentId(studentB.getId())).isEmpty();
     }
@@ -235,7 +364,7 @@ class InternshipDetailsIntegrationTest {
         assertThat(retained.getWorkplaceAddress()).isNull();
         assertThat(retained.getLatitude()).isEqualByComparingTo("30.733315");
         assertThat(retained.getLongitude()).isEqualByComparingTo("76.779419");
-        assertThat(retained.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING);
+        assertThat(retained.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING_MENTOR_APPROVAL);
         assertThat(retained.getConfirmedBy()).isNull();
     }
 
@@ -258,7 +387,7 @@ class InternshipDetailsIntegrationTest {
         mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(data)))
             .andExpect(status().isOk());
         assertThat(locations.findAll().get(0).getPlaceId()).isEqualTo("different-place");
-        assertThat(locations.findAll().get(0).getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING);
+        assertThat(locations.findAll().get(0).getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.PENDING_MENTOR_APPROVAL);
         assertThat(locations.findAll().get(0).getConfirmedAt()).isNull();
         assertThat(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getCompanyName()).isEqualTo("Changed Company");
     }

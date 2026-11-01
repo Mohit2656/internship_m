@@ -24,7 +24,7 @@ public class PhysicalVerificationPolicy {
 
     public VerificationDecision evaluate(InternshipMode mode, InternshipLocation location,
             PhysicalEvidenceInput input, Instant serverTime) {
-        return evaluate(mode,location,input,serverTime,location!=null && location.dualApproved());
+        return evaluate(mode,location,input,serverTime,location!=null && location.mentorApproved());
     }
     public VerificationDecision evaluate(InternshipMode mode,InternshipLocation location,PhysicalEvidenceInput input,Instant serverTime,boolean approved) {
         BigDecimal distance = distance(input.latitude(), input.longitude(), location);

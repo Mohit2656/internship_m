@@ -53,6 +53,7 @@ class OpportunityMatchingReportIntegrationTest {
         studentSkills.addOwn(UserPrincipal.from(student),new SkillNameRequest("Docker"));
         studentSkills.addOwn(UserPrincipal.from(other),new SkillNameRequest("Java"));
         studentSkills.addOwn(UserPrincipal.from(other),new SkillNameRequest("Docker"));
+        parsedResume(student); parsedResume(other);
     }
 
     @Test void publicationSavesRankedReportAndNotifiesOnlyStrongEligibleStudentOnce() {
@@ -88,6 +89,7 @@ class OpportunityMatchingReportIntegrationTest {
         User higherId=candidate("A Ranked Student",Branch.COMPUTER_ENGINEERING,7,UUID.randomUUID().toString());
         studentSkills.addOwn(UserPrincipal.from(higherId),new SkillNameRequest("Java"));
         studentSkills.addOwn(UserPrincipal.from(higherId),new SkillNameRequest("Docker"));
+        parsedResume(higherId);
         service.publish(opportunity.getId());
         var run=matching.get(opportunity.getId(),matching.history(opportunity.getId()).get(0).id());
         assertThat(run.report().candidates()).filteredOn(OpportunityMatchingService.Candidate::strongMatch)
@@ -118,13 +120,14 @@ class OpportunityMatchingReportIntegrationTest {
         opportunitySkills.saveAndFlush(new OpportunitySkill(opportunity,new NormalizedSkill("PostgreSQL","postgresql"),OpportunitySkillType.PREFERRED));
         matching.rerun(opportunity.getId()); matching.rerun(opportunity.getId());
         assertThat(notices(student)).isEqualTo(2);
-        assertThat(matching.history(opportunity.getId())).hasSize(4);
+        assertThat(matching.history(opportunity.getId())).hasSize(5); // confirmed skill change recalculates automatically
         assertThat(matching.get(opportunity.getId(),first.id()).report()).isEqualTo(first.report());
         assertThat(first.report().candidates().get(0).matchedPreferredSkills()).doesNotContain("PostgreSQL");
     }
 
     @Test void correctedResumeReplacesExtractedSkillsAndOriginalExtractionAndManualSkillsRemainIntact() {
         var professional=professionalProfiles.findByStudentId(student.getId()).orElseThrow();
+        resumes.findByProfessionalProfileIdAndActiveTrue(professional.getId()).ifPresent(value->{value.deactivate();resumes.saveAndFlush(value);});
         var resume=new StudentResume(professional); resume.activate("resume.pdf","matching-"+UUID.randomUUID(),"application/pdf",100);
         resume.markAnalysisParsed(); resumes.saveAndFlush(resume);
         var analysis=new ResumeAnalysis(resume);
@@ -172,11 +175,36 @@ class OpportunityMatchingReportIntegrationTest {
         mvc.perform(get("/api/v1/student/opportunities/{id}/matching-score",opportunity.getId()).cookie(own)).andExpect(status().isNotFound());
     }
 
+    @Test void aliasesRankExactlyMissingResumeIsUnavailableAndAdminNotifyIsDeduplicated() throws Exception {
+        User alias=candidate("Alias Student",Branch.COMPUTER_ENGINEERING,7,UUID.randomUUID().toString());
+        studentSkills.addOwn(UserPrincipal.from(alias),new SkillNameRequest("JS")); parsedResume(alias);
+        opportunitySkills.deleteAllByOpportunityId(opportunity.getId()); opportunitySkills.flush();
+        opportunitySkills.saveAndFlush(new OpportunitySkill(opportunity,new NormalizedSkill("JavaScript","javascript"),OpportunitySkillType.REQUIRED));
+        var report=matching.rerun(opportunity.getId()).report();
+        var aliasResult=report.candidates().stream().filter(c->c.studentId().equals(alias.getId())).findFirst().orElseThrow();
+        assertThat(aliasResult.skillsAvailable()).isTrue(); assertThat(aliasResult.matchScore()).isEqualTo(100);
+        User unavailable=candidate("No Resume",Branch.COMPUTER_ENGINEERING,7,UUID.randomUUID().toString());
+        studentSkills.addOwn(UserPrincipal.from(unavailable),new SkillNameRequest("JavaScript"));
+        var unavailableResult=matching.rerun(opportunity.getId()).report().candidates().stream().filter(c->c.studentId().equals(unavailable.getId())).findFirst().orElseThrow();
+        assertThat(unavailableResult.skillsAvailable()).isFalse(); assertThat(unavailableResult.strongMatch()).isFalse();
+        Cookie administrator=login(admin); Cookie own=login(student);
+        String notify="/api/v1/admin/opportunities/"+opportunity.getId()+"/recommended-students/"+alias.getId()+"/notify";
+        mvc.perform(post(notify).cookie(own)).andExpect(status().isForbidden());
+        mvc.perform(post(notify).cookie(administrator)).andExpect(status().isOk());
+        mvc.perform(post(notify).cookie(administrator)).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("select count(*) from student_notifications where student_user_id=? and notification_type='OPPORTUNITY_MATCH'",Long.class,alias.getId())).isEqualTo(1);
+    }
+
     private User candidate(String name,Branch branch,int semester,String suffix) {
         User user=users.save(new User("matching-report-"+suffix+"@example.edu",encoder.encode("Password!23"),Role.STUDENT,true));
         StudentProfile p=new StudentProfile(user);
         p.apply(name,branch,"M"+user.getId(),"R"+user.getId(),"Address",null,user.getEmail(),user.getEmail(),"9876543210","Guardian","9876543211","9876543212","O+","Mentor","9876543213","Coordinator","9876543214","CDC","9876543215","2026-2027",semester);
         p.setEncryptedAadhaar("test-encrypted-value","1234"); profiles.saveAndFlush(p); return user;
+    }
+    private void parsedResume(User user) {
+        var professional=professionalProfiles.findByStudentId(user.getId()).orElseThrow();
+        var resume=new StudentResume(professional); resume.activate("resume.pdf","parsed-"+UUID.randomUUID(),"application/pdf",100); resume.markAnalysisParsed(); resumes.saveAndFlush(resume);
+        var analysis=new ResumeAnalysis(resume); analysis.complete(new AiResumeResult("test","1",List.of(),List.of(),List.of(),List.of())); analyses.saveAndFlush(analysis);
     }
     private Opportunity opportunity(BigDecimal cgpa,List<Branch> branches) {
         var request=new OpportunityRequest("Example Company","Software Intern","Build Java applications using Docker",null,"Pune",OpportunityMode.HYBRID,3,BigDecimal.ZERO,"INR",LocalDate.now().plusDays(10),cgpa,branches,List.of(),List.of("Java"),List.of("Docker"));
