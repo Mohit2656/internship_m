@@ -24,7 +24,7 @@ public class InternshipLocationService {
 
     public InternshipLocationService(InternshipLocationRepository locations,
             InternshipDetailsRepository internships, UserRepository users, Clock clock,
-            @Value("${app.attendance.default-geofence-radius-meters:100}") BigDecimal defaultRadius) {
+            @Value("${app.attendance.default-geofence-radius-meters:200}") BigDecimal defaultRadius) {
         this.locations = locations;
         this.internships = internships;
         this.users = users;

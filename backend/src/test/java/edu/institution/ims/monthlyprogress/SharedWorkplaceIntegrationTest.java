@@ -35,6 +35,17 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
   var result=mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(new MockMultipartFile("photo","test.jpg","image/jpeg",ProgressPhotoValidatorTest.fixture(true,true,21))).file(new MockMultipartFile("workDescription","","text/plain","GPS comparison test".getBytes())).cookie(login(u,password))).andExpect(status().isCreated()).andReturn();
   return json.readTree(result.getResponse().getContentAsString()).get("id").asLong();
  }
+ @Test void newWorkplacesUseTwoHundredMetreDefaultWhileStoredOverridesRemainAuthoritative() {
+  register(studentA,"21.125","79.0875","Default-radius branch");
+  var internship=internships.findByOnboardingStudentId(studentA.getId()).orElseThrow();
+  var created=locations.findByInternshipId(internship.getId()).orElseThrow();
+  assertThat(created.getGeofenceRadiusMeters()).isEqualByComparingTo("200");
+  locationService.radiusForAdmin(studentA.getId(),UserPrincipal.from(admin),new BigDecimal("175"));
+  locationService.registerSelectedPlace(internship,new RegisteredWorkplaceRequest("moved-place","Moved branch address",
+    new BigDecimal("21.126"),new BigDecimal("79.088"),"Moved branch"));
+  assertThat(locations.findByInternshipId(internship.getId()).orElseThrow().getGeofenceRadiusMeters())
+    .isEqualByComparingTo("175");
+ }
  @Test void differentStudentsResolveDifferentWorkplacesForPhotoAndRetainedLegacyPolicy() throws Exception {
   register(studentA,"21.125","79.0875","Branch A"); register(studentB,"19.076","72.8777","Branch B");
   approve(studentA);approve(studentB);

@@ -102,12 +102,32 @@ test("workplace search is explicitly triggered, trims its query and never submit
   tree = h.render();
   assert.match(text(tree), /Example workplace/);
   assert.match(text(tree), /10 Example Road/);
+  assert.match(text(tree), /Approximate address/);
   assert.deepEqual(h.selections, []);
   const resultButton = nodes(tree).find(node => node.type === "button" && text(node).includes(branch.address));
   assert.ok(resultButton);
   assert.equal(resultButton.props.type, "button");
   resultButton.props.onClick();
   assert.deepEqual(h.selections, [branch]);
+  h.close();
+});
+
+test("search sends optional map bias and labels every additive Photon match quality", async () => {
+  const focus = { latitude: 21.1498, longitude: 79.082 };
+  const h = searchHarness({ focus });
+  search(h, "Virtual Galaxy Nagpur");
+  assert.deepEqual(h.requests[0].options.params, { q: "Virtual Galaxy Nagpur", lat: focus.latitude, lon: focus.longitude });
+  h.requests[0].resolve({ data: [
+    { ...branch, matchQuality: "EXACT_BUSINESS" },
+    { ...branch, name: "Plot 26", matchQuality: "APPROXIMATE_ADDRESS" },
+    { ...branch, name: "Ring Road", matchQuality: "STREET_OR_POSTCODE" },
+    { ...branch, name: "Nagpur", matchQuality: "LOCALITY_OR_CITY" },
+  ] });
+  await tick();
+  const content = text(h.render());
+  for (const label of ["Provider-listed business", "Approximate address", "Street or postcode match", "City or locality match"]) assert.match(content, new RegExp(label));
+  assert.match(content, /not IMS verified/i);
+  assert.match(content, /low precision/i);
   h.close();
 });
 
@@ -145,6 +165,7 @@ test("search failures and empty results give a useful retry path", async () => {
   h.requests[1].resolve({ data: [] }); await tick();
   tree = h.render();
   assert.match(text(tree), /no .*found|no results/i);
+  assert.match(text(tree), /locate the real office manually/i);
   assert.deepEqual(h.selections, []);
   h.close();
 });
@@ -154,6 +175,7 @@ test("rate limits and malformed API responses show recoverable search errors", a
   h.requests[0].reject({ response: { status: 429 } }); await tick();
   let tree = h.render();
   assert.ok(nodes(tree).some(node => node.props?.role === "alert" && /wait|busy/i.test(text(node))));
+  assert.match(text(tree), /manually on the map/i);
   button(tree, "Search").props.onClick();
   h.requests[1].resolve({ data: { address: "Not an array of workplaces" } }); await tick();
   tree = h.render();
@@ -226,7 +248,7 @@ test("address-only places and zero coordinates remain selectable and results are
   const tree = h.render();
   const choices = nodes(tree).filter(node => node.type === "li");
   assert.equal(choices.length, 5);
-  button(tree, origin.address).props.onClick();
+  nodes(tree).find(node => node.type === "button" && text(node).includes(origin.address)).props.onClick();
   assert.deepEqual(h.selections, [origin]);
   h.close();
 });
@@ -246,32 +268,46 @@ function pickerHarness(initial = {}) {
   return { props, selections, pending, addresses, render: () => h.render(OpenStreetMapWorkplacePicker, props), searchNode: tree => nodes(tree).find(node => node.type === Search), close: h.close };
 }
 
-test("an OSM search selection updates an uncontrolled address and pin but still requires confirmation", () => {
+test("an OSM search suggestion only focuses the map; a manual map click creates the draft", () => {
   const h = pickerHarness(); let tree = h.render();
+  assert.deepEqual(h.searchNode(tree).props.focus, { latitude: saved.latitude, longitude: saved.longitude });
   h.searchNode(tree).props.onSelect(branch);
+  assert.deepEqual(h.selections, []);
+  tree = h.render();
+  let map = nodes(tree).find(node => node.type === "WorkplaceMap");
+  assert.deepEqual(map.props.focus, { latitude: branch.latitude, longitude: branch.longitude });
+  assert.deepEqual(map.props.position, { latitude: saved.latitude, longitude: saved.longitude });
+  assert.equal(input(tree).props.value, saved.address);
+  assert.match(text(tree), /not the selected workplace/i);
+  map.props.onSelect({ latitude: branch.latitude, longitude: branch.longitude });
   assert.deepEqual(h.selections, [null]);
   tree = h.render();
-  assert.deepEqual(nodes(tree).find(node => node.type === "WorkplaceMap").props.position, { latitude: branch.latitude, longitude: branch.longitude });
-  assert.equal(input(tree).props.value, branch.address);
+  map = nodes(tree).find(node => node.type === "WorkplaceMap");
+  assert.equal(map.props.focus, null);
+  assert.deepEqual(map.props.position, { latitude: branch.latitude, longitude: branch.longitude });
   assert.equal(h.pending.at(-1), true);
   button(tree, "Confirm workplace location").props.onClick();
   assert.equal(h.selections.at(-1).latitude, branch.latitude);
   assert.equal(h.selections.at(-1).longitude, branch.longitude);
-  assert.equal(h.selections.at(-1).address, branch.address);
+  assert.equal(h.selections.at(-1).address, saved.address);
   assert.equal(h.selections.at(-1).placeId, null);
   h.close();
 });
 
-test("controlled company addresses receive the searched address before explicit confirmation", () => {
+test("controlled company addresses are never overwritten by a search suggestion", () => {
   const h = pickerHarness({ address: saved.address });
   h.props.onAddressChange = address => { h.addresses.push(address); h.props.address = address; };
   let tree = h.render(); h.searchNode(tree).props.onSelect(branch);
-  assert.deepEqual(h.addresses, [branch.address]);
-  assert.deepEqual(h.selections, [null]);
+  assert.deepEqual(h.addresses, []);
+  assert.deepEqual(h.selections, []);
   tree = h.render();
   assert.equal(nodes(tree).filter(node => node.type === "input").length, 0);
+  const map = nodes(tree).find(node => node.type === "WorkplaceMap");
+  assert.deepEqual(map.props.focus, { latitude: branch.latitude, longitude: branch.longitude });
+  map.props.onSelect({ latitude: branch.latitude, longitude: branch.longitude });
+  tree = h.render();
   button(tree, "Confirm workplace location").props.onClick();
-  assert.equal(h.selections.at(-1).address, branch.address);
+  assert.equal(h.selections.at(-1).address, saved.address);
   assert.equal(h.selections.at(-1).latitude, branch.latitude);
   h.close();
 });
@@ -284,6 +320,14 @@ test("search wiring respects disabled pickers and preserves unchanged saved Goog
   assert.equal(h.searchNode(tree).props.disabled, true);
   h.searchNode(tree).props.onSelect(branch);
   assert.equal(h.selections.length, 1);
+  h.close();
+});
+
+test("picker displays the applicable server-returned geofence radius, not GPS accuracy", () => {
+  const h = pickerHarness({ geofenceRadiusMeters: 175 });
+  const tree = h.render();
+  assert.match(text(tree), /Geofence radius:\s*175 metres/);
+  assert.doesNotMatch(text(tree), /200 metres/);
   h.close();
 });
 

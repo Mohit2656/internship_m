@@ -19,6 +19,28 @@ class AttendanceLocationVerificationServiceTest {
         assertThat(check("0", "0.002", "5", NOW).passed()).isFalse();
     }
 
+    @Test void twoHundredMetreGeofenceUsesInclusiveMathematicallyControlledBoundaries() {
+        var radius200 = new InternshipLocation(null, BigDecimal.ZERO, BigDecimal.ZERO,
+                new BigDecimal("200"), NOW);
+        var sampleAccuracy = BigDecimal.ONE;
+        for (int metres : new int[]{0, 50, 100, 199, 200}) {
+            var decision = service.evaluate(new SubmissionLocation(BigDecimal.ZERO,
+                    longitudeAtEquator(metres), sampleAccuracy), radius200, NOW, true);
+            assertThat(decision.distanceMeters()).as("distance at %s metres", metres)
+                    .isEqualByComparingTo(Integer.toString(metres));
+            assertThat(decision.status()).as("status at %s metres", metres)
+                    .isEqualTo(LocationVerificationStatus.VERIFIED);
+        }
+        for (int metres : new int[]{201, 250}) {
+            var decision = service.evaluate(new SubmissionLocation(BigDecimal.ZERO,
+                    longitudeAtEquator(metres), sampleAccuracy), radius200, NOW, true);
+            assertThat(decision.distanceMeters()).as("distance at %s metres", metres)
+                    .isEqualByComparingTo(Integer.toString(metres));
+            assertThat(decision.status()).as("status at %s metres", metres)
+                    .isEqualTo(LocationVerificationStatus.OUTSIDE_RADIUS);
+        }
+    }
+
     @Test void absentAndPoorAccuracyCannotPassAndConfiguredThresholdIsUsed() {
         assertThat(service.maxGpsAccuracyMeters()).isEqualByComparingTo("50");
         assertThat(check("0", "0", "51", NOW).status()).isEqualTo(LocationVerificationStatus.INSUFFICIENT_ACCURACY);
@@ -68,6 +90,10 @@ class AttendanceLocationVerificationServiceTest {
         service.validateCaptureTime(null);
     }
 
+    @Test void missingCaptureTimestampCurrentlyRetainsLegacyCompatibilityWithoutFreshnessProof() {
+        assertThat(check("0", "0", "5", null).status()).isEqualTo(LocationVerificationStatus.VERIFIED);
+    }
+
     @Test void haversineRemainsFiniteAcrossDateLineAndAtPoles() {
         var crossing = PhysicalVerificationPolicy.haversineMeters(BigDecimal.ZERO, new BigDecimal("179.9999"),
                 BigDecimal.ZERO, new BigDecimal("-179.9999"));
@@ -79,5 +105,9 @@ class AttendanceLocationVerificationServiceTest {
     private LocationVerificationDecision check(String latitude, String longitude, String accuracy, Instant capturedAt) {
         return service.evaluate(SubmissionLocation.require(new BigDecimal(latitude), new BigDecimal(longitude),
                 new BigDecimal(accuracy)), workplace, capturedAt, true);
+    }
+
+    private static BigDecimal longitudeAtEquator(int metres) {
+        return BigDecimal.valueOf(Math.toDegrees(metres / 6_371_000d));
     }
 }

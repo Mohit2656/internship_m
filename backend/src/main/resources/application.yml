@@ -54,7 +54,7 @@ app:
     calendar:
       holidays: []
       approved-leave: {}
-    default-geofence-radius-meters: ${ATTENDANCE_DEFAULT_GEOFENCE_RADIUS_METERS:100}
+    default-geofence-radius-meters: ${ATTENDANCE_DEFAULT_GEOFENCE_RADIUS_METERS:200}
     # Maximum reported uncertainty in metres, independent of each workplace's radius.
     # Returned by today's attendance policy so the browser uses the same configured limit.
     max-gps-accuracy-meters: ${ATTENDANCE_MAX_GPS_ACCURACY_METERS:200}

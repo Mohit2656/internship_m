@@ -68,22 +68,27 @@ test("address edits require fresh confirmation and invalid coordinates are rejec
   h.props.address = ""; tree = h.render(); assert.equal(button(tree, "Confirm workplace location").props.disabled, true);
 });
 
-test("current location requests fresh GPS once, shows permission denial, and retry can be confirmed", () => {
+test("current location only focuses the map; a subsequent map click can be confirmed", () => {
   const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   const requests = [];
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { geolocation: { getCurrentPosition(success, failure, options) { requests.push({ success, failure, options }); } } } });
   try {
     const h = pickerHarness(); let tree = h.render(); assert.equal(requests.length, 0);
-    button(tree, "Use my current location").props.onClick(); tree = h.render();
+    button(tree, "Center map on my location").props.onClick(); tree = h.render();
     assert.equal(button(tree, "Finding your location…").props.disabled, true); assert.equal(h.pending.at(-1), true);
     assert.deepEqual(requests[0].options, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
     requests[0].failure({ code: 1 }); tree = h.render();
     assert.equal(h.pending.at(-1), false);
     assert.ok(nodes(tree).some(node => node.props?.role === "alert" && /permission was denied/.test(node.props.children)));
     button(tree, "Retry current location").props.onClick(); requests[1].success({ coords: { latitude: 21.13, longitude: 79.09 } });
-    tree = h.render(); assert.deepEqual(nodes(tree).find(node => node.type === "WorkplaceMap").props.position, { latitude: 21.13, longitude: 79.09 });
-    assert.equal(h.selections.at(-1), null);
-    button(tree, "Confirm workplace location").props.onClick(); assert.equal(h.selections.at(-1).latitude, 21.13);
+    tree = h.render();
+    let map = nodes(tree).find(node => node.type === "WorkplaceMap");
+    assert.deepEqual(map.props.focus, { latitude: 21.13, longitude: 79.09 });
+    assert.equal(map.props.position, null);
+    assert.deepEqual(h.selections, []);
+    map.props.onSelect({ latitude: 21.131, longitude: 79.091 });
+    tree = h.render();
+    button(tree, "Confirm workplace location").props.onClick(); assert.equal(h.selections.at(-1).latitude, 21.131);
   } finally { if (oldNavigator) Object.defineProperty(globalThis, "navigator", oldNavigator); else delete globalThis.navigator; }
 });
 
@@ -91,7 +96,7 @@ test("a late GPS response cannot replace a newer pin selection", () => {
   const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator"); let success;
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { geolocation: { getCurrentPosition(resolve) { success = resolve; } } } });
   try {
-    const h = pickerHarness(); let tree = h.render(); button(tree, "Use my current location").props.onClick();
+    const h = pickerHarness(); let tree = h.render(); button(tree, "Center map on my location").props.onClick();
     nodes(tree).find(node => node.type === "WorkplaceMap").props.onSelect({ latitude: 19, longitude: 72 });
     success({ coords: { latitude: 20, longitude: 73 } }); tree = h.render();
     assert.deepEqual(nodes(tree).find(node => node.type === "WorkplaceMap").props.position, { latitude: 19, longitude: 72 });
@@ -103,7 +108,7 @@ test("a browser throwing while requesting GPS clears loading and preserves the c
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { geolocation: { getCurrentPosition() { throw new Error("Permissions policy blocked location"); } } } });
   try {
     const h = pickerHarness({ value: workplace }); let tree = h.render();
-    button(tree, "Use my current location").props.onClick(); tree = h.render();
+    button(tree, "Center map on my location").props.onClick(); tree = h.render();
     assert.equal(button(tree, "Retry current location").props.disabled, false);
     assert.equal(h.pending.at(-1), false); assert.deepEqual(h.selections, []);
     assert.ok(nodes(tree).some(node => node.props?.role === "alert" && /could not request location/.test(node.props.children)));
@@ -111,18 +116,21 @@ test("a browser throwing while requesting GPS clears loading and preserves the c
 });
 
 test("Leaflet click and marker drag select wrapped coordinates; disabled map ignores edits and tiles retain attribution", () => {
-  const selections = [], effects = []; let events;
-  const map = { setView() {}, getZoom: () => 4 };
+  const selections = [], effects = [], views = []; let events;
+  const map = { setView(...args) { views.push(args); }, getZoom: () => 4 };
   const { default: Map } = load("components/OpenStreetMapWorkplaceMap.tsx", {
     react: { useEffect: effect => effects.push(effect) }, leaflet: { divIcon: options => options }, "leaflet/dist/leaflet.css": {},
     "react-leaflet": { MapContainer: "MapContainer", Marker: "Marker", TileLayer: "TileLayer", useMap: () => map, useMapEvents: handlers => { events = handlers; return map; } }, "@/lib/workplace-location": location,
   });
-  function selection(disabled) {
-    const tree = Map({ position: { latitude: 21, longitude: 79 }, disabled, onSelect: value => selections.push(value), onTileError() {} });
+  function selection(disabled, focus = null) {
+    const tree = Map({ position: { latitude: 21, longitude: 79 }, focus, disabled, onSelect: value => selections.push(value), onTileError() {} });
     const component = nodes(tree).find(node => typeof node.type === "function" && node.type.name === "Selection");
-    return { tree, marker: component.type(component.props) };
+    const marker = component.type(component.props);
+    effects.splice(0).forEach(effect => effect());
+    return { tree, marker };
   }
-  const h = selection(false);
+  const h = selection(false, { latitude: 18, longitude: 73 });
+  assert.deepEqual(views, [[[21, 79], 16], [[18, 73], 16]]);
   events.click({ latlng: { wrap: () => ({ lat: 19, lng: 72 }) } });
   h.marker.props.eventHandlers.dragend({ target: { getLatLng: () => ({ wrap: () => ({ lat: 20, lng: 73 }) }) } });
   assert.deepEqual(selections, [{ latitude: 19, longitude: 72 }, { latitude: 20, longitude: 73 }]);
