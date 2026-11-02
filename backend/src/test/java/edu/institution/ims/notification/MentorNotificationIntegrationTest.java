@@ -55,7 +55,7 @@ class MentorNotificationIntegrationTest {
     @Autowired AttendanceService basic;
     @Autowired PhysicalAttendanceService physical;
     @Autowired RemoteAttendanceService remote;
-    @Autowired LateAttendancePermissionService permissions;
+    @Autowired LateAttendanceRequestService lateRequests;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired MutableClock clock;
     @Autowired PasswordEncoder encoder;
@@ -79,6 +79,8 @@ class MentorNotificationIntegrationTest {
         mvc.perform(post("/api/v1/student/attendance/today").with(user(principal(student)))
                         .param("latitude", "18.5204").param("longitude", "73.8567"))
                 .andExpect(status().isCreated());
+        assertThat(attendance.findByStudentIdAndAttendanceDate(student.getId(),TODAY).orElseThrow().getAttendanceResult())
+                .isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
         var inbox = notifications.list(principal(mentor), 0);
         assertThat(inbox.unreadCount()).isEqualTo(1);
         assertThat(inbox.totalElements()).isEqualTo(1);
@@ -132,15 +134,16 @@ class MentorNotificationIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from mentor_notifications", Long.class)).isZero();
     }
 
-    @Test void automaticAbsenceDoesNotNotifyAndPermittedLateReplacementNotifiesOnce() {
+    @Test void automaticAbsenceDoesNotNotifyAndLateRequestNotifiesOnce() {
         clock.now = Instant.parse("2026-10-27T14:00:00Z");
         var absent = attendance.saveAndFlush(AttendanceRecord.automaticAbsent(student, internship, TODAY, clock.instant()));
         notifications.attendanceSubmitted(absent);
         assertThat(notifications.unread(principal(mentor)).unreadCount()).isZero();
-        permissions.setForMentor(student.getId(), true, principal(mentor));
-        var submitted = basic.submitToday(principal(student), new BigDecimal("18"), new BigDecimal("73"), BigDecimal.TEN);
-        assertThat(submitted.id()).isEqualTo(absent.getId());
-        assertThat(submitted.submittedLate()).isTrue();
+        var request=lateRequests.submit(principal(student),new LateAttendanceRequestService.Submission(internship.getId(),TODAY,"Network unavailable during attendance submission",null));
+        var submitted=lateRequests.decide(request.id(),principal(mentor),new LateAttendanceRequestService.Decision("APPROVED",null,false));
+        assertThat(submitted.attendanceId()).isEqualTo(absent.getId());
+        assertThat(absent.isSubmittedLate()).isTrue();
+        assertThat(absent.getVerificationStatus()).isEqualTo(VerificationStatus.UNVERIFIED);
         assertThat(notifications.list(principal(mentor), 0).content()).hasSize(1);
         assertThatThrownBy(() -> basic.submitToday(principal(student), new BigDecimal("18"), new BigDecimal("73"), BigDecimal.TEN))
                 .isInstanceOf(AttendanceException.class);
@@ -218,7 +221,7 @@ class MentorNotificationIntegrationTest {
     @Test void laterEvidenceFailureRollsBackNotificationAndAttendanceTogether() {
         doAnswer(invocation -> {
             invocation.callRealMethod();
-            assertThat(jdbc.queryForObject("select count(*) from mentor_notifications", Long.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("select count(*) from mentor_notifications", Long.class)).isZero();
             throw new IllegalStateException("Simulated evidence write failure");
         }).when(locationVerification).save(any(), any(), any(), any(), anyBoolean(), any());
         try { assertRolledBackSubmission("evidence-rollback"); }
@@ -254,7 +257,7 @@ class MentorNotificationIntegrationTest {
     private User account(String suffix, Role role) { return users.saveAndFlush(new User(suffix + "@mentor-notification.example.edu", encoder.encode("TestPassword!23"), role, true)); }
     private User student(String suffix, String name) {
         User value = account(suffix, Role.STUDENT);
-        accounts.saveAndFlush(new StudentAccount(value, name, suffix, 6));
+        accounts.saveAndFlush(new StudentAccount(value, name, suffix, 8));
         return value;
     }
     private InternshipDetails internship(User owner, InternshipMode mode) {

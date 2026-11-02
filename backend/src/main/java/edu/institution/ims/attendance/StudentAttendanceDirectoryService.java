@@ -33,7 +33,7 @@ public class StudentAttendanceDirectoryService {
     public record Totals(long presentDays, long absentDays, long totalDays, BigDecimal percentage) {}
     public record ReviewTotals(long submitted, long gpsVerified, long pending, long approved, long rejected, long manualReview) {}
     public record StudentRow(Long studentUserId, String uid, String studentName, String branch,
-            String facultyMentor, String company, String workflowStatus, Totals attendance, ReviewTotals reviewSummary) {}
+            String facultyMentor, String company, String workflowStatus, Totals attendance, ReviewTotals reviewSummary, String section, boolean sectionNeedsReview, int semester) {}
     public record History(Long studentUserId, String attendanceZone, Totals totals, List<AttendanceResponse> records) {}
 
     public List<StudentRow> students(UserPrincipal principal) {
@@ -57,10 +57,12 @@ public class StudentAttendanceDirectoryService {
             var internship = details.get(student.getId()); var onboarding = student.getInternshipOnboarding();
             return new StudentRow(student.getId(), profile != null ? profile.getUid() : account == null ? null : account.getUid(),
                     profile != null ? profile.getStudentName() : account == null ? null : account.getStudentName(),
-                    profile == null ? null : profile.getBranch().getLabel(), mentors.get(student.getId()),
+                    "Computer Engineering", mentors.get(student.getId()),
                     internship == null ? null : internship.getCompanyName(),
                     onboarding == null ? "NOT_SECURED" : onboarding.getWorkflowStatus().name(),
-                    totals(records.getOrDefault(student.getId(), List.of())), reviewTotals(records.getOrDefault(student.getId(), List.of())));
+                    totals(records.getOrDefault(student.getId(), List.of())), reviewTotals(records.getOrDefault(student.getId(), List.of())),
+                    profile == null ? account == null ? null : account.getSection() : profile.getSection(),
+                    profile == null ? account == null || account.getSection() == null : profile.isSectionNeedsReview(), 8);
         }).toList();
     }
 

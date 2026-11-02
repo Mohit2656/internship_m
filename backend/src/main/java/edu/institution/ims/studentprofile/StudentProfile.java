@@ -9,8 +9,7 @@ import java.math.BigDecimal;
 @Table(name = "student_profiles", uniqueConstraints = {
         @UniqueConstraint(name = "uk_student_profiles_user", columnNames = "user_id"),
         @UniqueConstraint(name = "uk_student_profiles_uid", columnNames = "uid"),
-        @UniqueConstraint(name = "uk_student_profiles_institute_email", columnNames = "institute_email"),
-        @UniqueConstraint(name = "uk_student_profiles_roll_identity", columnNames = {"branch", "academic_year", "roll_number"})
+        @UniqueConstraint(name = "uk_student_profiles_institute_email", columnNames = "institute_email")
 }, indexes = {
         @Index(name = "idx_student_profiles_name", columnList = "student_name"),
         @Index(name = "idx_student_profiles_branch", columnList = "branch"),
@@ -42,7 +41,10 @@ public class StudentProfile {
     @Column(name = "cdc_coordinator_name", nullable = false, length = 150) private String cdcCoordinatorName;
     @Column(name = "cdc_coordinator_contact", nullable = false, length = 25) private String cdcCoordinatorContact;
     @Column(name = "academic_year", nullable = false, length = 9) private String academicYear;
-    @Column(nullable = false) private int semester;
+    @Column(nullable = false) private int semester = 8;
+    @Column(length = 1) private String section;
+    @Column(name = "legacy_roll_identity_conflict", nullable = false) private boolean legacyRollIdentityConflict;
+    @Column(name = "roll_identity_key", length = 50) private String rollIdentityKey;
     @Column(name = "current_cgpa", precision = 4, scale = 2) private BigDecimal currentCgpa;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
@@ -61,6 +63,10 @@ public class StudentProfile {
     public String getInternshipCoordinatorName() { return internshipCoordinatorName; } public String getInternshipCoordinatorContact() { return internshipCoordinatorContact; }
     public String getCdcCoordinatorName() { return cdcCoordinatorName; } public String getCdcCoordinatorContact() { return cdcCoordinatorContact; }
     public String getAcademicYear() { return academicYear; } public int getSemester() { return semester; }
+    public String getSection() { return section; }
+    public boolean isSectionNeedsReview() { return section == null; }
+    public boolean isAcademicDetailsNeedsReview() { return section == null || legacyRollIdentityConflict; }
+    public void setSection(String section) { this.section = section; this.legacyRollIdentityConflict = false; this.rollIdentityKey = rollNumber == null ? null : rollNumber.trim().toLowerCase(java.util.Locale.ROOT); }
     public BigDecimal getCurrentCgpa() { return currentCgpa; }
     public Instant getCreatedAt() { return createdAt; } public Instant getUpdatedAt() { return updatedAt; }
     public String getAadhaarEncrypted() { return aadhaarEncrypted; }

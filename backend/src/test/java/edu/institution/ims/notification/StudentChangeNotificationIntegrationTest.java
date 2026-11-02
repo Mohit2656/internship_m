@@ -401,7 +401,7 @@ public class StudentChangeNotificationIntegrationTest {
         p.put("cdcCoordinatorName", "CDC Coordinator");
         p.put("cdcCoordinatorContact", "+91 98765 43215");
         p.put("academicYear", "2026-2027");
-        p.put("semester", 7);
+        p.put("semester", 8); p.put("section", "A");
         return p;
     }
 }

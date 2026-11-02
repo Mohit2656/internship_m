@@ -47,7 +47,7 @@ class WeeklyProgressIntegrationTest {
     @BeforeEach void fixture() {
         student = accountUser(Role.STUDENT); otherStudent = accountUser(Role.STUDENT); mentor = accountUser(Role.MENTOR); otherMentor = accountUser(Role.MENTOR); admin = accountUser(Role.ADMIN);
         principal = UserPrincipal.from(student); reviewer = UserPrincipal.from(mentor);
-        accounts.saveAndFlush(new StudentAccount(student, "Weekly Student", "W" + student.getId(), 7));
+        accounts.saveAndFlush(new StudentAccount(student, "Weekly Student", "W" + student.getId(), 8));
         assignments.saveAndFlush(new MentorStudentAssignment(mentor,student,admin,Instant.now()));
         var onboarding = new InternshipOnboarding(student);
         onboarding.confirmDiary(); onboarding.markInternshipDetailsComplete(); onboardings.saveAndFlush(onboarding);

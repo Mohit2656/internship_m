@@ -44,6 +44,7 @@ public class StudentChangeNotificationService {
         List<Change> changes = new ArrayList<>();
         check(changes, "Student Name", before.getStudentName(), after.getStudentName());
         check(changes, "Roll Number", before.getRollNumber(), after.getRollNumber());
+        check(changes, "Section", before.getSection(), after.getSection());
         check(changes, "Permanent Address", before.getPermanentAddress(), after.getPermanentAddress());
         check(changes, "Current Address", before.getCurrentAddress(), after.getCurrentAddress());
         check(changes, "Personal Email", before.getPersonalEmail(), after.getPersonalEmail());

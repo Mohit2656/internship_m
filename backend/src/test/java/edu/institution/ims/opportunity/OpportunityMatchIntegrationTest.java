@@ -47,7 +47,7 @@ class OpportunityMatchIntegrationTest {
         mvc.perform(post("/api/v1/student/professional-profile/skills").cookie(studentSession).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Java\"}"))
                 .andExpect(status().isOk());
         opportunity = createOpportunity(OpportunityStatus.PUBLISHED, LocalDate.now().plusDays(10),
-                List.of(Branch.COMPUTER_ENGINEERING), List.of(7), new BigDecimal("7.50"));
+                List.of(Branch.COMPUTER_ENGINEERING), List.of(8), new BigDecimal("7.50"));
         opportunitySkills.saveAll(List.of(skill("Java", OpportunitySkillType.REQUIRED), skill("PostgreSQL", OpportunitySkillType.REQUIRED), skill("Docker", OpportunitySkillType.PREFERRED)));
         when(matchClient.match(any())).thenAnswer(invocation -> result(invocation.getArgument(0)));
         when(matchClient.matchAll(anyList())).thenAnswer(invocation -> ((List<OpportunityMatchRequest>) invocation.getArgument(0)).stream().map(this::result).toList());
@@ -92,7 +92,7 @@ class OpportunityMatchIntegrationTest {
     }
 
     @Test void knownBranchOrSemesterFailureMakesOverallIneligible() throws Exception {
-        Opportunity mismatch = createOpportunity(OpportunityStatus.PUBLISHED, LocalDate.now().plusDays(10), List.of(Branch.CIVIL), List.of(8), null);
+        Opportunity mismatch = createOpportunity(OpportunityStatus.PUBLISHED, LocalDate.now().plusDays(10), List.of(Branch.CIVIL), List.of(7), null);
         mvc.perform(get("/api/v1/student/opportunities/{id}/match", mismatch.getId()).cookie(studentSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.eligibility.overall").value("INELIGIBLE"))
                 .andExpect(jsonPath("$.eligibility.criteria[0].status").value("FAIL"))
@@ -107,7 +107,7 @@ class OpportunityMatchIntegrationTest {
         mvc.perform(post("/api/v1/student/professional-profile/skills").cookie(studentSession).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Docker\"}"))
                 .andExpect(status().isOk());
         Opportunity eligible = createOpportunity(OpportunityStatus.PUBLISHED, LocalDate.now().plusDays(10),
-                List.of(Branch.COMPUTER_ENGINEERING), List.of(7), null);
+                List.of(Branch.COMPUTER_ENGINEERING), List.of(8), null);
         opportunitySkills.saveAll(List.of(
                 new OpportunitySkill(eligible, new NormalizedSkill("Java", "java"), OpportunitySkillType.REQUIRED),
                 new OpportunitySkill(eligible, new NormalizedSkill("PostgreSQL", "postgresql"), OpportunitySkillType.REQUIRED),
@@ -155,7 +155,7 @@ class OpportunityMatchIntegrationTest {
         ArgumentCaptor<OpportunityMatchRequest> currentCaptor = ArgumentCaptor.forClass(OpportunityMatchRequest.class); verify(matchClient).match(currentCaptor.capture());
         assertThat(currentCaptor.getValue().opportunity().roleSignals()).containsExactly("Backend Development");
         clearInvocations(matchClient);
-        OpportunityRequest changed = request(LocalDate.now().plusDays(10), List.of(Branch.COMPUTER_ENGINEERING), List.of(7), new BigDecimal("7.50"));
+        OpportunityRequest changed = request(LocalDate.now().plusDays(10), List.of(Branch.COMPUTER_ENGINEERING), List.of(8), new BigDecimal("7.50"));
         opportunity.apply(new OpportunityRequest(changed.companyName(), changed.title(), "Changed description", changed.companyWebsite(), changed.location(), changed.internshipMode(), changed.durationMonths(), changed.stipendAmount(), changed.currency(), changed.applicationDeadline(), changed.minimumCgpa(), changed.eligibleBranches(), changed.eligibleSemesters(), changed.requiredSkills(), changed.preferredSkills()));
         opportunities.saveAndFlush(opportunity);
         mvc.perform(get("/api/v1/student/opportunities/{id}/match", opportunity.getId()).cookie(studentSession)).andExpect(status().isOk());
@@ -196,7 +196,7 @@ class OpportunityMatchIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2))
                 .andExpect(jsonPath("$.totalPages").value(2)).andExpect(jsonPath("$.candidates[0].uid").value("UID-" + student.getId()));
         mvc.perform(get("/api/v1/admin/opportunities/{id}/talent-discovery", opportunity.getId())
-                        .param("eligibility", "INELIGIBLE").param("branch", "CIVIL").param("semester", "8").param("search", "Civil")
+                        .param("eligibility", "INELIGIBLE").param("branch", "COMPUTER_ENGINEERING").param("semester", "8").param("search", "Civil")
                         .cookie(adminSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.candidates[0].studentId").value(otherStudent.getId()));
@@ -220,7 +220,7 @@ class OpportunityMatchIntegrationTest {
 
     @Test void talentDiscoveryKeepsEligibilityWhenBatchAiIsUnavailableAndAllowsDrafts() throws Exception {
         doThrow(new OpportunityMatchClientException("offline", null)).when(matchClient).matchAll(anyList());
-        Opportunity draft = createOpportunity(OpportunityStatus.DRAFT, LocalDate.now().plusDays(2), List.of(Branch.COMPUTER_ENGINEERING), List.of(7), null);
+        Opportunity draft = createOpportunity(OpportunityStatus.DRAFT, LocalDate.now().plusDays(2), List.of(Branch.COMPUTER_ENGINEERING), List.of(8), null);
         mvc.perform(get("/api/v1/admin/opportunities/{id}/talent-discovery", draft.getId())
                         .cookie(login(admin.getEmail(), "AdminPassword!23")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.candidates[0].alignment.eligibility.overall").value("ELIGIBLE"))
@@ -336,17 +336,16 @@ class OpportunityMatchIntegrationTest {
     }
     private void createInstitutionalProfile(User value, Cookie cookie, Branch branch, int semester, String name) throws Exception {
         String id = value.getId().toString(); Map<String, Object> body = new LinkedHashMap<>();
-        body.put("studentName", name); body.put("branch", branch.name()); body.put("uid", "UID-" + id); body.put("rollNumber", "ROLL-" + id);
+        body.put("studentName", name); body.put("branch", Branch.COMPUTER_ENGINEERING.name()); body.put("uid", "UID-" + id); body.put("rollNumber", "ROLL-" + id);
         body.put("permanentAddress", "Address"); body.put("personalEmail", "personal-" + id + "@example.com"); body.put("instituteEmail", value.getEmail()); body.put("phoneNumber", "9876543210");
         body.put("guardianName", "Guardian"); body.put("guardianContact", "9876543211"); body.put("emergencyContact", "9876543212"); body.put("bloodGroup", "O+"); body.put("aadhaarNumber", "123456789012");
         body.put("facultyMentorName", "Faculty"); body.put("facultyMentorContact", "9876543213"); body.put("internshipCoordinatorName", "Coordinator"); body.put("internshipCoordinatorContact", "9876543214");
-        body.put("cdcCoordinatorName", "CDC"); body.put("cdcCoordinatorContact", "9876543215"); body.put("academicYear", "2025-2026"); body.put("semester", semester);
+        body.put("cdcCoordinatorName", "CDC"); body.put("cdcCoordinatorContact", "9876543215"); body.put("academicYear", "2025-2026"); body.put("semester", 8); body.put("section", "A");
         mvc.perform(post("/api/v1/student/profile").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body))).andExpect(status().isCreated());
-        // Self-service profile creation protects the institutional branch. Seed the requested
-        // authoritative branch explicitly so cross-branch matching filters exercise real data.
+        // Current academics remain fixed; CGPA preserves the ineligible candidate coverage.
         if (branch != Branch.COMPUTER_ENGINEERING) {
             StudentProfile saved = studentProfiles.findByUserId(value.getId()).orElseThrow();
-            org.springframework.test.util.ReflectionTestUtils.setField(saved, "branch", branch);
+            saved.setCurrentCgpa(new BigDecimal("6.00"));
             studentProfiles.saveAndFlush(saved);
         }
     }

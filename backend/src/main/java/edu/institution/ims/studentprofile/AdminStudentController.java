@@ -12,8 +12,8 @@ public class AdminStudentController {
     private final AdminStudentService service;
     public AdminStudentController(AdminStudentService service) { this.service = service; }
     @GetMapping("/options") public ProfileOptionsResponse options() {
-        var branches = Arrays.stream(Branch.values()).map(b -> new ProfileOptionsResponse.Option(b.name(), b.getLabel())).toList();
-        return new ProfileOptionsResponse(branches, List.of("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"), 1, 8);
+        var branches = List.of(Branch.COMPUTER_ENGINEERING).stream().map(b -> new ProfileOptionsResponse.Option(b.name(), b.getLabel())).toList();
+        return new ProfileOptionsResponse(branches, List.of("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"), 8, 8, List.of("A", "B"));
     }
     @GetMapping public PagedResponse<AdminStudentSummaryResponse> list(@RequestParam(required = false) String search,
             @RequestParam(required = false) Branch branch, @RequestParam(required = false) String academicYear,
@@ -22,9 +22,9 @@ public class AdminStudentController {
             @RequestParam(required = false) CompanyType companyType, @RequestParam(required = false) InternshipMode internshipMode,
             @RequestParam(required = false) Boolean paid, @RequestParam(required = false) Boolean fullTimeEmploymentOffered,
             @RequestParam(required = false) AttentionCategory attention, @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size, @RequestParam(required=false) Long academicSessionId) {
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required=false) Long academicSessionId, @RequestParam(required=false) String section) {
         return service.list(search, branch, academicYear, semester, internshipStatus, internshipSource, profileStatus, companyType,
-                internshipMode, paid, fullTimeEmploymentOffered, attention, page, size, academicSessionId);
+                internshipMode, paid, fullTimeEmploymentOffered, attention, page, size, academicSessionId, section);
     }
     @GetMapping("/{id}") public AdminStudentDetailResponse detail(@PathVariable Long id) { return service.detail(id); }
 }

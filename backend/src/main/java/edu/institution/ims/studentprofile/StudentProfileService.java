@@ -26,17 +26,17 @@ public class StudentProfileService {
         StudentAccount account = user.getStudentAccount();
         StudentProfile profile = profiles.findByUserId(principal.id()).orElse(null);
         var readOnlyFields = new ArrayList<String>();
-        readOnlyFields.add("instituteEmail"); readOnlyFields.add("branch");
+        readOnlyFields.add("instituteEmail"); readOnlyFields.add("branch"); readOnlyFields.add("semester");
         if (profile != null || hasValue(account == null ? null : account.getUid())) readOnlyFields.add("uid");
         if (hasValue(account == null ? null : account.getStudentName())) readOnlyFields.add("studentName");
-        if (account != null && account.getSemester() != null) readOnlyFields.add("semester");
-        Branch branch = profile == null ? Branch.COMPUTER_ENGINEERING : profile.getBranch();
+        Branch branch = Branch.COMPUTER_ENGINEERING;
         return new ProfilePrefillResponse(profile == null ? (account == null ? null : clean(account.getStudentName())) : profile.getStudentName(),
                 profile == null ? (account == null ? null : clean(account.getUid())) : profile.getUid(),
                 profile == null ? user.getEmail() : profile.getInstituteEmail(), branch.name(), branch.getLabel(),
-                profile == null ? (account == null ? null : account.getSemester()) : Integer.valueOf(profile.getSemester()), readOnlyFields);
+                8, readOnlyFields, profile == null ? account == null ? null : account.getSection() : profile.getSection());
     }
     @Transactional public StudentProfileResponse createOwn(UserPrincipal principal, StudentProfileRequest request) {
+        validateAcademics(request);
         if (profiles.existsByUserId(principal.id())) throw new ProfileConflictException("PROFILE_ALREADY_EXISTS", "A student profile already exists for this account");
         String aadhaar = normalizedAadhaar(request.aadhaarNumber());
         if (aadhaar.isBlank()) throw new ProfileConflictException("AADHAAR_REQUIRED", "Aadhaar number is required when creating a profile");
@@ -47,7 +47,7 @@ public class StudentProfileService {
         StudentProfile profile = new StudentProfile(user);
         StudentAccount account = user.getStudentAccount();
         String studentName = account != null && hasValue(account.getStudentName()) ? clean(account.getStudentName()) : clean(request.studentName());
-        int semester = account != null && account.getSemester() != null ? account.getSemester() : request.semester();
+        int semester = 8;
         apply(profile, request, uid, instituteEmail, branch, studentName, semester); protectAadhaar(profile, aadhaar);
         return save(profile);
     }
@@ -55,6 +55,7 @@ public class StudentProfileService {
     private edu.institution.ims.notification.StudentChangeNotificationService changeNotifications;
 
     @Transactional public StudentProfileResponse updateOwn(UserPrincipal principal, StudentProfileRequest request) {
+        validateAcademics(request);
         if (!WorkflowUserLocks.student(jdbc, principal.id(), true))
             throw new ProfileConflictException("STUDENT_ACCOUNT_INACTIVE", "Deactivated students cannot change their profile");
         StudentProfile profile = profiles.findByUserId(principal.id()).orElseThrow(ProfileNotFoundException::new);
@@ -67,11 +68,12 @@ public class StudentProfileService {
                 profile.getCdcCoordinatorName(), profile.getCdcCoordinatorContact(),
                 profile.getAcademicYear(), profile.getSemester());
         before.setCurrentCgpa(profile.getCurrentCgpa());
+        before.setSection(profile.getSection());
         StudentAccount account = profile.getUser().getStudentAccount();
         String studentName = account != null && hasValue(account.getStudentName()) ? profile.getStudentName() : clean(request.studentName());
-        int semester = account != null && account.getSemester() != null ? profile.getSemester() : request.semester();
-        validateUnique(profile.getUid(), profile.getInstituteEmail(), profile.getBranch(), request, profile.getId());
-        apply(profile, request, profile.getUid(), profile.getInstituteEmail(), profile.getBranch(), studentName, semester);
+        int semester = 8;
+        validateUnique(profile.getUid(), profile.getInstituteEmail(), Branch.COMPUTER_ENGINEERING, request, profile.getId());
+        apply(profile, request, profile.getUid(), profile.getInstituteEmail(), Branch.COMPUTER_ENGINEERING, studentName, semester);
         String aadhaar = normalizedAadhaar(request.aadhaarNumber()); if (!aadhaar.isBlank()) protectAadhaar(profile, aadhaar);
         StudentProfileResponse res = save(profile);
         if (changeNotifications != null) {
@@ -89,9 +91,9 @@ public class StudentProfileService {
         if (duplicateUid) throw new ProfileConflictException("DUPLICATE_UID", "UID is already assigned to another student");
         boolean duplicateEmail = id == null ? profiles.existsByInstituteEmailIgnoreCase(email) : profiles.existsByInstituteEmailIgnoreCaseAndIdNot(email, id);
         if (duplicateEmail) throw new ProfileConflictException("DUPLICATE_INSTITUTE_EMAIL", "Institute email is already assigned to another student");
-        boolean duplicateRoll = id == null ? profiles.existsByBranchAndAcademicYearAndRollNumberIgnoreCase(branch, request.academicYear(), roll)
-                : profiles.existsByBranchAndAcademicYearAndRollNumberIgnoreCaseAndIdNot(branch, request.academicYear(), roll, id);
-        if (duplicateRoll) throw new ProfileConflictException("DUPLICATE_ROLL_NUMBER", "Roll number is already in use for this branch and academic year");
+        boolean duplicateRoll = id == null ? profiles.existsByAcademicYearAndSectionAndRollNumberIgnoreCase(request.academicYear(), request.section(), roll)
+                : profiles.existsByAcademicYearAndSectionAndRollNumberIgnoreCaseAndIdNot(request.academicYear(), request.section(), roll, id);
+        if (duplicateRoll) throw new ProfileConflictException("DUPLICATE_ROLL_NUMBER", "Roll number is already in use for this section and academic year");
     }
     private void apply(StudentProfile p, StudentProfileRequest r, String uid, String instituteEmail, Branch branch, String studentName, int semester) {
         p.apply(studentName, branch, uid, clean(r.rollNumber()), clean(r.permanentAddress()), nullable(r.currentAddress()),
@@ -99,7 +101,14 @@ public class StudentProfileService {
                 clean(r.emergencyContact()), r.bloodGroup(), clean(r.facultyMentorName()), clean(r.facultyMentorContact()),
                 clean(r.internshipCoordinatorName()), clean(r.internshipCoordinatorContact()), clean(r.cdcCoordinatorName()),
                 clean(r.cdcCoordinatorContact()), r.academicYear(), semester);
+        p.setSection(r.section());
+        if (p.getUser().getStudentAccount() != null) p.getUser().getStudentAccount().setSection(r.section());
         p.setCurrentCgpa(r.currentCgpa());
+    }
+    private static void validateAcademics(StudentProfileRequest request) {
+        if (request.branch() != Branch.COMPUTER_ENGINEERING) throw new IllegalArgumentException("All students must belong to Computer Engineering");
+        if (request.semester() == null || request.semester() != 8) throw new IllegalArgumentException("Students must belong to 8th Semester");
+        if (!java.util.Set.of("A", "B").contains(request.section() == null ? "" : request.section())) throw new IllegalArgumentException("Select Section A or Section B");
     }
     private void protectAadhaar(StudentProfile p, String aadhaar) { p.setEncryptedAadhaar(encryption.encrypt(aadhaar), aadhaar.substring(8)); }
     private static String authoritativeUid(User user, String submittedUid) {
@@ -116,6 +125,6 @@ public class StudentProfileService {
                 p.getPermanentAddress(), p.getCurrentAddress(), p.getPersonalEmail(), p.getInstituteEmail(), p.getPhoneNumber(), p.getGuardianName(),
                 p.getGuardianContact(), p.getEmergencyContact(), p.getBloodGroup(), "XXXX XXXX " + p.getAadhaarLastFour(), p.getFacultyMentorName(),
                 p.getFacultyMentorContact(), p.getInternshipCoordinatorName(), p.getInternshipCoordinatorContact(), p.getCdcCoordinatorName(),
-                p.getCdcCoordinatorContact(), p.getAcademicYear(), p.getSemester(), p.getCurrentCgpa(), ProfileStatus.COMPLETE, p.getCreatedAt(), p.getUpdatedAt());
+                p.getCdcCoordinatorContact(), p.getAcademicYear(), p.getSemester(), p.getCurrentCgpa(), ProfileStatus.COMPLETE, p.getCreatedAt(), p.getUpdatedAt(), p.getSection(), p.isSectionNeedsReview(), p.isAcademicDetailsNeedsReview());
     }
 }

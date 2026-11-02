@@ -26,7 +26,7 @@ public class AdminTalentDiscoveryService {
     @Transactional(readOnly = true)
     public TalentDiscoveryResponse discover(Long opportunityId, String search, TalentEligibilityFilter eligibility,
             Branch branch, Integer semester, String skill, int page, int size) {
-        if (page < 0 || size < 1 || size > 50 || semester != null && (semester < 1 || semester > 12))
+        if (page < 0 || size < 1 || size > 50 || semester != null && semester != 8 || branch != null && branch != Branch.COMPUTER_ENGINEERING)
             throw new OpportunityException(HttpStatus.BAD_REQUEST, "INVALID_FILTER", "Use a non-negative page, size from 1 to 50, and a valid semester");
         Opportunity opportunity = activeOpportunity(opportunityId);
 
@@ -55,7 +55,7 @@ public class AdminTalentDiscoveryService {
     @Transactional(readOnly = true)
     public AdminSkillGapResponse skillGaps(Long opportunityId, String search, TalentEligibilityFilter eligibility,
             Branch branch, Integer semester, String skill) {
-        if (semester != null && (semester < 1 || semester > 12))
+        if (semester != null && semester != 8 || branch != null && branch != Branch.COMPUTER_ENGINEERING)
             throw new OpportunityException(HttpStatus.BAD_REQUEST, "INVALID_FILTER", "Use a valid semester");
         Opportunity opportunity = activeOpportunity(opportunityId);
         String cleanSearch = clean(search);

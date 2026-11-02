@@ -8,6 +8,8 @@ public interface StudentProfileRepository extends JpaRepository<StudentProfile, 
     @Query("select p from StudentProfile p join fetch p.user u where u.role = edu.institution.ims.user.Role.STUDENT and u.active = true")
     List<StudentProfile> findAllActiveStudentCandidates();
     boolean existsByUserId(Long userId);
+    boolean existsByAcademicYearAndSectionAndRollNumberIgnoreCase(String academicYear, String section, String rollNumber);
+    boolean existsByAcademicYearAndSectionAndRollNumberIgnoreCaseAndIdNot(String academicYear, String section, String rollNumber, Long id);
     boolean existsByUidIgnoreCase(String uid);
     boolean existsByInstituteEmailIgnoreCase(String email);
     boolean existsByBranchAndAcademicYearAndRollNumberIgnoreCase(Branch branch, String academicYear, String rollNumber);

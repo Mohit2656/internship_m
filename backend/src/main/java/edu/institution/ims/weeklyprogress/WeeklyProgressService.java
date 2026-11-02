@@ -38,7 +38,7 @@ public class WeeklyProgressService {
             String companyName, int weekNumber, LocalDate periodStart, LocalDate periodEnd, boolean active,
             String submissionStatus, String status, String workDescription, int revision, Instant submittedAt,
             Long reviewerId, String reviewerEmail, Instant reviewedAt, String rejectionReason,
-            long attendanceSubmitted, long attendancePresent, long attendanceGpsVerified, List<Event> history) {}
+            long attendanceSubmitted, long attendancePresent, long attendanceGpsVerified, List<Event> history, String section, String branch, int semester) {}
     public record Overview(Long internshipId, String companyName, LocalDate internshipStart,
             LocalDate internshipEnd, int totalWeeks, String calculationRule, List<Week> weeks) {}
     public record Warning(Long internshipId, Long studentUserId, String studentName, String message) {}
@@ -211,7 +211,7 @@ public class WeeklyProgressService {
                 (org.springframework.jdbc.core.RowCallbackHandler) rs -> histories.computeIfAbsent(rs.getLong("period_id"),ignored->new ArrayList<>())
                         .add(new Event(rs.getInt("revision"),rs.getString("event_type"),rs.getLong("actor_id"),rs.getString("email"),
                                 instant(rs,"performed_at"),rs.getString("work_description"),rs.getString("reason"))),args);
-        return jdbc.query("select p.*,o.student_user_id,coalesce(sp.student_name,sa.student_name,u.email) as student_name,coalesce(sp.uid,sa.uid) as uid,i.company_name,"
+        return jdbc.query("select p.*,o.student_user_id,coalesce(sp.student_name,sa.student_name,u.email) as student_name,coalesce(sp.uid,sa.uid) as uid,coalesce(sp.section,sa.section) as section,i.company_name,"
                         + "r.review_status,r.work_description,r.revision,r.submitted_at,r.reviewer_id,r.reviewed_at,r.rejection_reason,reviewer.email as reviewer_email,"
                         + "(select count(*) from attendance_records a where a.internship_id=i.id and a.attendance_date between p.period_start and p.period_end and a.deleted_at is null and a.submission_type<>'AUTO_ABSENT') as attendance_submitted,"
                         + "(select count(*) from attendance_records a where a.internship_id=i.id and a.attendance_date between p.period_start and p.period_end and a.deleted_at is null and a.attendance_result='PRESENT') as attendance_present,"
@@ -231,7 +231,7 @@ public class WeeklyProgressService {
                 status == null ? "NOT_SUBMITTED" : "SUBMITTED", status == null ? (!active ? "ARCHIVED" : LocalDate.now(clock).isBefore(start) ? "UPCOMING" : "AVAILABLE") : status,
                 rs.getString("work_description"), rs.getInt("revision"), instant(rs, "submitted_at"), rs.getObject("reviewer_id") == null ? null : rs.getLong("reviewer_id"),
                 rs.getString("reviewer_email"), instant(rs, "reviewed_at"), rs.getString("rejection_reason"), rs.getLong("attendance_submitted"),
-                rs.getLong("attendance_present"), rs.getLong("attendance_verified"), events);
+                rs.getLong("attendance_present"), rs.getLong("attendance_verified"), events, rs.getString("section"), "Computer Engineering", 8);
     }
     private static Instant instant(ResultSet rs, String name) throws SQLException { Timestamp value = rs.getTimestamp(name); return value == null ? null : value.toInstant(); }
     private void lockInternship(Long id) {

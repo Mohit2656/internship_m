@@ -29,6 +29,15 @@ public class AdminStudentService {
     @Transactional(readOnly = true) public PagedResponse<AdminStudentSummaryResponse> list(String search, Branch branch, String academicYear, Integer semester,
             WorkflowStatus internshipStatus, InternshipSource internshipSource, ProfileStatus profileStatus, CompanyType companyType,
             InternshipMode internshipMode, Boolean paid, Boolean fullTimeEmploymentOffered, AttentionCategory attention, int page, int size, Long academicSessionId) {
+        return list(search, branch, academicYear, semester, internshipStatus, internshipSource, profileStatus, companyType,
+                internshipMode, paid, fullTimeEmploymentOffered, attention, page, size, academicSessionId, null);
+    }
+    @Transactional(readOnly = true) public PagedResponse<AdminStudentSummaryResponse> list(String search, Branch branch, String academicYear, Integer semester,
+            WorkflowStatus internshipStatus, InternshipSource internshipSource, ProfileStatus profileStatus, CompanyType companyType,
+            InternshipMode internshipMode, Boolean paid, Boolean fullTimeEmploymentOffered, AttentionCategory attention, int page, int size, Long academicSessionId, String section) {
+        if (branch != null && branch != Branch.COMPUTER_ENGINEERING) throw new IllegalArgumentException("Branch must be Computer Engineering");
+        if (semester != null && semester != 8) throw new IllegalArgumentException("Semester must be 8");
+        if (section != null && !section.isBlank() && !java.util.Set.of("A", "B", "UNASSIGNED").contains(section)) throw new IllegalArgumentException("Section must be A or B");
         int safePage = Math.max(page, 0); int safeSize = Math.min(Math.max(size, 1), 100);
         Specification<User> spec = (root, query, cb) -> {
             var profile = root.<User, StudentProfile>join("studentProfile", JoinType.LEFT);
@@ -42,9 +51,13 @@ public class AdminStudentService {
                 predicate = cb.and(predicate, cb.or(cb.like(cb.lower(profile.get("studentName")), value), cb.like(cb.lower(profile.get("uid")), value),
                         cb.like(cb.lower(account.get("studentName")), value), cb.like(cb.lower(account.get("uid")), value), cb.like(cb.lower(root.get("email")), value), cb.like(cb.lower(profile.get("rollNumber")), value), cb.like(cb.lower(profile.get("instituteEmail")), value)));
             }
-            if (branch != null) predicate = cb.and(predicate, cb.equal(profile.get("branch"), branch));
+            if (section != null && !section.isBlank()) {
+                var assignedSection = cb.<String>coalesce(profile.get("section"), account.get("section"));
+                predicate = cb.and(predicate, "UNASSIGNED".equals(section) ? cb.isNull(assignedSection) : cb.equal(assignedSection, section));
+            }
             if (academicYear != null && !academicYear.isBlank()) predicate = cb.and(predicate, cb.equal(profile.get("academicYear"), academicYear.trim()));
-            if (semester != null) predicate = cb.and(predicate, cb.equal(profile.get("semester"), semester));
+            // Branch and semester are fixed for every student, including accounts
+            // whose profile has not been completed. They were validated above.
             if (profileStatus == ProfileStatus.COMPLETE) predicate = cb.and(predicate, cb.isNotNull(profile.get("id")));
             if (profileStatus == ProfileStatus.INCOMPLETE) predicate = cb.and(predicate, cb.isNull(profile.get("id")));
             if (internshipStatus == WorkflowStatus.NOT_SECURED) predicate = cb.and(predicate, cb.isNull(onboarding.get("id")));
@@ -98,11 +111,13 @@ public class AdminStudentService {
         var internship = onboarding == null ? InternshipOnboardingService.notSecuredResponse() : onboardingService.response(onboarding);
         StudentAccount account = user.getStudentAccount();
         return new AdminStudentSummaryResponse(user.getId(), user.getEmail(), p == null ? account == null ? null : account.getStudentName() : p.getStudentName(), p == null ? account == null ? null : account.getUid() : p.getUid(),
-                p == null ? null : p.getRollNumber(), p == null ? null : p.getBranch().name(), p == null ? null : p.getBranch().getLabel(),
+                p == null ? null : p.getRollNumber(), "COMPUTER_ENGINEERING", "Computer Engineering",
                 p == null ? null : p.getInstituteEmail(), p == null ? null : p.getPhoneNumber(), p == null ? null : p.getAcademicYear(),
-                p == null ? account == null ? null : account.getSemester() : Integer.valueOf(p.getSemester()), p == null ? ProfileStatus.INCOMPLETE : ProfileStatus.COMPLETE,
+                8, p == null ? ProfileStatus.INCOMPLETE : ProfileStatus.COMPLETE,
                 internship.workflowStatus(), internship.source(), internship.sourceLabel(), internship.documentsCompleted(),
                 internship.documentsRequired(), internship.diaryIssued(),
-                p == null ? null : p.getUpdatedAt() == null ? p.getCreatedAt() : p.getUpdatedAt(), internship.lastStudentUpdatedAt(),activity[0],activity[1],activity[2]);
+                p == null ? null : p.getUpdatedAt() == null ? p.getCreatedAt() : p.getUpdatedAt(), internship.lastStudentUpdatedAt(),activity[0],activity[1],activity[2],
+                p == null ? account == null ? null : account.getSection() : p.getSection(),
+                p == null ? account == null || account.getSection() == null : p.isSectionNeedsReview());
     }
 }

@@ -201,7 +201,7 @@ class MentorAssignmentIntegrationTest {
 
     private User student(String email, String password, String name, String uid, int semester) {
         User student = user(email, password, Role.STUDENT);
-        studentAccounts.save(new StudentAccount(student, name, uid, semester));
+        studentAccounts.save(new StudentAccount(student, name, uid, 8));
         return student;
     }
 
@@ -216,7 +216,7 @@ class MentorAssignmentIntegrationTest {
         profile.put("facultyMentorName", "Faculty"); profile.put("facultyMentorContact", "9876543213");
         profile.put("internshipCoordinatorName", "Coordinator"); profile.put("internshipCoordinatorContact", "9876543214");
         profile.put("cdcCoordinatorName", "CDC"); profile.put("cdcCoordinatorContact", "9876543215");
-        profile.put("academicYear", "2025-2026"); profile.put("semester", 6);
+        profile.put("academicYear", "2025-2026"); profile.put("semester", 8); profile.put("section", "A");
         mvc.perform(post("/api/v1/student/profile").cookie(cookie).contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsString(profile))).andExpect(status().isCreated());
     }

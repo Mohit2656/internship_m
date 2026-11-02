@@ -47,7 +47,9 @@ class StudentAccountImportIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(3)).andExpect(jsonPath("$.accountsCreated").value(1))
                 .andExpect(jsonPath("$.invalidRows").value(2));
         User imported = users.findByEmailIgnoreCase("aditi@college.edu").orElseThrow();
-        assertThat(imported.getRole()).isEqualTo(Role.STUDENT); assertThat(imported.isMustChangePassword()).isTrue();
+        assertThat(imported.getRole()).isEqualTo(Role.STUDENT);
+        var importedAccount = accounts.findAll().stream().filter(a -> a.getUser().getId().equals(imported.getId())).findFirst().orElseThrow();
+        assertThat(importedAccount.getSemester()).isEqualTo(8); assertThat(importedAccount.getSection()).isEqualTo("A"); assertThat(imported.isMustChangePassword()).isTrue();
         assertThat(imported.getPasswordHash()).doesNotContain("2026CSE001"); assertThat(encoder.matches("2026CSE001", imported.getPasswordHash())).isTrue();
         Cookie temporarySession = loginCookie(imported.getEmail(), "2026CSE001");
         mvc.perform(get("/api/v1/auth/me").cookie(temporarySession)).andExpect(status().isOk()).andExpect(jsonPath("$.mustChangePassword").value(true));
@@ -67,7 +69,7 @@ class StudentAccountImportIntegrationTest {
     private ResultActions login(String email, String password) throws Exception { return mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new edu.institution.ims.auth.LoginRequest(email, password)))); }
     private static byte[] workbook() throws Exception {
         try (Workbook book = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            Sheet sheet = book.createSheet("Students"); Row headers = sheet.createRow(0); String[] values = {"Name", "UID", "Email ID", "Semester"};
+            Sheet sheet = book.createSheet("Students"); Row headers = sheet.createRow(0); String[] values = {"Name", "UID", "Email ID", "Semester", "Section"};
             for (int i = 0; i < values.length; i++) headers.createCell(i).setCellValue(values[i]);
             row(sheet, 1, "Aditi Sharma", "2026CSE001", "aditi@college.edu", "8");
             row(sheet, 2, "Duplicate UID", "2026CSE001", "second@college.edu", "8");
@@ -75,5 +77,5 @@ class StudentAccountImportIntegrationTest {
             book.write(output); return output.toByteArray();
         }
     }
-    private static void row(Sheet sheet, int index, String name, String uid, String email, String semester) { Row row = sheet.createRow(index); row.createCell(0).setCellValue(name); row.createCell(1).setCellValue(uid); row.createCell(2).setCellValue(email); row.createCell(3).setCellValue(semester); }
+    private static void row(Sheet sheet, int index, String name, String uid, String email, String semester) { Row row = sheet.createRow(index); row.createCell(0).setCellValue(name); row.createCell(1).setCellValue(uid); row.createCell(2).setCellValue(email); row.createCell(3).setCellValue(semester); row.createCell(4).setCellValue("A"); }
 }

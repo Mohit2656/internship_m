@@ -60,9 +60,12 @@ public class AttendanceSubmissionService {
             throw duplicate();
         }
         if (late) audit(record, "LATE_SUBMISSION");
-        notifications.attendanceSubmitted(record);
         return record;
     }
+
+    /** Emit only after evidence and the final submission result are persisted, in the same transaction. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void notifySubmitted(AttendanceRecord record) { notifications.attendanceSubmitted(record); }
 
     private void audit(AttendanceRecord record, String event) {
         jdbc.update("insert into attendance_submission_audit "

@@ -77,12 +77,13 @@ public class DashboardReportRepository {
             String expression = switch (key) {
                 case "studentId" -> "u.id = :studentId";
                 case "mentorId" -> "a.mentor_user_id = :mentorId";
-                case "branch" -> "p.branch = :branch";
+                case "branch" -> "coalesce(p.branch,'COMPUTER_ENGINEERING') = :branch";
+                case "section" -> value.equals("UNASSIGNED") ? "coalesce(p.section,sa.section) is null" : "coalesce(p.section,sa.section) = :section";
                 case "completionSearch" -> "(lower(coalesce(p.student_name,sa.student_name,u.email)) like :completionSearch escape '!' or lower(coalesce(p.uid,sa.uid,'')) like :completionSearch escape '!' or lower(i.company_name) like :completionSearch escape '!')";
                 case "academicSessionId" -> "u.academic_session_id = :academicSessionId";
                 case "completionStatus" -> "i.id is not null and ("+edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL+") = :completionStatus";
                 case "academicYear" -> "p.academic_year = :academicYear";
-                case "semester" -> "coalesce(p.semester, sa.semester) = :semester";
+                case "semester" -> "coalesce(p.semester, sa.semester, 8) = :semester";
                 case "profileStatus" -> value.equals("COMPLETE") ? "p.id is not null" : "p.id is null";
                 case "workflowStatus" -> "coalesce(o.workflow_status, 'NOT_SECURED') = :workflowStatus";
                 case "internshipMode" -> "i.internship_mode = :internshipMode";
@@ -122,7 +123,7 @@ public class DashboardReportRepository {
     }
     /** Authorized, one-row-per-student projection shared by institutional report types. */
     String reportStudentsSql(Scope scope) {
-        return "select u.id as sid,coalesce(p.uid,sa.uid) as uid,coalesce(p.student_name,sa.student_name) as studentName,p.branch,mp.name as mentorName,i.id as internshipId,i.company_name as company,acs.name as academicSession,i.start_date as startDate,i.end_date as endDate,i.completed_at as completionDate,cr.email as completionReviewer,i.completion_remarks as completionRemarks,case when i.id is null then null else " + edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL + " end as completionStatus,coalesce(o.source,'UNRECORDED') as source,i.stipend_per_month as stipend,i.full_time_employment_offered as offer,coalesce(o.workflow_status,'NOT_SECURED') as workflow,o.diary_issued as diary,coalesce(p.updated_at,p.created_at) as profileLastStudentUpdatedAt,coalesce(i.updated_at,i.created_at) as internshipLastStudentUpdatedAt " + FROM + scope.where();
+        return "select u.id as sid,coalesce(p.uid,sa.uid) as uid,coalesce(p.student_name,sa.student_name) as studentName,'Computer Engineering' as branch,coalesce(p.section,sa.section) as section,coalesce(p.semester,sa.semester,8) as semester,mp.name as mentorName,i.id as internshipId,i.company_name as company,acs.name as academicSession,i.start_date as startDate,i.end_date as endDate,i.completed_at as completionDate,cr.email as completionReviewer,i.completion_remarks as completionRemarks,case when i.id is null then null else " + edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL + " end as completionStatus,coalesce(o.source,'UNRECORDED') as source,i.stipend_per_month as stipend,i.full_time_employment_offered as offer,coalesce(o.workflow_status,'NOT_SECURED') as workflow,o.diary_issued as diary,coalesce(p.updated_at,p.created_at) as profileLastStudentUpdatedAt,coalesce(i.updated_at,i.created_at) as internshipLastStudentUpdatedAt " + FROM + scope.where();
     }
     public long count(Scope scope) {
         return Objects.requireNonNull(jdbc.queryForObject("select count(*) " + FROM + scope.where(), scope.params(), Long.class));

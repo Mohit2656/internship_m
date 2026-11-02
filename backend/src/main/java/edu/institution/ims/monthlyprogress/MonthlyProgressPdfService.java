@@ -37,11 +37,13 @@ public class MonthlyProgressPdfService {
             StudentAccount account = student.getStudentAccount();
             String name = profile != null ? profile.getStudentName() : account == null ? "Not available" : account.getStudentName();
             String uid = profile != null ? profile.getUid() : account == null ? "Not available" : account.getUid();
-            String branch = profile == null ? "Not available" : profile.getBranch().getLabel();
-            String semester = profile != null ? String.valueOf(profile.getSemester()) : account == null || account.getSemester() == null ? "Not available" : String.valueOf(account.getSemester());
+            String branch = "Computer Engineering";
+            String section = profile == null ? account == null ? null : account.getSection() : profile.getSection();
+            String semester = "8th Semester";
             writer.label("Student Name", name);
             writer.label("UID", uid);
             writer.label("Branch", branch);
+            writer.label("Section", section == null ? "Needs review" : "Section " + section);
             writer.label("Semester", semester);
             writer.space(5);
             writer.label("Company", report.getStudentInternship().getCompanyName());

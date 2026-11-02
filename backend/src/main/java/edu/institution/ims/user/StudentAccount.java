@@ -11,7 +11,8 @@ public class StudentAccount {
     private User user;
     @Column(name = "student_name", length = 150) private String studentName;
     @Column(length = 50) private String uid;
-    @Column private Integer semester;
+    @Column private Integer semester = 8;
+    @Column(length = 1) private String section;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     protected StudentAccount() {}
     public StudentAccount(User user) { this.user = user; }
@@ -24,4 +25,6 @@ public class StudentAccount {
     public String getStudentName() { return studentName; }
     public String getUid() { return uid; }
     public Integer getSemester() { return semester; }
+    public String getSection() { return section; }
+    public void setSection(String section) { this.section = section; }
 }

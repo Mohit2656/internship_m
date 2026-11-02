@@ -19,7 +19,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
  @Autowired InternshipLocationService locationService; @Autowired InternshipLocationRepository locations;
  @Autowired PhysicalVerificationPolicy policy; @Autowired JdbcTemplate jdbc;
- @Autowired LateAttendancePermissionService latePermissions;
  @AfterEach void cleanWorkplaces(){jdbc.update("delete from attendance_submission_audit");jdbc.update("delete from late_attendance_permission_audit");jdbc.update("delete from late_attendance_permissions");jdbc.update("delete from workplace_review_audit");jdbc.update("delete from attendance_evidence");jdbc.update("delete from attendance_records");jdbc.update("delete from attendance_verification_sessions");jdbc.update("delete from workplace_correction_audit"); locations.deleteAll();}
  Cookie login(User u,String password) throws Exception { return mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new LoginRequest(u.getEmail(),password)))).andExpect(status().isOk()).andReturn().getResponse().getCookie("ims_auth"); }
  void register(User u,String lat,String lng,String name) {
@@ -62,8 +61,6 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
   register(studentA,"21.125","79.0875","Approved branch");approve(studentA);
   register(studentB,"19.076","72.8777","Unapproved different branch");
   for(var student:new User[]{studentA,studentB}) {
-   // The shared monthly-report fixture is exactly at noon, so use the existing mentor authorization.
-   latePermissions.setForMentor(student.getId(),true,UserPrincipal.from(student==studentA?mentorA:mentorB));
    var cookie=login(student,student==studentA?"StudentPassword!23":"StudentPassword!24");
    var issued=json.readTree(mvc.perform(post("/api/v1/student/attendance/verification-session").cookie(cookie))
     .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());

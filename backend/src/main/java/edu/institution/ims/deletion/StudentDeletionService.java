@@ -61,6 +61,7 @@ public class StudentDeletionService {
         new Dependency("attendance_evidence","attendance_id in ("+ATTENDANCE+")","Attendance and GPS evidence"),
         new Dependency("attendance_verification_sessions","student_user_id=:student","Attendance and GPS evidence"),
         new Dependency("late_attendance_permissions","student_user_id=:student","Attendance and GPS evidence"),
+        new Dependency("late_attendance_requests","student_user_id=:student","Attendance and GPS evidence"),
         new Dependency("weekly_internship_periods","internship_id in ("+INTERNSHIPS+")","Weekly, monthly and project records"),
         new Dependency("weekly_progress_reports","period_id in ("+WEEKS+")","Weekly, monthly and project records"),
         new Dependency("monthly_progress_reports","student_internship_id in ("+INTERNSHIPS+")","Weekly, monthly and project records"),

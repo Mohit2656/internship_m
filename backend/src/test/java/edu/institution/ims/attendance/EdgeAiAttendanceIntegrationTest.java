@@ -223,7 +223,7 @@ class EdgeAiAttendanceIntegrationTest {
 
     private User studentWithInternship(String email, String uid, InternshipMode mode) {
         User student = users.saveAndFlush(new User(email, encoder.encode(PASSWORD), Role.STUDENT, true));
-        studentAccounts.saveAndFlush(new StudentAccount(student, "Edge Student", uid, 6));
+        studentAccounts.saveAndFlush(new StudentAccount(student, "Edge Student", uid, 8));
         InternshipOnboarding onboarding = onboardings.saveAndFlush(new InternshipOnboarding(student));
         onboarding.markDocumentsComplete(); onboarding.confirmDiary();
         InternshipDetails details = new InternshipDetails(onboarding);

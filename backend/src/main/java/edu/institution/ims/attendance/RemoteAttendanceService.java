@@ -92,6 +92,7 @@ public class RemoteAttendanceService {
         locationVerification.save(captured, internship, submitted, locationCapturedAt, false, accuracy);
         record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
         attendance.saveAndFlush(record);
+        submissions.notifySubmitted(record);
         return AttendanceService.response(record);
     }
 

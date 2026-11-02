@@ -11,5 +11,7 @@ public record AssignmentStudentResponse(
         Integer semester,
         ProfileStatus profileStatus,
         Long currentMentorUserId,
-        String currentMentorName
+        String currentMentorName,
+        String section,
+        boolean sectionNeedsReview
 ) {}

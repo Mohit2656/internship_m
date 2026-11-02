@@ -43,14 +43,16 @@ public class DashboardReportCatalog {
         add("maskedAadhaar", "Aadhaar (masked)", "Personal and Emergency Contacts", Kind.TEXT,
                 "case when p.aadhaar_last_four is null then null else concat('XXXX XXXX ', p.aadhaar_last_four) end", false, true);
         add("aadhaarNumber", "Aadhaar number (admin only)", "Personal and Emergency Contacts", Kind.TEXT, "p.aadhaar_encrypted", false, true);
-        add("branch", "Branch", "Academic Information", Kind.TEXT, "p.branch", true, false);
+        add("branch", "Branch", "Academic Information", Kind.TEXT, "'Computer Engineering'", true, false);
+        add("section", "Section", "Academic Information", Kind.TEXT, "coalesce(p.section,sa.section)", true, false);
+        add("sectionNeedsReview", "Section needs review", "Academic Information", Kind.BOOLEAN, "coalesce(p.section,sa.section) is null", false, false);
         add("academicSession", "Assigned academic session", "Academic Information", Kind.TEXT, "acs.name", false, false);
         add("completionStatus", "Internship completion status", "Internship Completion", Kind.TEXT, "case when i.id is null then null else " + edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL + " end", false, false);
         add("completionDate", "Official completion date", "Internship Completion", Kind.DATETIME, "i.completed_at", false, false);
         add("completionReviewer", "IIIC completion reviewer", "Internship Completion", Kind.TEXT, "cr.email", false, true);
         add("completionRemarks", "Completion remarks", "Internship Completion", Kind.TEXT, "i.completion_remarks", false, true);
         profile("academicYear", "Academic year", "academic_year", "Academic Information", false);
-        add("semester", "Semester", "Academic Information", Kind.NUMBER, "coalesce(p.semester, sa.semester)", true, false);
+        add("semester", "Semester", "Academic Information", Kind.NUMBER, "coalesce(p.semester, sa.semester, 8)", true, false);
         profile("facultyMentorName", "Faculty mentor (student profile)", "faculty_mentor_name", "Mentor and Coordinators", true);
         profile("facultyMentorContact", "Faculty mentor contact (student profile)", "faculty_mentor_contact", "Mentor and Coordinators", true);
         profile("internshipCoordinatorName", "Internship coordinator", "internship_coordinator_name", "Mentor and Coordinators", true);
@@ -151,7 +153,7 @@ public class DashboardReportCatalog {
         List<Filter> result = new ArrayList<>();
         result.add(new Filter("search", "Student name, UID or email", "text", List.of(), "Contains text, case insensitive"));
         result.add(new Filter("studentId", "Student account ID", "number", List.of(), "Optional single student; checked against your access"));
-        result.add(new Filter("branch", "Branch", "select", Arrays.stream(Branch.values()).map(b -> new Choice(b.name(), b.getLabel())).toList(), ""));
+        result.add(new Filter("branch", "Branch", "select", List.of(Branch.COMPUTER_ENGINEERING).stream().map(b -> new Choice(b.name(), b.getLabel())).toList(), ""));
         result.add(new Filter("completionSearch", "Completion student / UID / company", "text", List.of(), "Contains text, case insensitive"));
         String sessionSql="select s.id,s.name from academic_sessions s";
         if (!admin) sessionSql+=" where exists(select 1 from users u join mentor_student_assignments a on a.student_user_id=u.id and a.active=true where u.academic_session_id=s.id and a.mentor_user_id=?)";
@@ -159,7 +161,8 @@ public class DashboardReportCatalog {
         result.add(new Filter("academicSessionId", "Assigned academic session", "select", sessions, "Uses the student's assigned session, including closed historical sessions; independent of profile academic year"));
         choice(result, "completionStatus", "Internship completion", "ALL", "NOT_STARTED", "IN_PROGRESS", "COMPLETION_PENDING", "COMPLETED");
         result.add(new Filter("academicYear", "Profile academic year", "text", List.of(), "Student-entered profile year, e.g. 2025-2026; independent of the assigned academic session"));
-        result.add(new Filter("semester", "Semester", "select", java.util.stream.IntStream.rangeClosed(1, 8).mapToObj(n -> new Choice("" + n, "" + n)).toList(), ""));
+        result.add(new Filter("semester", "Semester", "select", List.of(new Choice("8", "8th Semester")), ""));
+        result.add(new Filter("section", "Section", "select", List.of(new Choice("A", "Section A"), new Choice("B", "Section B"), new Choice("UNASSIGNED", "Section needs review")), "Only recorded A/B assignments; missing sections require review"));
         choice(result, "profileStatus", "Profile status", "COMPLETE", "INCOMPLETE");
         choice(result, "workflowStatus", "Internship workflow", "NOT_SECURED", "INTERNSHIP_SECURED", "DOCUMENTS_PENDING", "DOCUMENTS_COMPLETE", "DIARY_ISSUED", "INTERNSHIP_DETAILS_COMPLETE");
         result.add(new Filter("company", "Company", "text", List.of(), "Contains text, case insensitive"));

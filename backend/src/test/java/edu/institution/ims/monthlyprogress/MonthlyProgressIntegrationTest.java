@@ -36,7 +36,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ContextConfiguration(classes = {edu.institution.ims.ImsApplication.class, MonthlyProgressIntegrationTest.FixedClockConfiguration.class})
 class MonthlyProgressIntegrationTest {
     static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
-    static final Instant NOW = Instant.parse("2026-11-10T06:30:00Z");
+    // Keep ordinary attendance regression submissions before the noon deadline.
+    static final Instant NOW = Instant.parse("2026-11-10T06:29:00Z");
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @Autowired UserRepository users;
@@ -249,7 +250,7 @@ class MonthlyProgressIntegrationTest {
         User mentor = user(email, password, Role.MENTOR); mentorProfiles.save(new MentorProfile(mentor, name, employeeId, "Computer Engineering", "Professor", "+91 9876543210")); return mentor;
     }
     private User student(String email, String password, String name, String uid) {
-        User student = user(email, password, Role.STUDENT); studentAccounts.save(new StudentAccount(student, name, uid, 6)); return student;
+        User student = user(email, password, Role.STUDENT); studentAccounts.save(new StudentAccount(student, name, uid, 8)); return student;
     }
     private void internship(User student, String company) {
         InternshipOnboarding onboarding = onboardings.saveAndFlush(new InternshipOnboarding(student)); onboarding.markDocumentsComplete(); onboarding.confirmDiary();

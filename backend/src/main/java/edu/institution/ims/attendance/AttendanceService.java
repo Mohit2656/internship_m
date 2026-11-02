@@ -74,6 +74,7 @@ public class AttendanceService {
                 location, locationCapturedAt, true, accuracy);
         record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
         attendance.saveAndFlush(record);
+        submissions.notifySubmitted(record);
         return response(record);
     }
 

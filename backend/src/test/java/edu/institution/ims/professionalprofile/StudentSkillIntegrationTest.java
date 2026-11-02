@@ -200,7 +200,7 @@ class StudentSkillIntegrationTest {
         request.put("facultyMentorName", "Faculty"); request.put("facultyMentorContact", "9876543213");
         request.put("internshipCoordinatorName", "Internship Coordinator"); request.put("internshipCoordinatorContact", "9876543214");
         request.put("cdcCoordinatorName", "CDC Coordinator"); request.put("cdcCoordinatorContact", "9876543215");
-        request.put("academicYear", "2025-2026"); request.put("semester", 7);
+        request.put("academicYear", "2025-2026"); request.put("semester", 8); request.put("section", "A");
         mvc.perform(post("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsString(request))).andExpect(status().isCreated());
 

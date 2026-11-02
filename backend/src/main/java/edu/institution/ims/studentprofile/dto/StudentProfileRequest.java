@@ -27,8 +27,16 @@ public record StudentProfileRequest(
         @NotBlank(message = "CDC coordinator name is required") @Size(max = 150) String cdcCoordinatorName,
         @NotBlank(message = "CDC coordinator contact is required") @Pattern(regexp = "^\\+?[0-9][0-9 -]{7,18}[0-9]$", message = "CDC coordinator contact format is invalid") String cdcCoordinatorContact,
         @NotBlank(message = "Academic year is required") @AcademicYear String academicYear,
-        @NotNull(message = "Semester is required") @Min(value = 1, message = "Semester must be between 1 and 8") @Max(value = 8, message = "Semester must be between 1 and 8") Integer semester,
+        @Min(value = 8, message = "Students must belong to 8th Semester") @Max(value = 8, message = "Students must belong to 8th Semester") Integer semester,
         @DecimalMin(value = "0.00", message = "Current CGPA must be between 0.00 and 10.00")
         @DecimalMax(value = "10.00", message = "Current CGPA must be between 0.00 and 10.00")
-        @Digits(integer = 2, fraction = 2, message = "Current CGPA must have at most 2 decimal places") BigDecimal currentCgpa
-) {}
+        @Digits(integer = 2, fraction = 2, message = "Current CGPA must have at most 2 decimal places") BigDecimal currentCgpa,
+        @NotBlank(message = "Select Section A or Section B") @Pattern(regexp = "^[AB]$", message = "Section must be A or B") String section
+) {
+    public StudentProfileRequest {
+        if (branch == null) branch = Branch.COMPUTER_ENGINEERING;
+        if (semester == null) semester = 8;
+    }
+    @AssertTrue(message = "All students must belong to Computer Engineering")
+    public boolean isValidStudentBranch() { return branch == Branch.COMPUTER_ENGINEERING; }
+}

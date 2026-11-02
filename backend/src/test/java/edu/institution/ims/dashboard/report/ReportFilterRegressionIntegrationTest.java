@@ -76,7 +76,7 @@ class ReportFilterRegressionIntegrationTest {
     final List<Dummy> students=new ArrayList<>();
     final List<Map<String,Object>> coverage=new ArrayList<>();
     static class Dummy {
-        int n,semester;User user;Long session,mentor;String year,branch,company,mode,source,companyType,completion;
+        int n,semester;User user;Long session,mentor;String year,branch,section,company,mode,source,companyType,completion;
         String workflow="NOT_SECURED";boolean profile,active=true,diary;BigDecimal stipend;Boolean offer;InternshipDetails internship;
         List<Day> days=new ArrayList<>();List<Month> months=new ArrayList<>();
         String name(){return String.format("TEST_REPORT_STUDENT_%02d",n);}
@@ -113,13 +113,13 @@ class ReportFilterRegressionIntegrationTest {
         sessionA=jdbc.queryForObject("select id from academic_sessions where name='TEST_REPORT_SESSION_A'",Long.class);sessionB=jdbc.queryForObject("select id from academic_sessions where name='TEST_REPORT_SESSION_B'",Long.class);
         jdbc.update("update academic_session_settings set active_session_id=?,activated_by=?,activated_at=current_timestamp where id=1",sessionB,admin.getId());
         for(int n=1;n<=60;n++) {
-            Dummy d=new Dummy();d.n=n;d.semester=n%8+1;d.session=n==60?null:n%2==1?sessionA:sessionB;
+            Dummy d=new Dummy();d.n=n;d.semester=8;d.section=n%3==0?null:n%2==0?"B":"A";d.session=n==60?null:n%2==1?sessionA:sessionB;
             d.user=new User(String.format("test_report_student_%02d@local.test",n),passwordHash,Role.STUDENT,true);if(d.session!=null)d.user.assignAcademicSession(d.session);users.saveAndFlush(d.user);
-            accounts.saveAndFlush(new StudentAccount(d.user,d.name(),d.uid(),d.semester));
-            d.profile=n<=18 && n!=2;d.branch=d.profile?(n%2==1?"COMPUTER_ENGINEERING":"CIVIL"):null;d.year=d.profile?(n%2==1?"2026-2027":"2025-2026"):null;
+            var account=new StudentAccount(d.user,d.name(),d.uid(),8);account.setSection(d.section);accounts.saveAndFlush(account);
+            d.profile=n<=18 && n!=2;d.branch="COMPUTER_ENGINEERING";d.year=d.profile?(n%2==1?"2026-2027":"2025-2026"):null;
             if(d.profile) {
                 var p=new StudentProfile(d.user);p.apply(d.name(),Branch.valueOf(d.branch),d.uid(),"ROLL-"+n,"TEST_REPORT_ADDRESS",null,"personal"+n+"@local.test",d.user.getEmail(),"9876543210","TEST_REPORT_GUARDIAN","9876543210","9876543210","O+","TEST_REPORT_MENTOR","9876543210","TEST_REPORT_COORDINATOR","9876543210","TEST_REPORT_CDC","9876543210",d.year,d.semester);
-                p.setEncryptedAadhaar(encryption.encrypt("12345678"+String.format("%04d",n)),String.format("%04d",n));profiles.saveAndFlush(p);
+                p.setSection(d.section);p.setEncryptedAadhaar(encryption.encrypt("12345678"+String.format("%04d",n)),String.format("%04d",n));profiles.saveAndFlush(p);
             }
             if(n<=18 && n!=2) {User mentor=n<=12?mentorA:mentorB;d.mentor=mentor.getId();assignments.saveAndFlush(new MentorStudentAssignment(mentor,d.user,admin,NOW));}
             if(n<=17) {
@@ -222,6 +222,7 @@ class ReportFilterRegressionIntegrationTest {
                 case "academicYear" -> Objects.equals(d.year,value);
                 case "branch" -> Objects.equals(d.branch,value);
                 case "semester" -> d.semester==Integer.parseInt(value);
+                case "section" -> value.equals("UNASSIGNED")?d.section==null:Objects.equals(d.section,value);
                 case "profileStatus" -> d.profile==value.equals("COMPLETE");
                 case "workflowStatus" -> d.workflow.equals(value);
                 case "completionStatus" -> Objects.equals(d.completion,value);
@@ -250,6 +251,17 @@ class ReportFilterRegressionIntegrationTest {
     void sourceCounts(Map<String,Object> row,List<Dummy> group,Predicate<Dummy> predicate){row.put("department",count(group,d->source(d).equals("DEPARTMENT")&&predicate.test(d)));row.put("cdc",count(group,d->source(d).equals("CDC")&&predicate.test(d)));row.put("self",count(group,d->source(d).equals("SELF")&&predicate.test(d)));row.put("unknown",count(group,d->source(d).equals("UNRECORDED")&&predicate.test(d)));row.put("total",count(group,predicate));}
     List<Map<String,Object>> expected(String type,List<Dummy> scope,Map<String,String> filters) {
         List<Map<String,Object>> rows=new ArrayList<>();
+        if(type.equals("ATTENDANCE_DAILY_SUMMARY")) {
+            Map<LocalDate,List<Day>> daysByDate=new TreeMap<>();
+            for(Dummy student:scope)for(Day day:student.days)if(dayMatches(day,filters))daysByDate.computeIfAbsent(day.date(),key->new ArrayList<>()).add(day);
+            daysByDate.forEach((date,days)->{
+                Map<String,Object> row=new LinkedHashMap<>();row.put("date",date.toString());row.put("students",days.size());row.put("total",days.size());
+                long present=days.stream().filter(day->day.result().equals("PRESENT")).count();
+                row.put("present",present);row.put("absent",days.stream().filter(day->day.result().equals("ABSENT")).count());
+                for(var value:Map.of("verified","VERIFIED","unverified","FAILED","notPerformed","NOT_PERFORMED","historical","HISTORICAL").entrySet())row.put(value.getKey(),days.stream().filter(day->day.liveness().equals(value.getValue())).count());
+                row.put("percentage",Math.round(1000000.0*present/days.size())/10000.0);rows.add(row);
+            });return rows;
+        }
         if(Set.of("ROSTER","COMPLETIONS","ATTENDANCE","ATTENDANCE_SUMMARY","MONTHLY_PROGRESS").contains(type)) {
             for(Dummy d:scope) {
                 if(type.equals("ROSTER")){rows.add(identity(d));continue;}
@@ -282,7 +294,7 @@ class ReportFilterRegressionIntegrationTest {
             }rows.add(row);
         });return rows;
     }
-    String key(String type,Map<String,Object> row){if(row.containsKey("recordId"))return "R"+((Number)row.get("recordId")).longValue();if(row.containsKey("studentId"))return "S"+((Number)row.get("studentId")).longValue();String field=type.equals("COMPARISON")?"parameter":type.startsWith("COMPANY")||type.equals("PLACEMENT_COMPANY")?"company":type.equals("STIPEND_DISTRIBUTION")?"stipend":"category";Object value=row.get(field);return value instanceof Number?new BigDecimal(value.toString()).stripTrailingZeros().toPlainString():String.valueOf(value);}
+    String key(String type,Map<String,Object> row){if(type.equals("ATTENDANCE_DAILY_SUMMARY"))return String.valueOf(row.get("date"));if(row.containsKey("recordId"))return "R"+((Number)row.get("recordId")).longValue();if(row.containsKey("studentId"))return "S"+((Number)row.get("studentId")).longValue();String field=type.equals("COMPARISON")?"parameter":type.startsWith("COMPANY")||type.equals("PLACEMENT_COMPANY")?"company":type.equals("STIPEND_DISTRIBUTION")?"stipend":"category";Object value=row.get(field);return value instanceof Number?new BigDecimal(value.toString()).stripTrailingZeros().toPlainString():String.valueOf(value);}
     void assertValue(Object expected,Object actual,String context){if(expected==null){assertThat(actual).as(context).isNull();return;}if(expected instanceof Number){assertThat(actual).as(context).isInstanceOf(Number.class);assertThat(((Number)actual).doubleValue()).as(context).isCloseTo(((Number)expected).doubleValue(),within(0.00011));}else assertThat(String.valueOf(actual)).as(context).isEqualTo(String.valueOf(expected));}
     List<Map<String,Object>> allRows(User viewer,String type,Map<String,String> filters,List<Long> selected,List<Map<String,Object>> expected) throws Exception {
         List<Map<String,Object>> actual=new ArrayList<>();long total=-1;int page=0;
@@ -321,7 +333,7 @@ class ReportFilterRegressionIntegrationTest {
     }
     List<String> exportFields(String type,List<Map<String,Object>> expected) {
         if(!expected.isEmpty())return new ArrayList<>(expected.get(0).keySet());
-        return switch(type){case "ROSTER","COMPLETIONS","ATTENDANCE_SUMMARY"->List.of("studentId","uid","studentName");case "ATTENDANCE","MONTHLY_PROGRESS"->List.of("studentId","recordId");case "COMPARISON"->List.of("parameter","total");case "STIPEND_DISTRIBUTION"->List.of("stipend","total");case "COMPANY","COMPANY_STIPEND","PLACEMENT_COMPANY"->List.of("company","total");default->List.of("category","total");};
+        return switch(type){case "ROSTER","COMPLETIONS","ATTENDANCE_SUMMARY"->List.of("studentId","uid","studentName");case "ATTENDANCE_DAILY_SUMMARY"->List.of("date","total");case "ATTENDANCE","MONTHLY_PROGRESS"->List.of("studentId","recordId");case "COMPARISON"->List.of("parameter","total");case "STIPEND_DISTRIBUTION"->List.of("stipend","total");case "COMPANY","COMPANY_STIPEND","PLACEMENT_COMPANY"->List.of("company","total");default->List.of("category","total");};
     }
     List<List<String>> csv(byte[] bytes) {
         String text=new String(bytes,StandardCharsets.UTF_8).replaceFirst("^\\uFEFF","");List<List<String>> rows=new ArrayList<>();List<String> row=new ArrayList<>();StringBuilder value=new StringBuilder();boolean quoted=false;
@@ -380,7 +392,7 @@ class ReportFilterRegressionIntegrationTest {
     @Test void combinationsClearingSelectionAndPaginationMatchAllFilteredRowsAndExports() throws Exception {
         List<Map<String,String>> combinations=List.of(
                 Map.of("academicSessionId",sessionA.toString(),"company","alpha%_","mentorId",mentorA.getId().toString(),"completionStatus","COMPLETED","paid","PAID"),
-                Map.of("branch","CIVIL","semester","5","company","alpha%_","workflowStatus","INTERNSHIP_DETAILS_COMPLETE"),
+                Map.of("branch","COMPUTER_ENGINEERING","semester","8","company","alpha%_","workflowStatus","INTERNSHIP_DETAILS_COMPLETE"),
                 Map.of("profileStatus","INCOMPLETE","mentorAssignment","UNASSIGNED"),Map.of("academicSessionId",sessionB.toString(),"academicYear","2026-2027"),
                 Map.of("company","beta","internshipMode","HYBRID","fullTimeOffered","YES"),Map.of("search","NO_SUCH_STUDENT","accountActive","NO"));
         for(var filters:combinations)for(String type:List.of("ROSTER","COMPLETIONS","OVERALL","COMPANY","WORKFLOW","MONTHLY_PROGRESS","ATTENDANCE","ATTENDANCE_SUMMARY")) {

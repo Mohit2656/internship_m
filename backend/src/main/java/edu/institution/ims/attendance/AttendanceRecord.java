@@ -144,6 +144,17 @@ public class AttendanceRecord {
         lateAuthorizedBy = authorizedBy;
         lateAuthorizedAt = authorizedAt;
     }
+    void approveLateRequest(User reviewer, Instant at) {
+        if (evidence!=null || review!=null || (id!=null && !isAutomaticAbsent()))
+            throw new IllegalStateException("A late request cannot replace a student submission");
+        if (isAutomaticAbsent()) automaticAbsentAt=serverSubmittedAt;
+        attendanceResult=AttendanceResult.PRESENT;
+        verificationStatus=VerificationStatus.UNVERIFIED;
+        verificationBasis=AttendanceVerificationBasis.MANUAL;
+        submissionType=AttendanceSubmissionType.LATE_REQUEST;
+        serverSubmittedAt=at;
+        recordLatePermission(reviewer,at);
+    }
     public static AttendanceRecord automaticAbsent(User student, InternshipDetails internship,
             LocalDate date, Instant processedAt) {
         AttendanceRecord record = new AttendanceRecord(student, internship, date, AttendanceResult.ABSENT,
@@ -153,6 +164,7 @@ public class AttendanceRecord {
     }
     public LivenessStatus getLivenessStatus() {
         if (isAutomaticAbsent()) return LivenessStatus.NOT_APPLICABLE;
+        if (verificationBasis == AttendanceVerificationBasis.MANUAL) return LivenessStatus.NOT_PERFORMED;
         if (verificationBasis != AttendanceVerificationBasis.LIVENESS) return LivenessStatus.HISTORICAL;
         if (evidence == null || evidence.getAiVerificationSession() == null || evidence.getAiProcessedAt() == null)
             return LivenessStatus.NOT_PERFORMED;

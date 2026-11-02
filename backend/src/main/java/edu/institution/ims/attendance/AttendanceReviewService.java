@@ -106,10 +106,18 @@ public class AttendanceReviewService {
                 || ("MENTOR".equals(principal.role()) && assignments.findByStudentIdAndActiveTrue(studentId)
                     .filter(a -> a.getMentor().getId().equals(principal.id())).isPresent());
         if (!allowed) throw missing();
-        return jdbc.query("select * from attendance_review_audit where attendance_id=? order by revision desc",(rs,n) ->
+        var result=new java.util.ArrayList<>(jdbc.query("select * from attendance_review_audit where attendance_id=? order by revision desc",(rs,n) ->
                 new Audit(rs.getInt("revision"),AttendanceReviewStatus.valueOf(rs.getString("previous_status")),
                         AttendanceReviewStatus.valueOf(rs.getString("status")),rs.getLong("reviewer_id"),rs.getString("reviewer_name"),
-                        rs.getTimestamp("reviewed_at").toInstant(),rs.getString("reason")),id);
+                        rs.getTimestamp("reviewed_at").toInstant(),rs.getString("reason")),id));
+        // The retained request is the decision audit for manual late attendance, including orphan IIIC reviews.
+        result.addAll(jdbc.query("select r.*,coalesce(p.name,u.email) as reviewer_name from late_attendance_requests r "
+                + "join users u on u.id=r.reviewer_id left join mentor_profiles p on p.user_id=u.id "
+                + "where r.attendance_id=? and r.status='APPROVED'",(rs,n) -> new Audit(1,AttendanceReviewStatus.PENDING,
+                    AttendanceReviewStatus.APPROVED,rs.getLong("reviewer_id"),rs.getString("reviewer_name"),
+                    rs.getTimestamp("reviewed_at").toInstant(),"Late attendance request #"+rs.getLong("id")+": "+rs.getString("reason")),id));
+        result.sort(java.util.Comparator.comparing(Audit::reviewedAt).reversed());
+        return result;
     }
     private static AttendanceException missing() { return error(HttpStatus.NOT_FOUND,"ATTENDANCE_NOT_FOUND","Attendance was not found in your assigned scope"); }
     private static AttendanceException error(HttpStatus status,String code,String message) { return new AttendanceException(status,code,message); }

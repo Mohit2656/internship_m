@@ -19,7 +19,7 @@ public class StudentProfileController {
     }
     @PutMapping public StudentProfileResponse update(@AuthenticationPrincipal UserPrincipal principal, @Valid @RequestBody StudentProfileRequest request) { return service.updateOwn(principal, request); }
     @GetMapping("/options") public ProfileOptionsResponse options() {
-        var branches = Arrays.stream(Branch.values()).map(b -> new ProfileOptionsResponse.Option(b.name(), b.getLabel())).toList();
-        return new ProfileOptionsResponse(branches, List.of("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"), 1, 8);
+        var branches = List.of(Branch.COMPUTER_ENGINEERING).stream().map(b -> new ProfileOptionsResponse.Option(b.name(), b.getLabel())).toList();
+        return new ProfileOptionsResponse(branches, List.of("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"), 8, 8, List.of("A", "B"));
     }
 }

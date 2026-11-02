@@ -249,8 +249,8 @@ public class MonthlyProgressService {
         StudentAccount account = student.getStudentAccount();
         String name = profile != null ? profile.getStudentName() : account == null ? null : account.getStudentName();
         String uid = profile != null ? profile.getUid() : account == null ? null : account.getUid();
-        String branch = profile == null ? null : profile.getBranch().getLabel();
-        Integer semester = profile != null ? profile.getSemester() : account == null ? null : account.getSemester();
+        String branch = "Computer Engineering";
+        Integer semester = 8;
         InternshipDetails internship = report.getStudentInternship();
         return new MonthlyProgressReportResponse(report.getId(), student.getId(), name, uid, branch, semester,
                 internship.getId(), internship.getCompanyName(), internship.getInternshipMode().getLabel(),
@@ -258,7 +258,7 @@ public class MonthlyProgressService {
                 report.getPhotoOriginalName(), report.getPhotoMimeType(), report.getPhotoSize(), report.getSubmittedAt(),
                 report.getImageWidth(), report.getImageHeight(), report.getImageSha256(), report.getStatus(), report.getRevision(),
                 report.getReviewer()==null?null:report.getReviewer().getId(),
-                report.getReviewer()==null?null:report.getReviewer().getEmail(), report.getReviewedAt(), report.getRejectionReason());
+                report.getReviewer()==null?null:report.getReviewer().getEmail(), report.getReviewedAt(), report.getRejectionReason(), profile == null ? account == null ? null : account.getSection() : profile.getSection());
     }
 
     private static MonthlyProgressException duplicate() { return error(HttpStatus.CONFLICT, "MONTHLY_REPORT_ALREADY_SUBMITTED", "A report has already been submitted for this internship month"); }

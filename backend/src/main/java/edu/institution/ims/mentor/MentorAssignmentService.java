@@ -138,11 +138,11 @@ public class MentorAssignmentService {
         return new AssignmentStudentResponse(student.getId(),
                 profile == null ? account == null ? null : account.getStudentName() : profile.getStudentName(),
                 profile == null ? account == null ? null : account.getUid() : profile.getUid(),
-                profile == null ? null : profile.getBranch().name(),
-                profile == null ? null : profile.getBranch().getLabel(),
-                profile == null ? account == null ? null : account.getSemester() : Integer.valueOf(profile.getSemester()),
+                "COMPUTER_ENGINEERING", "Computer Engineering", 8,
                 profile == null ? ProfileStatus.INCOMPLETE : ProfileStatus.COMPLETE,
-                mentorId, mentorId == null ? null : mentorNames.get(mentorId));
+                mentorId, mentorId == null ? null : mentorNames.get(mentorId),
+                profile == null ? account == null ? null : account.getSection() : profile.getSection(),
+                profile == null ? account == null || account.getSection() == null : profile.isSectionNeedsReview());
     }
 
     private static MentorAssignmentException error(HttpStatus status, String code, String message) {

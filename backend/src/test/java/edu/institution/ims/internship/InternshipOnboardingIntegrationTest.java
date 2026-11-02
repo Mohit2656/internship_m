@@ -253,6 +253,6 @@ class InternshipOnboardingIntegrationTest {
         p.put("phoneNumber", "+91 98765 43210"); p.put("guardianName", "Guardian " + suffix); p.put("guardianContact", "+91 98765 43211"); p.put("emergencyContact", "+91 98765 43212");
         p.put("bloodGroup", "O+"); p.put("aadhaarNumber", "123456789012"); p.put("facultyMentorName", "Faculty Mentor"); p.put("facultyMentorContact", "+91 98765 43213");
         p.put("internshipCoordinatorName", "Internship Coordinator"); p.put("internshipCoordinatorContact", "+91 98765 43214"); p.put("cdcCoordinatorName", "CDC Coordinator"); p.put("cdcCoordinatorContact", "+91 98765 43215");
-        p.put("academicYear", "2026-2027"); p.put("semester", 7); return p;
+        p.put("academicYear", "2026-2027"); p.put("semester", 8); p.put("section", "A"); return p;
     }
 }

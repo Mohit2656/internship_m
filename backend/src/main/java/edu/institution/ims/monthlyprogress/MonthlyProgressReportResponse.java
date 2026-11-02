@@ -9,4 +9,4 @@ public record MonthlyProgressReportResponse(
         String photoOriginalName, String photoMimeType, long photoSize, Instant submittedAt,
         Integer imageWidth, Integer imageHeight, String imageSha256,
         MonthlyProgressStatus status, int revision, Long reviewerId, String reviewerEmail,
-        Instant reviewedAt, String rejectionReason) {}
+        Instant reviewedAt, String rejectionReason, String section) {}

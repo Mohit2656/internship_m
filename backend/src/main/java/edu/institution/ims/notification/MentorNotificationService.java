@@ -2,6 +2,7 @@ package edu.institution.ims.notification;
 
 import edu.institution.ims.attendance.AttendanceRecord;
 import edu.institution.ims.attendance.AttendanceResult;
+import edu.institution.ims.attendance.AttendanceSubmissionType;
 import edu.institution.ims.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,7 +41,8 @@ public class MentorNotificationService {
     // later in submission rolls back the notification, and the unique key handles retries.
     @Transactional(propagation = Propagation.MANDATORY)
     public void attendanceSubmitted(AttendanceRecord record) {
-        if (record.isAutomaticAbsent() || record.getAttendanceResult() != AttendanceResult.PRESENT) return;
+        if (record.isAutomaticAbsent() || record.getSubmissionType()==AttendanceSubmissionType.LATE_REQUEST
+                || (record.getAttendanceResult()!=AttendanceResult.PRESENT && record.getAttendanceResult()!=AttendanceResult.PENDING_MENTOR_REVIEW)) return;
         jdbc.update("insert into mentor_notifications(mentor_user_id,student_user_id,attendance_id,"
                 + "notification_type,title,message,action_url,created_at) "
                 + "select a.mentor_user_id, s.id, ?, 'ATTENDANCE_SUBMITTED', 'Attendance submitted', "

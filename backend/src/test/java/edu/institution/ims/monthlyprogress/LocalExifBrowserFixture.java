@@ -24,7 +24,7 @@ public class LocalExifBrowserFixture {
         mentors.save(new MentorProfile(mentor,"EXIF Test Mentor","EXIF-M1","Computer Engineering","Professor","+91 9876543210"));
         mentors.save(new MentorProfile(other,"EXIF Other Mentor","EXIF-M2","Computer Engineering","Professor","+91 9876543211"));
         User student=users.save(new User("student@exif-test.invalid",password,Role.STUDENT,true));
-        app.getBean(StudentAccountRepository.class).save(new StudentAccount(student,"EXIF Test Student","EXIF-LOCAL-1",6));
+        app.getBean(StudentAccountRepository.class).save(new StudentAccount(student,"EXIF Test Student","EXIF-LOCAL-1",8));
         var assignments=app.getBean(MentorStudentAssignmentRepository.class);assignments.save(new MentorStudentAssignment(mentor,student,admin,Instant.now()));
         var onboardings=app.getBean(InternshipOnboardingRepository.class);var o=new InternshipOnboarding(student);o.markDocumentsComplete();o.confirmDiary();o.markInternshipDetailsComplete();o=onboardings.saveAndFlush(o);
         var details=new InternshipDetails(o);details.apply("EXIF Test Company",CompanyType.IT,null,"Local test address","+91 9876543210","Test Supervisor","Manager","+91 9876543211",12,LocalDate.of(2026,1,1),LocalDate.of(2026,12,31),52,InternshipMode.OFFICE_REPORTING,BigDecimal.ZERO,false);

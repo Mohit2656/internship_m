@@ -43,7 +43,7 @@ public class MentorStudentProfileService {
                 professional == null ? null : professional.getCareerInterests(), confirmedSkills,
                 profile.getUpdatedAt() == null ? profile.getCreatedAt() : profile.getUpdatedAt(),
                 professional == null ? null : professional.getUpdatedAt() == null ? professional.getCreatedAt() : professional.getUpdatedAt(),
-                professional == null ? null : skills.lastStudentUpdateByProfileId(professional.getId()));
+                professional == null ? null : skills.lastStudentUpdateByProfileId(professional.getId()), profile.getSection(), profile.isSectionNeedsReview());
     }
 
     private void requireMentor(Long userId) {

@@ -87,6 +87,7 @@ public class PhysicalAttendanceService {
                 internship, submitted, locationCapturedAt, true, accuracyMeters);
         record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
         attendance.saveAndFlush(record);
+        submissions.notifySubmitted(record);
         return AttendanceService.response(record);
     }
 

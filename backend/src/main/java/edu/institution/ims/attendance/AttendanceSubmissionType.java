@@ -4,5 +4,6 @@ public enum AttendanceSubmissionType {
     BASIC,
     PHYSICAL_CAPTURE,
     REMOTE_CAPTURE,
-    AUTO_ABSENT
+    AUTO_ABSENT,
+    LATE_REQUEST
 }

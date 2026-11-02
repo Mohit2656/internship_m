@@ -188,7 +188,7 @@ class AttendanceIntegrationTest {
 
     private User student(String email, String password, String name, String uid) {
         User student = user(email, password, Role.STUDENT);
-        studentAccounts.save(new StudentAccount(student, name, uid, 6));
+        studentAccounts.save(new StudentAccount(student, name, uid, 8));
         return student;
     }
 

@@ -79,8 +79,8 @@ class DashboardReportIntegrationTest {
         StudentProfile profile = new StudentProfile(studentA);
         profile.apply("Ada, \"अदा\"\nStudent", Branch.COMPUTER_ENGINEERING, "00001", "001", "Private address", null,
                 "ada@example.com", "ada@college.edu", "09876543210", "Guardian", "9876543210", "9876543211", "A+",
-                "Profile Mentor", "9876543210", "Coordinator", "9876543210", "CDC", "9876543210", "2026-2027", 6);
-        profile.setEncryptedAadhaar(encryption.encrypt("123456789012"), "9012"); profiles.saveAndFlush(profile);
+                "Profile Mentor", "9876543210", "Coordinator", "9876543210", "CDC", "9876543210", "2026-2027", 8);
+        profile.setSection("A"); profile.setEncryptedAadhaar(encryption.encrypt("123456789012"), "9012"); profiles.saveAndFlush(profile);
         assignments.saveAndFlush(new MentorStudentAssignment(mentorA, studentA, admin, NOW));
         assignments.saveAndFlush(new MentorStudentAssignment(mentorB, studentB, admin, NOW));
         InternshipOnboarding onboarding = new InternshipOnboarding(studentA); onboarding.selectSource(InternshipSource.SELF);
@@ -144,7 +144,7 @@ class DashboardReportIntegrationTest {
     }
 
     @Test void filtersComposeWithinAuthorizedStudentsAndEscapeSearchWildcards() throws Exception {
-        preview(admin, List.of("uid"), Map.of("branch", "COMPUTER_ENGINEERING", "semester", "6", "academicYear", "2026-2027", "company", "ALPHA", "mentorId", mentorA.getId().toString(), "paid", "PAID", "fullTimeOffered", "YES", "verificationStatus", "HISTORICAL", "workflowStatus", "INTERNSHIP_DETAILS_COMPLETE"))
+        preview(admin, List.of("uid"), Map.of("branch", "COMPUTER_ENGINEERING", "semester", "8", "academicYear", "2026-2027", "company", "ALPHA", "mentorId", mentorA.getId().toString(), "paid", "PAID", "fullTimeOffered", "YES", "verificationStatus", "HISTORICAL", "workflowStatus", "INTERNSHIP_DETAILS_COMPLETE"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.studentCount").value(1)).andExpect(jsonPath("$.students[0].uid").value("00001"));
         preview(admin, List.of("uid"), Map.of("search", "%")).andExpect(status().isOk()).andExpect(jsonPath("$.studentCount").value(0));
         preview(admin, List.of("uid"), Map.of("profileStatus", "INCOMPLETE", "attendanceStatus", "NOT_SUBMITTED")).andExpect(status().isOk()).andExpect(jsonPath("$.studentCount").value(2));
@@ -317,7 +317,7 @@ class DashboardReportIntegrationTest {
 
     private User user(String email, Role role) { return users.saveAndFlush(new User(email, passwordHash, role, true)); }
     private User student(String email, String name, String uid, int semester) {
-        User user = user(email, Role.STUDENT); accounts.saveAndFlush(new StudentAccount(user, name, uid, semester)); return user;
+        User user = user(email, Role.STUDENT); accounts.saveAndFlush(new StudentAccount(user, name, uid, 8)); return user;
     }
     private Cookie cookie(User user) { return new Cookie("ims_auth", jwt.create(UserPrincipal.from(user))); }
     private ResultActions preview(User user, List<String> fields, Map<String, String> filters) throws Exception { return postReport(user, "preview", fields, filters, "XLSX"); }
@@ -417,6 +417,53 @@ class DashboardReportIntegrationTest {
         var csv=typedReport(mentorA,"generate","ATTENDANCE",List.of("uid","date","verification"),filters,List.of(),"CSV").andExpect(status().isOk()).andReturn();
         assertThat(csv.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("2026-10-04","HISTORICAL").doesNotContain("2026-10-05","00002","UNVERIFIED");
         typedReport(mentorB,"table","ATTENDANCE",List.of("uid"),Map.of(),List.of(),"XLSX").andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(0));
+    }
+    @Test void dailyAttendanceSummaryUsesScopedStoredRecordsDateFiltersAndWeightedStatistics() throws Exception {
+        attendance.saveAndFlush(AttendanceRecord.automaticAbsent(studentA,internship,TODAY.minusDays(2),NOW));
+        entities.clear();
+        var fields=List.of("date","students","total","present","absent","historical","percentage");
+        for(User viewer:List.of(admin,mentorA)) {
+            typedReport(viewer,"table","ATTENDANCE_DAILY_SUMMARY",fields,Map.of(),List.of(studentA.getId()),"XLSX")
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(3))
+                    .andExpect(jsonPath("$.rows[0].date").value(TODAY.minusDays(2).toString()))
+                    .andExpect(jsonPath("$.rows[0].students").value(1)).andExpect(jsonPath("$.rows[0].total").value(1))
+                    .andExpect(jsonPath("$.rows[0].absent").value(1)).andExpect(jsonPath("$.rows[0].percentage").value(0))
+                    .andExpect(jsonPath("$.summary.records").value(3)).andExpect(jsonPath("$.summary.present").value(2))
+                    .andExpect(jsonPath("$.summary.absent").value(1)).andExpect(jsonPath("$.summary.historical").value(2))
+                    .andExpect(jsonPath("$.summary.presentRecordPercentage").value(org.hamcrest.Matchers.closeTo(66.6667,0.0001)));
+            var filtered=Map.of("historyFrom",TODAY.minusDays(1).toString(),"historyTo",TODAY.minusDays(1).toString(),"verificationStatus","HISTORICAL");
+            typedReport(viewer,"table","ATTENDANCE_DAILY_SUMMARY",fields,filtered,List.of(studentA.getId()),"XLSX")
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.totalRows").value(1))
+                    .andExpect(jsonPath("$.rows[0].date").value(TODAY.minusDays(1).toString()))
+                    .andExpect(jsonPath("$.rows[0].percentage").value(100)).andExpect(jsonPath("$.summary.records").value(1));
+            typedReport(viewer,"table","ATTENDANCE_SUMMARY",List.of("total","percentage"),Map.of(),List.of(studentA.getId()),"XLSX")
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.summary.records").value(3)).andExpect(jsonPath("$.summary.present").value(2));
+        }
+        typedReport(mentorB,"table","ATTENDANCE_DAILY_SUMMARY",fields,Map.of(),List.of(),"XLSX")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.rows").isEmpty()).andExpect(jsonPath("$.summary.records").value(0));
+        for(String action:List.of("table","generate")) {
+            typedReport(mentorB,action,"ATTENDANCE_DAILY_SUMMARY",fields,Map.of("company","NO_MATCH"),List.of(studentA.getId()),"PDF").andExpect(status().isForbidden());
+            typedReport(mentorA,action,"ATTENDANCE_DAILY_SUMMARY",fields,Map.of("studentId",studentB.getId().toString()),List.of(),"CSV").andExpect(status().isForbidden());
+        }
+        typedReport(admin,"table","ATTENDANCE_DAILY_SUMMARY",fields,Map.of("historyFrom",TODAY.toString(),"historyTo",TODAY.minusDays(1).toString()),List.of(),"XLSX").andExpect(status().isBadRequest());
+    }
+    @Test void dailyAttendanceSummaryExportsOnlyDateAggregatesInExcelCsvAndPdf() throws Exception {
+        var fields=List.of("date","total","present","absent","percentage");
+        var filters=Map.of("historyFrom",TODAY.minusDays(1).toString(),"historyTo",TODAY.minusDays(1).toString());
+        for(User viewer:List.of(admin,mentorA)) {
+            var csv=typedReport(viewer,"generate","ATTENDANCE_DAILY_SUMMARY",fields,filters,List.of(studentA.getId()),"CSV").andExpect(status().isOk()).andReturn();
+            assertThat(csv.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains(TODAY.minusDays(1).toString(),"Stored Records","100").doesNotContain(TODAY.toString(),"00001","recordId","latitude");
+            try(var book=workbook(typedReport(viewer,"generate","ATTENDANCE_DAILY_SUMMARY",fields,filters,List.of(studentA.getId()),"XLSX").andExpect(status().isOk()).andReturn())) {
+                var sheet=book.getSheet("Students");assertThat(sheet.getLastRowNum()).isEqualTo(4);
+                assertThat(sheet.getRow(4).getCell(0).getLocalDateTimeCellValue().toLocalDate()).isEqualTo(TODAY.minusDays(1));
+                assertThat(sheet.getRow(4).getCell(1).getNumericCellValue()).isEqualTo(1);
+                assertThat(sheet.getRow(4).getCell(4).getNumericCellValue()).isEqualTo(100);
+            }
+            var result=typedReport(viewer,"generate","ATTENDANCE_DAILY_SUMMARY",fields,filters,List.of(studentA.getId()),"PDF").andExpect(status().isOk()).andReturn();
+            try(var pdf=PDDocument.load(result.getResponse().getContentAsByteArray())) {
+                assertThat(new PDFTextStripper().getText(pdf)).contains("Date-wise Attendance Summary",TODAY.minusDays(1).toString(),"Stored Records").doesNotContain("Ada,", "00001", "Attendance record ID");
+            }
+        }
     }
     @Test void automaticAbsencesAppearInAuthorizedDailyReportsAndTotalsWithoutStudentSubmissionOrLiveness() throws Exception {
         attendance.saveAndFlush(AttendanceRecord.automaticAbsent(studentA, internship, TODAY.minusDays(2), NOW));

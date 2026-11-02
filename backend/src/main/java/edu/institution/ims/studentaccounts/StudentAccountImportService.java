@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class StudentAccountImportService {
-    private static final List<String> HEADERS = List.of("Name", "UID", "Email ID", "Semester");
+    private static final List<String> HEADERS = List.of("Name", "UID", "Email ID", "Semester", "Section");
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private final UserRepository users; private final StudentAccountRepository accounts; private final StudentProfileRepository profiles;
     private final PasswordEncoder encoder; private final TransactionTemplate transactions;
@@ -74,29 +74,32 @@ public class StudentAccountImportService {
         candidateUser.assignAcademicSession(sessionId);
         User user = users.saveAndFlush(candidateUser);
         user.requirePasswordChange(); users.saveAndFlush(user);
-        accounts.saveAndFlush(new StudentAccount(user, candidate.name(), candidate.uid(), candidate.semester()));
+        StudentAccount account = new StudentAccount(user, candidate.name(), candidate.uid(), 8);
+        account.setSection(candidate.section());
+        accounts.saveAndFlush(account);
     }
     private static void validateHeaders(Row row) {
         if (row == null) throw new IllegalArgumentException("The Excel file is missing the required header row");
         DataFormatter formatter = new DataFormatter();
         for (int i = 0; i < HEADERS.size(); i++) if (!HEADERS.get(i).equalsIgnoreCase(value(row, i, formatter)))
-            throw new IllegalArgumentException("The Excel headers must be: Name, UID, Email ID, Semester");
+            throw new IllegalArgumentException("The Excel headers must be: Name, UID, Email ID, Semester, Section");
     }
     private static Candidate candidate(Row row, DataFormatter formatter) {
         String name = value(row, 0, formatter).trim(); String uid = value(row, 1, formatter).trim().toUpperCase(Locale.ROOT);
         String email = value(row, 2, formatter).trim().toLowerCase(Locale.ROOT); String semester = value(row, 3, formatter).trim();
-        Integer value; try { value = Integer.valueOf(semester); } catch (NumberFormatException e) { value = null; }
-        return new Candidate(name, uid, email, value);
+        Integer value; try { value = semester.isBlank() ? 8 : Integer.valueOf(semester); } catch (NumberFormatException e) { value = null; }
+        return new Candidate(name, uid, email, value, value(row, 4, formatter).trim().toUpperCase(Locale.ROOT));
     }
     private static String validate(Candidate c) {
         if (c.name().isBlank() || c.name().length() > 150) return "Name is required and must be 150 characters or fewer";
         if (c.uid().isBlank() || c.uid().length() > 50) return "UID is required and must be 50 characters or fewer";
         if (c.email().isBlank() || c.email().length() > 254 || !EMAIL.matcher(c.email()).matches()) return "Email ID is invalid";
-        if (c.semester() == null || c.semester() < 1 || c.semester() > 8) return "Semester must be between 1 and 8";
+        if (c.semester() == null || c.semester() != 8) return "Semester must be 8";
+        if (!Set.of("A", "B").contains(c.section())) return "Section must be A or B";
         return null;
     }
     private static String value(Row row, int column, DataFormatter formatter) { Cell cell = row == null ? null : row.getCell(column, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL); return cell == null ? "" : formatter.formatCellValue(cell); }
     private static boolean isBlank(Row row, DataFormatter formatter) { for (int i = 0; i < HEADERS.size(); i++) if (!value(row, i, formatter).isBlank()) return false; return true; }
     private static ImportRowResult result(int row, Candidate candidate, String status, String reason) { return new ImportRowResult(row, candidate.name(), candidate.uid(), candidate.email(), status, reason); }
-    private record Candidate(String name, String uid, String email, Integer semester) {}
+    private record Candidate(String name, String uid, String email, Integer semester, String section) {}
 }

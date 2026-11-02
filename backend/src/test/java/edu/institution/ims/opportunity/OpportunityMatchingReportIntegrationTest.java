@@ -101,6 +101,7 @@ class OpportunityMatchingReportIntegrationTest {
     }
 
     @Test void cgpaIsUnknownAndUnknownStudentsNeverReceiveMatchAlerts() {
+        for(User value:List.of(student,other)){var profile=profiles.findByUserId(value.getId()).orElseThrow();profile.setCurrentCgpa(null);profiles.saveAndFlush(profile);}
         Opportunity restricted=opportunity(new BigDecimal("7.50"),List.of());
         service.publish(restricted.getId());
         var report=matching.get(restricted.getId(),matching.history(restricted.getId()).get(0).id()).report();
@@ -198,7 +199,8 @@ class OpportunityMatchingReportIntegrationTest {
     private User candidate(String name,Branch branch,int semester,String suffix) {
         User user=users.save(new User("matching-report-"+suffix+"@example.edu",encoder.encode("Password!23"),Role.STUDENT,true));
         StudentProfile p=new StudentProfile(user);
-        p.apply(name,branch,"M"+user.getId(),"R"+user.getId(),"Address",null,user.getEmail(),user.getEmail(),"9876543210","Guardian","9876543211","9876543212","O+","Mentor","9876543213","Coordinator","9876543214","CDC","9876543215","2026-2027",semester);
+        p.apply(name,Branch.COMPUTER_ENGINEERING,"M"+user.getId(),"R"+user.getId(),"Address",null,user.getEmail(),user.getEmail(),"9876543210","Guardian","9876543211","9876543212","O+","Mentor","9876543213","Coordinator","9876543214","CDC","9876543215","2026-2027",8);
+        p.setSection("A");p.setCurrentCgpa(new BigDecimal(branch==Branch.COMPUTER_ENGINEERING?"8.00":"6.00"));
         p.setEncryptedAadhaar("test-encrypted-value","1234"); profiles.saveAndFlush(p); return user;
     }
     private void parsedResume(User user) {
@@ -207,7 +209,7 @@ class OpportunityMatchingReportIntegrationTest {
         var analysis=new ResumeAnalysis(resume); analysis.complete(new AiResumeResult("test","1",List.of(),List.of(),List.of(),List.of())); analyses.saveAndFlush(analysis);
     }
     private Opportunity opportunity(BigDecimal cgpa,List<Branch> branches) {
-        var request=new OpportunityRequest("Example Company","Software Intern","Build Java applications using Docker",null,"Pune",OpportunityMode.HYBRID,3,BigDecimal.ZERO,"INR",LocalDate.now().plusDays(10),cgpa,branches,List.of(),List.of("Java"),List.of("Docker"));
+        var request=new OpportunityRequest("Example Company","Software Intern","Build Java applications using Docker",null,"Pune",OpportunityMode.HYBRID,3,BigDecimal.ZERO,"INR",LocalDate.now().plusDays(10),cgpa==null?new BigDecimal("7.50"):cgpa,branches,List.of(),List.of("Java"),List.of("Docker"));
         Opportunity value=opportunities.saveAndFlush(new Opportunity(admin,request));
         opportunitySkills.saveAllAndFlush(List.of(new OpportunitySkill(value,new NormalizedSkill("Java","java"),OpportunitySkillType.REQUIRED),new OpportunitySkill(value,new NormalizedSkill("Docker","docker"),OpportunitySkillType.PREFERRED)));
         return value;
