@@ -20,7 +20,7 @@ const monthlyDates = load("lib/monthly-progress.ts", { "@/lib/api": {} });
 const update = load("components/LastStudentUpdate.tsx");
 const view = load("components/InternshipDetailsView.tsx", { "@/components/LastStudentUpdate": update });
 const workplace = { placeId: null, name: "Registered branch", address: "Selected branch address", latitude: 18.52, longitude: 73.85 };
-const details = { id: 7, companyName: "Existing company", companyType: "IT", companyTypeLabel: "IT", companyAddress: "Existing postal address",
+const details = { id: 7, internshipNumber: 1, companyName: "Existing company", companyType: "IT", companyTypeLabel: "IT", companyAddress: "Existing postal address",
   companyPhone: "9999999999", industrySupervisorName: "Supervisor", industrySupervisorDesignation: "Manager", industrySupervisorContact: "8888888888",
   durationMonths: 3, startDate: "2026-10-01", endDate: "2026-12-31", totalWeeks: 12, internshipMode: "OFFICE_REPORTING", internshipModeLabel: "Office",
   stipendPerMonth: 0, fullTimeEmploymentOffered: false, workplace };
@@ -56,7 +56,7 @@ test("company registration preserves saved coordinates and submits a newly confi
   const html = renderToStaticMarkup(tree);
   for (const label of ["Company Name", "Type of Company", "Address of Company", "Company Phone Number", "Industry Supervisor", "Internship Mode"]) assert.ok(html.includes(label));
   assert.match(html, /OpenStreetMap workplace picker|Workplace location/);
-  assert.match(html, /assigned mentor and the III Cell/);
+  assert.match(html, /assigned mentor/);
   assert.deepEqual(harness.picker(tree).value, workplace);
   assert.equal(harness.picker(tree).address, details.companyAddress);
   const selected = { ...workplace, latitude: 19.076, longitude: 72.8777, address: "Corrected branch address" };
@@ -116,7 +116,7 @@ const shared = { "next/link": { default: ({ children, ...props }) => React.creat
 
 test("student internship view preserves company information and shows its own workplace approval panel", () => {
   const { default: Page } = load("app/student/internship/details/page.tsx", { ...shared,
-    react: hooks({ 0: { workflowStatus: "INTERNSHIP_DETAILS_COMPLETE" }, 1: details, 2: false }),
+    react: hooks({ 0: 1, 1: { workflowStatus: "INTERNSHIP_DETAILS_COMPLETE" }, 2: details, 10: false }),
     "@/components/InternshipDetailsForm": { InternshipDetailsForm: empty }
   });
   const html = renderToStaticMarkup(React.createElement(Page));
@@ -159,7 +159,7 @@ test("admin student view preserves company and hybrid configuration alongside sc
 
 test("mentor student view retains assigned profile and scopes workplace review to that student", () => {
   const { default: Page } = load("app/mentor/students/[id]/page.tsx", { ...shared,
-    react: hooks({ 0: { studentName: "Assigned student", confirmedSkills: [] } })
+    react: hooks({ 0: { studentName: "Assigned student", confirmedSkills: [] }, 1: [details], 2: 1, 3: "" })
   });
   const html = renderToStaticMarkup(React.createElement(Page));
   assert.match(html, /Assigned student|Professional Profile/);

@@ -2,7 +2,7 @@ export type WeeklyStatus = "AVAILABLE" | "UPCOMING" | "ARCHIVED" | "PENDING_MENT
 export type WeeklyEvent = { revision: number; eventType: string; actorId: number; actorEmail: string; performedAt: string; workDescription: string; reason: string | null };
 export type InternshipWeek = {
   id: number; internshipId: number; studentUserId: number; studentName: string; uid: string | null;
-  companyName: string; weekNumber: number; periodStart: string; periodEnd: string; active: boolean;
+  section?: string | null; branch?: string; semester?: number; companyName: string; weekNumber: number; periodStart: string; periodEnd: string; active: boolean;
   submissionStatus: "SUBMITTED" | "NOT_SUBMITTED"; status: WeeklyStatus; workDescription: string | null;
   revision: number; submittedAt: string | null; reviewerId: number | null; reviewerEmail: string | null;
   reviewedAt: string | null; rejectionReason: string | null; attendanceSubmitted: number;

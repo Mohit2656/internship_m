@@ -1,11 +1,9 @@
 "use client";
-import { useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { ReportsCenter } from "@/components/ReportsCenter";
-import { AttendanceAbsenceOverview } from "@/components/AttendanceAbsenceOverview";
+import { AttendanceRecords } from "@/components/AttendanceRecords";
+import { DashboardPage } from "@/components/DashboardLayout";
 import { LateAttendancePermissions } from "@/components/LateAttendancePermissions";
 export default function Page() {
-  const [reports, setReports] = useState(false);
-  return <ProtectedRoute role="MENTOR"><AppFrame><main className="mx-auto max-w-7xl px-5 py-10 sm:px-8"><h1 className="text-3xl font-bold">Attendance approval</h1><p className="mt-2 text-sm text-slate-600">Select an assigned student to inspect submitted evidence and record your decision.</p><section id="late-attendance-permissions" className="scroll-mt-24"><LateAttendancePermissions /></section><AttendanceAbsenceOverview role="MENTOR" /><details className="mt-6" onToggle={event => setReports(event.currentTarget.open)}><summary className="cursor-pointer font-semibold text-blue-700">Attendance reports and export</summary>{reports && <ReportsCenter role="MENTOR" attendanceOnly={true} />}</details></main></AppFrame></ProtectedRoute>;
+  return <ProtectedRoute role="MENTOR"><AppFrame><DashboardPage eyebrow="Mentor workspace" title="Attendance" description="View individual attendance records, verify submission evidence and manage approval decisions."><AttendanceRecords role="MENTOR" /><section id="late-attendance-permissions" className="scroll-mt-24"><LateAttendancePermissions /></section></DashboardPage></AppFrame></ProtectedRoute>;
 }

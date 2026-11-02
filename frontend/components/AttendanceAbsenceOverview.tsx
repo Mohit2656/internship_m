@@ -10,14 +10,19 @@ import { LocationVerificationResult } from "@/components/LocationVerificationRes
 import { AttendanceReviewPanel } from "@/components/AttendanceReviewPanel";
 
 export type AttendanceTotals = { presentDays: number; absentDays: number; totalDays: number; percentage: number | null };
-export type StudentAttendanceSummary = { studentUserId: number; uid: string | null; studentName: string | null; branch: string | null; facultyMentor: string | null; company: string | null; workflowStatus: string; attendance: AttendanceTotals; reviewSummary?: { submitted: number; gpsVerified: number; pending: number; approved: number; rejected: number; manualReview: number } };
+export type StudentAttendanceSummary = { studentUserId: number; uid: string | null; studentName: string | null; branch: string | null; section?: string | null; sectionNeedsReview?: boolean; semester?: number; facultyMentor: string | null; company: string | null; workflowStatus: string; attendance: AttendanceTotals; reviewSummary?: { submitted: number; gpsVerified: number; pending: number; approved: number; rejected: number; manualReview: number } };
 export const formatAttendancePercentage = (value: number | null) => (value == null || isNaN(value)) ? "—" : `${value.toFixed(1)}%`;
 
 type History = { studentUserId: number; attendanceZone: string; totals: AttendanceTotals; records: Attendance[] };
-export function StudentAttendanceHistory({ role, studentId, name, onBack, onChanged, id }: { role: "ADMIN" | "MENTOR"; studentId: number; name: string; onBack: () => void; onChanged?: () => void; id?: string }) {
+export function StudentAttendanceHistory({ role, studentId, name, onBack, onChanged, id, showSummary = true, recordFilters = false }: { role: "ADMIN" | "MENTOR"; studentId: number; name: string; onBack: () => void; onChanged?: () => void; id?: string; showSummary?: boolean; recordFilters?: boolean }) {
   const [history, setHistory] = useState<History | null>(null);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [status, setStatus] = useState("");
+  const [gpsStatus, setGpsStatus] = useState("");
+  const [approval, setApproval] = useState("");
   useEffect(() => {
     const abort = new AbortController(); setHistory(null); setError("");
     api.get<History>(`/${role.toLowerCase()}/attendance/students/${studentId}`, { signal: abort.signal })
@@ -25,15 +30,55 @@ export function StudentAttendanceHistory({ role, studentId, name, onBack, onChan
       .catch(() => { if (!abort.signal.aborted) setError("Attendance history could not be loaded. Access may have changed."); });
     return () => abort.abort();
   }, [role, studentId, revision]);
+  const invalidDates = Boolean(fromDate && toDate && fromDate > toDate);
+  const manualLateRequest = (record: Attendance) => record.submissionType === "LATE_REQUEST";
+  const gpsVerificationStatus = (record: Attendance) => isAutomaticAbsence(record) || manualLateRequest(record) ? "NOT_APPLICABLE" : record.evidence?.locationVerificationStatus ?? "NOT_ASSESSED";
+  const records = history?.records.filter(record => !recordFilters || (
+    !invalidDates && (!fromDate || record.attendanceDate >= fromDate) && (!toDate || record.attendanceDate <= toDate)
+    && (!status || record.attendanceResult === status)
+    && (!gpsStatus || gpsVerificationStatus(record) === gpsStatus)
+    && (!approval || (record.review?.status ?? (record.attendanceResult === "PENDING_MENTOR_REVIEW" ? "PENDING" : "NOT_APPLICABLE")) === approval)
+  )) ?? [];
+  const refreshHistory = () => { setRevision(value => value + 1); onChanged?.(); };
   return <section id={id} className="mt-5 w-full max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-5" aria-label={`Attendance history for ${name}`}>
     <button type="button" data-button-variant="outline" onClick={onBack} className="text-sm">Back to student list</button>
-    <h3 className="mt-4 text-lg font-bold text-slate-950">Attendance history: {name}</h3>
+    <h3 className="mt-4 text-lg font-bold text-slate-950">{recordFilters ? "Attendance records" : "Attendance history"}: {name}</h3>
     {error ? <p role="alert" className="mt-4 text-red-700">{error}</p> : !history ? <p role="status" className="mt-4 text-slate-500">Loading attendance history...</p> : <>
-      <p className="mt-3 font-semibold text-slate-900">{history.totals.presentDays} present · {history.totals.absentDays} absent · {history.totals.totalDays} applicable recorded days · {formatAttendancePercentage(history.totals.percentage)}</p>
-      <p className="mt-2 text-xs text-slate-500">Totals exclude future dates, weekends, configured holidays, approved leave and unscheduled days. Times use {history.attendanceZone}.</p>
-      <div className="mt-4 w-full overflow-x-auto"><table className="w-full min-w-[950px] border-collapse text-left text-sm text-slate-900"><thead><tr className="border-b border-slate-200">{["Date", "Status", "Submission time", "Liveness", "Late submission", "Mentor approval", ...(role === "MENTOR" ? ["Actions"] : [])].map(label => <th key={label} className="p-3 font-semibold text-slate-900 whitespace-nowrap">{label}</th>)}</tr></thead>
-        <tbody>{history.records.map(record => <tr key={record.id} className="border-t border-slate-100 align-top"><td className="p-3 text-slate-900 whitespace-nowrap">{record.attendanceDate}</td><td className="p-3 text-slate-900"><p className="font-semibold text-slate-900">{record.attendanceResult}</p><LocationVerificationResult evidence={record.evidence} />{record.evidence?.dailyWorkSummary && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-600">{record.evidence.dailyWorkSummary}</p>}</td><td className="p-3 text-slate-900">{isAutomaticAbsence(record) ? "— (automatic absence)" : record.serverSubmittedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: history.attendanceZone }).format(new Date(record.serverSubmittedAt)) : "—"}<AttendanceLocations evidence={record.evidence} /></td><td className="p-3 text-slate-900 whitespace-nowrap">{livenessLabel(record.livenessStatus)}</td><td className="p-3 text-slate-900 whitespace-nowrap">{record.submittedLate ? "Yes · mentor permission" : "—"}</td><td className="p-3 text-slate-900"><AttendanceReviewPanel record={record} role={role} onChanged={() => { setRevision(value => value + 1); onChanged?.(); }} /></td>{role === "MENTOR" && <td className="p-3 text-slate-900"><MentorRecordDelete kind="attendance" id={record.id} description={`${name} · ${record.attendanceDate}`} onDeleted={() => { setRevision(value => value + 1); onChanged?.(); }} /></td>}</tr>)}</tbody>
-      </table>{!history.records.length && <p className="p-3 text-slate-500">No attendance records yet.</p>}</div>
+      {showSummary ? <><p className="mt-3 font-semibold text-slate-900">{history.totals.presentDays} present · {history.totals.absentDays} absent · {history.totals.totalDays} applicable recorded days · {formatAttendancePercentage(history.totals.percentage)}</p>
+        <p className="mt-2 text-xs text-slate-500">Totals exclude future dates, weekends, configured holidays, approved leave and unscheduled days. Times use {history.attendanceZone}.</p></> : <p className="mt-2 text-xs text-slate-500">Submission times use {history.attendanceZone}. GPS results and submitted coordinates show the original saved evidence.</p>}
+      {recordFilters && <fieldset className="mt-4 min-w-0 rounded-xl border border-slate-200 p-4"><legend className="px-1 text-sm font-semibold text-slate-900">Filter individual records</legend>
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <label className="min-w-0 text-xs font-semibold">From date<input type="date" value={fromDate} max={toDate || undefined} onChange={event => setFromDate(event.target.value)} className="input mt-1 w-full min-w-0" /></label>
+          <label className="min-w-0 text-xs font-semibold">To date<input type="date" value={toDate} min={fromDate || undefined} onChange={event => setToDate(event.target.value)} className="input mt-1 w-full min-w-0" /></label>
+          <label className="min-w-0 text-xs font-semibold">Attendance status<select value={status} onChange={event => setStatus(event.target.value)} className="input mt-1 w-full min-w-0"><option value="">All statuses</option><option value="PRESENT">Present</option><option value="ABSENT">Absent</option><option value="PENDING_MENTOR_REVIEW">Pending mentor review</option></select></label>
+          <label className="min-w-0 text-xs font-semibold">GPS verification<select value={gpsStatus} onChange={event => setGpsStatus(event.target.value)} className="input mt-1 w-full min-w-0"><option value="">All GPS results</option><option value="VERIFIED">Verified</option><option value="OUTSIDE_RADIUS">Outside workplace radius</option><option value="INSUFFICIENT_ACCURACY">Insufficient accuracy</option><option value="LOCATION_UNAVAILABLE">Location unavailable</option><option value="WORKPLACE_NOT_APPROVED">Workplace not approved</option><option value="STALE_LOCATION">GPS capture too old</option><option value="NOT_APPLICABLE">Not applicable</option><option value="NOT_ASSESSED">Not assessed</option></select></label>
+          <label className="min-w-0 text-xs font-semibold">Approval status<select value={approval} onChange={event => setApproval(event.target.value)} className="input mt-1 w-full min-w-0"><option value="">All approval statuses</option><option value="PENDING">Pending</option><option value="MANUAL_REVIEW">Manual review required</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option><option value="NOT_APPLICABLE">Not applicable</option></select></label>
+        </div>
+        {invalidDates && <p role="alert" className="mt-3 text-xs text-red-700">From date must be on or before To date.</p>}
+        <button type="button" data-button-variant="outline" className="mt-3 text-xs" onClick={() => { setFromDate(""); setToDate(""); setStatus(""); setGpsStatus(""); setApproval(""); }}>Clear record filters</button>
+      </fieldset>}
+      <div className="mt-4 w-full overflow-x-auto"><table className="w-full min-w-[950px] border-collapse text-left text-sm text-slate-900"><thead><tr className="border-b border-slate-200">{["Date", "Status", ...(recordFilters ? ["GPS verification", "Submitted location"] : []), "Submission time", "Liveness", "Late submission", "Mentor approval", ...(role === "MENTOR" ? ["Actions"] : [])].map(label => <th key={label} className="p-3 font-semibold text-slate-900 whitespace-nowrap">{label}</th>)}</tr></thead>
+        <tbody>{records.map(record => <tr key={record.id} className="border-t border-slate-100 align-top">
+          <td className="p-3 text-slate-900 whitespace-nowrap">{record.attendanceDate}</td>
+          <td className="p-3 text-slate-900">
+            <p className="font-semibold text-slate-900">{recordFilters ? record.attendanceResult.replaceAll("_", " ") : record.attendanceResult}</p>
+            {!recordFilters && <LocationVerificationResult evidence={record.evidence} />}
+            {record.evidence?.dailyWorkSummary && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-600">{record.evidence.dailyWorkSummary}</p>}
+          </td>
+          {recordFilters && <>
+            <td className="min-w-56 p-3 text-slate-900">{isAutomaticAbsence(record) ? "Not applicable — automatic absence" : manualLateRequest(record) ? "Not assessed — approved manual request" : gpsVerificationStatus(record) === "NOT_ASSESSED" ? "Not assessed" : gpsVerificationStatus(record) === "NOT_APPLICABLE" ? "Not applicable" : <LocationVerificationResult evidence={record.evidence} />}</td>
+            <td className="min-w-60 p-3 text-slate-900">{isAutomaticAbsence(record) ? "Not applicable — automatic absence" : manualLateRequest(record) ? "No student GPS capture — approved manual request" : <AttendanceLocations evidence={record.evidence} />}</td>
+          </>}
+          <td className="p-3 text-slate-900">
+            {isAutomaticAbsence(record) ? "— (automatic absence)" : record.serverSubmittedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: history.attendanceZone }).format(new Date(record.serverSubmittedAt)) : "—"}
+            {!recordFilters && <AttendanceLocations evidence={record.evidence} />}
+          </td>
+          <td className="p-3 text-slate-900 whitespace-nowrap">{livenessLabel(record.livenessStatus)}</td>
+          <td className="p-3 text-slate-900 whitespace-nowrap">{manualLateRequest(record) ? "Approved late request · manual decision" : record.submittedLate ? "Yes · mentor permission" : "—"}</td>
+          <td className="p-3 text-slate-900"><AttendanceReviewPanel record={record} role={role} onChanged={refreshHistory} /></td>
+          {role === "MENTOR" && <td className="p-3 text-slate-900"><MentorRecordDelete kind="attendance" id={record.id} description={`${name} · ${record.attendanceDate}`} onDeleted={refreshHistory} /></td>}
+        </tr>)}</tbody>
+      </table>{!records.length && <p className="p-3 text-slate-500">{history.records.length ? "No attendance records match these filters." : "No attendance records yet."}</p>}</div>
     </>}
   </section>;
 }

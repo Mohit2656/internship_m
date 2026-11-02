@@ -24,6 +24,7 @@ export function ResetPasswordButton({ userId, name, email, disabled = false }: {
   useEffect(() => { if (open) dialog.current?.showModal(); }, [open]);
   function close() {
     if (busy.current) return;
+    dialog.current?.close();
     generation.current++; setPassword(""); setError(""); setCopyStatus(""); setOpen(false); trigger.current?.focus();
   }
   async function reset() {

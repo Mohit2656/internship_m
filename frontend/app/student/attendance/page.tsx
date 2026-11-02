@@ -15,6 +15,7 @@ import {
 import { LocationVerificationResult } from "@/components/LocationVerificationResult";
 import { AttendanceReviewFeedback } from "@/components/AttendanceReviewPanel";
 import { AttendanceLocations } from "@/components/AttendanceLocations";
+import { StudentLateAttendanceRequests } from "@/components/StudentLateAttendanceRequests";
 import { InternshipDetails } from "@/lib/internship-details";
 import {
   getSelectedInternship,
@@ -24,7 +25,7 @@ import {
   InternshipStatusBadge,
 } from "@/lib/internship-selection";
 
-export default function StudentAttendancePage() {
+function StudentAttendanceContent() {
   const [activeTab, setActiveTab] = useState<1 | 2>(1);
   const [internships, setInternships] = useState<InternshipDetails[]>([]);
   const [records, setRecords] = useState<Attendance[]>([]);
@@ -32,6 +33,7 @@ export default function StudentAttendancePage() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"ALL" | "PRESENT" | "ABSENT" | "PENDING">("ALL");
   const [dateSearch, setDateSearch] = useState("");
+  const [attendanceRefresh, setAttendanceRefresh] = useState(0);
 
   const details1 = internships.find((i) => i.internshipNumber === 1) ?? null;
   const details2 = internships.find((i) => i.internshipNumber === 2) ?? null;
@@ -86,7 +88,7 @@ export default function StudentAttendancePage() {
       });
 
     return () => abort.abort();
-  }, [activeTab, details1?.id, details2?.id]);
+  }, [activeTab, details1?.id, details2?.id, attendanceRefresh]);
 
   function handleTabChange(tab: 1 | 2) {
     setActiveTab(tab);
@@ -128,9 +130,8 @@ export default function StudentAttendancePage() {
   const activeInternship = activeTab === 1 ? details1 : details2;
 
   return (
-    <ProtectedRoute role="STUDENT">
       <AppFrame>
-        <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+        <main className="mx-auto min-w-0 max-w-7xl px-5 py-8 sm:px-8">
           {/* Breadcrumb Navigation */}
           <nav aria-label="Breadcrumb" className="mb-4 text-xs font-semibold text-slate-500">
             <Link href="/student/dashboard" className="text-blue-700 hover:underline">
@@ -212,6 +213,8 @@ export default function StudentAttendancePage() {
               <span className="font-medium text-slate-500">Internship ID: {activeInternship.id}</span>
             </div>
           )}
+
+          <StudentLateAttendanceRequests internship={activeInternship} onAttendanceChanged={() => setAttendanceRefresh(value => value + 1)} />
 
           {/* Attendance Stats Cards */}
           <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -414,6 +417,8 @@ export default function StudentAttendancePage() {
                           <td className="p-3 text-xs text-slate-600 whitespace-nowrap">
                             {isAutomaticAbsence(record)
                               ? "Automatic — deadline elapsed"
+                              : record.submissionType === "LATE_REQUEST"
+                              ? "Approved late request — manual decision"
                               : "Student submission"}
                             {record.submittedLate && (
                               <span className="mt-1 block font-semibold text-blue-700">
@@ -444,6 +449,9 @@ export default function StudentAttendancePage() {
           </section>
         </main>
       </AppFrame>
-    </ProtectedRoute>
   );
+}
+
+export default function StudentAttendancePage() {
+  return <ProtectedRoute role="STUDENT"><StudentAttendanceContent /></ProtectedRoute>;
 }

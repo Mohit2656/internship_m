@@ -21,7 +21,7 @@ function StudentFacts({ student }: { student: AssignmentStudent }) {
     <span className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
       <span>UID: {student.uid || "Not available"}</span>
       <span>Branch: {student.branchLabel || "Not available"}</span>
-      <span>Semester: {student.semester ?? "Not available"}</span>
+      <span>8th Semester</span><span>{student.section ? `Section ${student.section}` : "Section needs review"}</span>
       <span>Profile: {student.profileStatus === "COMPLETE" ? "Complete" : "Incomplete"}</span>
     </span>
   );

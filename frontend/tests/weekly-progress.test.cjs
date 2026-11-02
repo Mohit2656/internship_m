@@ -11,6 +11,7 @@ function load(file, imports = {}) {
 }
 const internship = load('lib/internship-details.ts');
 const weekly = load('lib/weekly-progress.ts');
+const sectionFilter = load('components/AcademicSectionFilter.tsx');
 const dates = load('lib/monthly-progress.ts', { '@/lib/api': {} });
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function elements(tree) { return !tree || typeof tree !== 'object' ? [] : [tree, ...React.Children.toArray(tree.props?.children).flatMap(elements)]; }
@@ -23,7 +24,7 @@ function harness(scope, rows, post) {
   const slots = { 0: rows, 2: false }; let cursor = 0;
   const hooks = { useEffect() {}, useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = value; return [slots[i], next => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; }]; } };
   const { WeeklyProgress } = load('components/WeeklyProgress.tsx', { react: hooks, '@/lib/api': { api: { post } },
-    '@/lib/monthly-progress': dates, '@/lib/weekly-progress': weekly,
+    '@/lib/monthly-progress': dates, '@/components/AcademicSectionFilter': sectionFilter, '@/lib/weekly-progress': weekly,
     'next/link': { default: ({ children, ...props }) => React.createElement('a', props, children) } });
   const render = () => { cursor = 0; return WeeklyProgress({ scope }); };
   return { slots, render, nodes: type => elements(render()).filter(n => n.type === type),
@@ -86,7 +87,17 @@ test('admin monitors without review actions; upcoming and archived weeks cannot 
 });
 test('legacy date-review warnings identify the student while other weekly records remain available', () => {
   const h = harness('admin', [week()]);
-  h.slots[11] = [{ internshipId: 99, studentUserId: 9, studentName: 'Legacy Student', message: 'Weekly records need an internship date review: duration exceeds 520 weeks. Existing internship records are preserved.' }];
+  h.slots[12] = [{ internshipId: 99, studentUserId: 9, studentName: 'Legacy Student', message: 'Weekly records need an internship date review: duration exceeds 520 weeks. Existing internship records are preserved.' }];
   assert.match(h.html(), /Legacy Student/); assert.match(h.html(), /520 weeks/); assert.match(h.html(), /Existing Company/);
   assert.match(h.html(), /href="\/admin\/students\/9"/);
 });
+
+test('section filters keep weekly records grouped by their own student without mixing sections', () => {
+  const h = harness('mentor', [{ ...week(), section: 'A', studentName: 'Section-A Student' }, { ...week(), id: 13, studentUserId: 8, section: 'B', studentName: 'Section-B Student' }]);
+  h.slots[11] = 'B';
+  assert.match(h.html(), /Section-B Student/);
+  assert.doesNotMatch(h.html(), /Section-A Student/);
+  h.slots[11] = 'UNASSIGNED';
+  assert.match(h.html(), /No weekly records match this view/);
+});
+

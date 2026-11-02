@@ -37,7 +37,7 @@ function renderStudent(item) {
   let cursor = 0;
   const hooks = { useEffect() {}, useRef() { return { current: null }; }, useState(initial) {
     const index = cursor++;
-    return [index === 0 ? { attendance: item } : index === 3 ? false : initial, () => {}];
+    return [index === 2 ? { attendance: item } : index === 5 ? false : initial, () => {}];
   }};
   const { TodayAttendanceCard } = load("components/TodayAttendanceCard.tsx", {
     react: hooks, "@/lib/api": {}, "@/components/AttendanceLocations": submissionLocations, "@/components/LocationVerificationResult": locationVerification, "@/lib/attendance": attendance, "@/lib/edge-ai": {}
@@ -165,7 +165,7 @@ test("basic attendance requires location and still records liveness not performe
   assert.equal(h.button("Mark Today's Attendance").props.disabled, false);
   h.button("Mark Today's Attendance").props.onClick(); await flush();
   assert.equal(h.calls.length, 1); assert.equal(h.calls[0].url, "/student/attendance/today");
-  assert.deepEqual(h.calls[0].config.params, { latitude: 18, longitude: 73, accuracy: 10 });
+  assert.deepEqual(h.calls[0].config.params, { internshipId: undefined, latitude: 18, longitude: 73, accuracy: 10 });
   assert.match(h.html(), /Liveness not performed/); assert.doesNotMatch(h.html(), /Liveness verified/);
 });
 

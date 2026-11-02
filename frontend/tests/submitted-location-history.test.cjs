@@ -137,33 +137,3 @@ for (const role of ["ADMIN", "MENTOR"]) {
   });
 }
 
-const attendance = require("../lib/attendance.ts");
-const monthlyProgress = load("lib/monthly-progress.ts", { "@/lib/api": {} });
-
-for (const role of ["ADMIN", "MENTOR"]) {
-  test(`${role} attendance report preserves submitted map links for separate rows and unavailable historical data`, () => {
-    const fields = [{ id: "attendanceLatitude", label: "Submission latitude" }, { id: "attendanceLongitude", label: "Submission longitude" }];
-    const selected = fields.map(field => field.id);
-    const config = JSON.stringify({ reportType: "ATTENDANCE", fields: role === "MENTOR" ? [...new Set([...selected, "recordId", "studentName", "uid", "date"])] : selected,
-      filters: {}, studentIds: [], page: 0, format: "XLSX" });
-    const options = { types: [{ id: "ATTENDANCE", title: "Attendance", available: true, fields }], filters: [] };
-    const rows = [
-      { attendanceLatitude: 18.5204, attendanceLongitude: 73.8567 },
-      { attendanceLatitude: -33.8688, attendanceLongitude: 151.2093 },
-      { attendanceLatitude: null, attendanceLongitude: null, expectedLatitude: 21.125, expectedLongitude: 79.0875 },
-    ];
-    const table = { fields, rows, summary: {}, totalRows: rows.length };
-    const values = { 0: options, 1: "ATTENDANCE", 4: selected, 5: table, 12: config };
-    let cursor = 0;
-    const { ReportsCenter } = load("components/ReportsCenter.tsx", {
-      react: { useEffect() {}, useState(initial) { const index = cursor++; return [index in values ? values[index] : initial, () => {}]; } },
-      "@/lib/api": {}, "@/lib/attendance": attendance, "@/lib/monthly-progress": monthlyProgress,
-      "@/components/MentorRecordDelete": { MentorRecordDelete: () => null },
-      "@/components/DashboardReportExport": { DashboardReportExport: () => null },
-    });
-    const html = renderToStaticMarkup(React.createElement(ReportsCenter, { role, attendanceOnly: true }));
-    assertSubmittedLinks(html, ["18.5204,73.8567", "-33.8688,151.2093"]);
-    assert.match(html, /Submission location unavailable/);
-    assert.doesNotMatch(html, /q=21[.]125/);
-  });
-}

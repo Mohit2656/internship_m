@@ -62,13 +62,14 @@ function MentorStudentProfilePage() {
             <LastStudentUpdate value={student.profileUpdatedAt} />
             <dl className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               <Row label="UID" value={student.uid} />
-              <Row label="Branch" value={student.branchLabel} />
+              <Row label="Branch" value="Computer Engineering" />
+              <Row label="Section" value={student.section ? `Section ${student.section}` : "Needs review"} />
               <Row label="Roll Number" value={student.rollNumber} />
               <Row label="Institute Email" value={student.instituteEmail} />
               <Row label="Personal Email" value={student.personalEmail} />
               <Row label="Phone Number" value={student.phoneNumber} />
               <Row label="Academic Year" value={student.academicYear} />
-              <Row label="Semester" value={student.semester} />
+              <Row label="Semester" value="8th Semester" />
             </dl>
           </section>
 

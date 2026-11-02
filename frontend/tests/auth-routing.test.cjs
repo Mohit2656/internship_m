@@ -48,10 +48,19 @@ function protectedView(user, role = "STUDENT", pathname = "/student/dashboard") 
   effects.forEach(effect => effect());
   return { html, redirects };
 }
-test("unauthenticated or wrong-role users cannot render protected content", () => {
-  const missing = protectedView(null); assert.doesNotMatch(missing.html, /protected-content/); assert.deepEqual(missing.redirects, ["/login"]);
-  const mentor = protectedView({ role: "MENTOR", mustChangePassword: false });
-  assert.doesNotMatch(mentor.html, /protected-content/); assert.deepEqual(mentor.redirects, ["/mentor/dashboard"]);
+test("each dashboard denies unauthenticated users and every other role", () => {
+  const roles = ["STUDENT", "MENTOR", "ADMIN"];
+  for (const requiredRole of roles) {
+    const pathname = `/${requiredRole.toLowerCase()}/dashboard`;
+    const missing = protectedView(null, requiredRole, pathname);
+    assert.doesNotMatch(missing.html, /protected-content/);
+    assert.deepEqual(missing.redirects, ["/login"]);
+    for (const accountRole of roles.filter(role => role !== requiredRole)) {
+      const denied = protectedView({ role: accountRole, mustChangePassword: false }, requiredRole, pathname);
+      assert.doesNotMatch(denied.html, /protected-content/, `${accountRole} accessing ${requiredRole}`);
+      assert.deepEqual(denied.redirects, [`/${accountRole.toLowerCase()}/dashboard`]);
+    }
+  }
 });
 test("forced password changes protect both student and mentor dashboards", () => {
   for (const role of ["STUDENT", "MENTOR"]) {
@@ -61,6 +70,36 @@ test("forced password changes protect both student and mentor dashboards", () =>
     assert.match(protectedView(user, role, `/${base}/change-password`).html, /protected-content/);
   }
 });
-test("normal authenticated navigation preserves authorized content", () => {
-  assert.match(protectedView({ role: "STUDENT", mustChangePassword: false }).html, /protected-content/);
+test("all three roles can render their own dashboard without a redirect", () => {
+  for (const role of ["STUDENT", "MENTOR", "ADMIN"]) {
+    const allowed = protectedView({ role, mustChangePassword: false }, role, `/${role.toLowerCase()}/dashboard`);
+    assert.match(allowed.html, /protected-content/);
+    assert.deepEqual(allowed.redirects, []);
+  }
+});
+
+test("Attendance and Attendance Report enforce their own role on both independent routes", () => {
+  for (const requiredRole of ["MENTOR", "ADMIN"]) {
+    for (const section of ["attendance", "attendance-report"]) {
+      const pathname = `/${requiredRole.toLowerCase()}/${section}`;
+      for (const accountRole of ["STUDENT", "MENTOR", "ADMIN"]) {
+        const view = protectedView({ role: accountRole, mustChangePassword: false }, requiredRole, pathname);
+        if (accountRole === requiredRole) {
+          assert.match(view.html, /protected-content/);
+          assert.deepEqual(view.redirects, []);
+        } else {
+          assert.doesNotMatch(view.html, /protected-content/);
+          assert.deepEqual(view.redirects, [`/${accountRole.toLowerCase()}/dashboard`]);
+        }
+      }
+      const anonymous = protectedView(null, requiredRole, pathname);
+      assert.doesNotMatch(anonymous.html, /protected-content/);
+      assert.deepEqual(anonymous.redirects, ["/login"]);
+      if (requiredRole === "MENTOR") {
+        const pending = protectedView({ role: requiredRole, mustChangePassword: true }, requiredRole, pathname);
+        assert.doesNotMatch(pending.html, /protected-content/);
+        assert.deepEqual(pending.redirects, ["/mentor/change-password"]);
+      }
+    }
+  }
 });

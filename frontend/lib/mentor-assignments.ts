@@ -8,6 +8,7 @@ export type AssignmentStudent = {
   branch: string | null;
   branchLabel: string | null;
   semester: number | null;
+  section?: string | null; sectionNeedsReview?: boolean;
   profileStatus: ProfileStatus;
   currentMentorUserId: number | null;
   currentMentorName: string | null;

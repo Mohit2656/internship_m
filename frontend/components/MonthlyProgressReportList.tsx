@@ -1,5 +1,6 @@
 "use client";
 
+import { AcademicSectionFilter, academicSectionLabel } from "@/components/AcademicSectionFilter";
 import { MentorRecordDelete } from "@/components/MentorRecordDelete";
 import { LastStudentUpdate } from "@/components/LastStudentUpdate";
 import { useEffect, useState } from "react";
@@ -15,6 +16,8 @@ export function MonthlyProgressReportList({ scope }: { scope: "mentor" | "admin"
   const [notice, setNotice] = useState("");
   const [rejecting, setRejecting] = useState<MonthlyProgressReport | null>(null);
   const [reason, setReason] = useState("");
+  const [section, setSection] = useState("");
+  const visibleReports = reports.filter(report => !section || (section === "UNASSIGNED" ? !report.section : report.section === section)).sort((a, b) => (a.section ?? "Z").localeCompare(b.section ?? "Z") || (a.studentName ?? "").localeCompare(b.studentName ?? ""));
 
   useEffect(() => {
     api.get<MonthlyProgressReport[]>(`/${scope}/monthly-progress`).then(response => setReports(response.data))
@@ -47,11 +50,12 @@ export function MonthlyProgressReportList({ scope }: { scope: "mentor" | "admin"
 
   if (loading) return <p className="mt-8 text-sm text-slate-500">Loading monthly progress reports…</p>;
   return <>
+    <div className="mt-6 max-w-xs"><AcademicSectionFilter value={section} onChange={setSection}/></div>
     {notice && <p role="status" className="mt-6 text-sm text-emerald-700">{notice}</p>}
     {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
-    {reports.length === 0 ? <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500">No monthly progress reports are available.</section> :
-      <div className="mt-8 space-y-5">{reports.map(report => <article key={report.id} className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7">
-        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">Month {report.reportMonthNumber}</p><h2 className="mt-2 text-xl font-bold text-slate-950">{report.studentName ?? "Student profile incomplete"}</h2><p className="mt-1 text-sm text-slate-500">{report.uid ?? "UID unavailable"} · {report.companyName}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-bold ${monthlyStatusClass(report.status)}`}>{monthlyStatusLabel(report.status)}</span></div>
+    {visibleReports.length === 0 ? <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500">No monthly progress reports match this view.</section> :
+      <div className="mt-8 space-y-5">{visibleReports.map(report => <article key={report.id} className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7">
+        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">Month {report.reportMonthNumber}</p><h2 className="mt-2 text-xl font-bold text-slate-950">{report.studentName ?? "Student profile incomplete"}</h2><p className="mt-1 text-sm text-slate-500">{academicSectionLabel(report.section)} · 8th Semester · {report.uid ?? "UID unavailable"} · {report.companyName}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-bold ${monthlyStatusClass(report.status)}`}>{monthlyStatusLabel(report.status)}</span></div>
         {report.status === "PENDING_MENTOR_REVIEW" && <p className="mt-4 text-sm text-amber-800">Uploaded and awaiting faculty mentor approval. This report is not yet approved.</p>}
         {report.rejectionReason && <p className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">Rejection reason: {report.rejectionReason}</p>}<dl className="report-document mt-5 grid gap-4 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3"><div><dt className="text-slate-500">Reporting period</dt><dd className="mt-1 font-semibold">{formatDate(report.periodStart)} – {formatDate(report.periodEnd)}</dd></div><div><dt className="text-slate-500">Submitted</dt><dd className="mt-1 font-semibold">{formatDateTime(report.submittedAt)}</dd></div><div><dt className="text-slate-500">Mentor decision</dt><dd className="mt-1 font-semibold">{report.reviewedAt ? `${report.reviewerEmail ?? "Faculty Mentor"} · ${formatDateTime(report.reviewedAt)}` : "Awaiting review"}</dd></div></dl>
         <LastStudentUpdate value={report.submittedAt}/>

@@ -15,6 +15,7 @@ export type MonthlyProgressReport = {
   uid: string | null;
   branch: string | null;
   semester: number | null;
+  section?: string | null;
   internshipId: number;
   companyName: string;
   internshipMode: string;

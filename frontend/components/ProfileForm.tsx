@@ -26,7 +26,9 @@ export function ProfileForm({ existing, institutional, onSaved, onCancel }: { ex
   useEffect(() => { api.get<Options>("/student/profile/options").then(r => setOptions(r.data)).catch(() => setMessage("Unable to load profile options.")); }, []);
   function update(name: keyof ProfileFormData, value: string) { if (readOnlyFields.has(name)) return; setForm(current => ({ ...current, [name]: value })); setErrors(current => ({ ...current, [name]: "" })); }
   async function submit(event: FormEvent) {
-    event.preventDefault(); setSaving(true); setErrors({}); setMessage("");
+    event.preventDefault(); if (saving) return;
+    if (form.section !== "A" && form.section !== "B") { setErrors({ section: "Select Section A or Section B." }); return; }
+    setSaving(true); setErrors({}); setMessage("");
     try {
       const payload = { ...form, semester: Number(form.semester), currentCgpa: form.currentCgpa === "" ? null : Number(form.currentCgpa) };
       const { data } = existing ? await api.put<StudentProfile>("/student/profile", payload) : await api.post<StudentProfile>("/student/profile", payload);
@@ -43,11 +45,13 @@ export function ProfileForm({ existing, institutional, onSaved, onCancel }: { ex
       <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">Blood Group</span><select required value={form.bloodGroup} onChange={e => update("bloodGroup", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"><option value="">Select blood group</option>{options?.bloodGroups.map(value => <option key={value}>{value}</option>)}</select>{errors.bloodGroup && <span className="mt-1.5 block text-xs text-red-600">{errors.bloodGroup}</span>}</label>
     </FormSection>
     <FormSection title="Academic / Institutional Information" description="Details used by your department and the III Cell.">
-      <Field label="Branch" name="branch" value={existing?.branchLabel ?? institutional?.branchLabel ?? "Computer Engineering"} readOnly onChange={update}/>
+      <Field label="Branch" name="branch" value="Computer Engineering" readOnly onChange={update}/>
       <Field label="UID" name="uid" value={form.uid} error={errors.uid} readOnly={readOnlyFields.has("uid")} onChange={update}/><Field label="Roll Number" name="rollNumber" value={form.rollNumber} error={errors.rollNumber} onChange={update}/>
       <Field label="Institute Email ID" name="instituteEmail" type="email" value={form.instituteEmail} error={errors.instituteEmail} readOnly onChange={update}/>
       <Field label="Academic Year" name="academicYear" value={form.academicYear} error={errors.academicYear} placeholder="2026-2027" onChange={update}/>
-      {readOnlyFields.has("semester") ? <Field label="Semester" name="semester" value={form.semester} error={errors.semester} readOnly onChange={update}/> : <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">Semester</span><select name="semester" required value={form.semester} onChange={e => update("semester", e.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"><option value="">Select semester</option>{Array.from({ length: (options?.maximumSemester ?? 8) }, (_, i) => i + 1).map(value => <option key={value} value={value}>{value}</option>)}</select>{errors.semester && <span className="mt-1.5 block text-xs text-red-600">{errors.semester}</span>}</label>}
+      <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-800">Section</span><select name="section" aria-label="Section" required value={form.section} onChange={e => update("section", e.target.value)} aria-invalid={Boolean(errors.section)} aria-describedby="section-help" className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"><option value="">Select your section</option><option value="A">Section A</option><option value="B">Section B</option></select><span id="section-help" className="mt-1.5 block text-xs text-slate-500">Select your assigned class section.</span>{errors.section && <span role="alert" className="mt-1.5 block text-xs text-red-600">{errors.section}</span>}</label>
+      <Field label="Semester" name="semester" value="8th Semester" error={errors.semester} readOnly onChange={update}/>
+      {existing?.sectionNeedsReview && !form.section && <p role="status" className="text-sm text-amber-800 md:col-span-2">Your section has not been recorded. Select Section A or Section B to complete your academic details.</p>}
       <Field label="Current CGPA" name="currentCgpa" type="number" min={0} max={10} step={0.01} value={form.currentCgpa} error={errors.currentCgpa} optional placeholder="0.00 to 10.00" onChange={update}/>
     </FormSection>
     <FormSection title="Address" description="Current internship address can be added later if it is not yet known.">

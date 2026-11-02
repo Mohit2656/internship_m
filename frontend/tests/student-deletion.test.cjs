@@ -71,6 +71,8 @@ test('dashboard refetches selected-session statistics after deletion and removes
   const pass = () => null;
   const imports = { react: hooks, 'next/link': { default: pass }, '@/lib/api': { api: { get: async (url, config) => { calls.push({ url, sessionId: config.params.sessionId }); return { data: url.endsWith('/summary') ? summary : { sessionId: 4, stats: {}, content: [] } }; } } }, '@/lib/academic-sessions': { useAcademicSessions: () => ({ sessions: [], selected: 4, setSelected() {} }) }, '@/lib/student-deletion': { STUDENT_ACCOUNTS_CHANGED: 'ims:student-accounts-changed' } };
   for (const name of ['AppFrame', 'ProtectedRoute', 'DashboardReportExport', 'AttendanceAbsenceOverview', 'RecentNotifications', 'AcademicSessionPicker', 'CompletionStatistics']) imports[`@/components/${name === 'RecentNotifications' ? 'NotificationsContent' : name}`] = { [name]: pass };
+  imports['@/components/DashboardLayout'] = load('components/DashboardLayout.tsx');
+  imports['@/components/DualInternshipPanel'] = { AdminDualInternshipPanel: pass };
   try {
     global.window = { addEventListener(type, fn) { listeners.set(type, fn); }, removeEventListener(type) { listeners.delete(type); } };
     const Page = load('app/admin/dashboard/page.tsx', imports).default;

@@ -38,6 +38,7 @@ export function DeleteMentorAccountButton({ mentor, onDeactivated }: Props) {
 
   function close() {
     if (busy.current) return;
+    dialog.current?.close();
     setOpen(false); setError(""); trigger.current?.focus();
   }
 

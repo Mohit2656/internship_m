@@ -1,7 +1,7 @@
 export type AttendanceResult = "PRESENT" | "PENDING_MENTOR_REVIEW" | "ABSENT";
 export type VerificationStatus = "UNVERIFIED" | "VERIFIED";
 export type LivenessStatus = "VERIFIED" | "FAILED" | "NOT_PERFORMED" | "HISTORICAL" | "NOT_APPLICABLE";
-export type AttendanceSubmissionType = "BASIC" | "PHYSICAL_CAPTURE" | "REMOTE_CAPTURE" | "AUTO_ABSENT";
+export type AttendanceSubmissionType = "BASIC" | "PHYSICAL_CAPTURE" | "REMOTE_CAPTURE" | "AUTO_ABSENT" | "LATE_REQUEST";
 export type LocationVerificationStatus = "VERIFIED" | "OUTSIDE_RADIUS" | "INSUFFICIENT_ACCURACY" | "LOCATION_UNAVAILABLE" | "WORKPLACE_NOT_APPROVED" | "STALE_LOCATION" | "NOT_APPLICABLE";
 export type AttendanceLocationEvidence = {
   latitude: number | null; longitude: number | null; gpsAccuracyMeters?: number | null;
@@ -38,7 +38,7 @@ export type Attendance = {
   attendanceResult: AttendanceResult;
   verificationStatus: VerificationStatus;
   livenessStatus: LivenessStatus;
-  verificationBasis: "LEGACY" | "LIVENESS" | "AUTOMATIC";
+  verificationBasis: "LEGACY" | "LIVENESS" | "AUTOMATIC" | "MANUAL";
   automaticAbsent?: boolean;
   submittedLate?: boolean;
   submissionType: AttendanceSubmissionType;
@@ -51,6 +51,7 @@ export type Attendance = {
 export function attendanceLabel(attendance: Attendance) {
   if (attendance.attendanceResult === "PENDING_MENTOR_REVIEW") return "Pending mentor review";
   if (attendance.attendanceResult === "ABSENT") return "Absent";
+  if (attendance.submissionType === "LATE_REQUEST") return "Present — manually approved late request";
   return `Present — ${livenessLabel(attendance.livenessStatus)}`;
 }
 

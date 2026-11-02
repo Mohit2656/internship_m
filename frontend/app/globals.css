@@ -182,8 +182,18 @@ html { scroll-padding-top: 6rem; }
 .student-sidebar-link { display: flex; min-height: 2.55rem; align-items: center; border-radius: .7rem; padding: .55rem .7rem; color: #31537b; font-size: .875rem; font-weight: 600; text-decoration: none; }
 .student-sidebar-link:hover { background: #eff6ff; color: #1d4ed8; }
 .student-sidebar-link[aria-current="page"] { background: #eaf1ff; color: #1d4ed8; box-shadow: inset 3px 0 #2563eb; }
+.student-sidebar-link:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.app-frame button.student-sidebar-disclosure { width: 100%; min-height: 2.55rem; justify-content: space-between; gap: .75rem; border: 0; padding: .55rem .7rem; background: transparent; color: #31537b; text-align: left; box-shadow: none; }
+.app-frame button.student-sidebar-disclosure:is(:hover, :active),
+.app-frame button.student-sidebar-disclosure[data-current="true"] { border: 0; background: #eff6ff; color: #1d4ed8; }
+.student-sidebar-disclosure svg { flex-shrink: 0; transition: transform .15s ease; }
+.student-sidebar-disclosure[aria-expanded="true"] svg { transform: rotate(180deg); }
+.student-sidebar-submenu { margin: .25rem 0 .25rem .8rem; padding-left: .5rem; border-left: 1px solid #dce5f0; }
+.student-sidebar-submenu[hidden] { display: none; }
+.student-sidebar-sublink { font-size: .8125rem; }
 .student-sidebar-signout { width: 100%; margin-top: 1rem; }
 .student-sidebar-backdrop { position: fixed; inset: 0; z-index: 50; display: none; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(15 23 42 / .48); }
+.app-frame[data-role] button.student-sidebar-backdrop:is(:enabled, :hover, :active) { padding: 0; border: 0; border-radius: 0; background: rgb(15 23 42 / .48); box-shadow: none; }
 .student-sidebar-backdrop[data-open="true"] { display: block; }
 .app-page-content h1 { color: #123052; font-size: clamp(1.625rem, 4vw, 2rem); letter-spacing: -.035em; line-height: 1.25; text-wrap: balance; }
 .app-page-content h2 { line-height: 1.4; }
@@ -201,8 +211,35 @@ html { scroll-padding-top: 6rem; }
 .app-page-content table:not(.report-document, .report-document table) tbody tr:hover { background: #eff6ff; }
 .app-page-content [role="alert"] { line-height: 1.6; }
 .app-page-content [role="status"] { line-height: 1.6; }
+.app-frame dialog[open] { max-height: calc(100dvh - 2rem); overflow-y: auto; overscroll-behavior: contain; }
+.ui-dialog:not([open]) { display: none; }
+
+/* Tabs are navigation controls; their selected state must remain distinguishable
+   from the shared action-button styling. */
+.app-page-content button[role="tab"] { min-width: 0; border: 1px solid transparent; background: transparent; color: #52647d; box-shadow: none; }
+.app-page-content button[role="tab"]:is(:hover, :active) { background: #eff6ff; border-color: transparent; color: #1d4ed8; }
+.app-page-content button[role="tab"][aria-selected="true"] { background: #eaf1ff; border-color: #bfcef4; color: #1d4ed8; box-shadow: inset 0 -2px #2563eb; }
+.app-page-content button[role="tab"] > span { color: inherit; }
+.app-page-content [role="tablist"] { max-width: 100%; gap: .25rem; }
+.app-page-content .grid > * { min-width: 0; }
+.app-page-content :is(.flex, .grid) > :is(label, fieldset) { min-width: 0; max-width: 100%; }
+.app-page-content :is(textarea, select, input) { min-width: 0; }
+.app-page-content :is(p, dd, summary) { overflow-wrap: anywhere; }
+.ui-status { display: inline-flex; max-width: 100%; align-items: center; border-radius: 9999px; padding: .25rem .625rem; font-size: .75rem; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
+.ui-status[data-tone="success"] { background: #d1fae5; color: #047857; }
+.ui-status[data-tone="warning"] { background: #fef3c7; color: #92400e; }
+.ui-status[data-tone="danger"] { background: #fee2e2; color: #b91c1c; }
+.ui-status[data-tone="info"] { background: #dbeafe; color: #1d4ed8; }
+.ui-status[data-tone="neutral"] { background: #f1f5f9; color: #475569; }
+
+/* Feature cards embedded in the role dashboards use the Student card insets. */
+.dashboard-page > :is(section, a).rounded-2xl,
+.dashboard-page > #second-internship-requests > section.rounded-2xl { min-width: 0; padding: 1.5rem; }
+.dashboard-page > section > h2 { font-size: 1.125rem; }
 
 @media (min-width: 640px) {
+  .dashboard-page > :is(section, a).rounded-2xl,
+  .dashboard-page > #second-internship-requests > section.rounded-2xl { padding: 1.75rem; }
   .app-topbar-inner { padding-inline: 2rem; }
   .app-navigation-grouped[data-open="true"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -289,6 +326,18 @@ html[data-theme="dark"] .student-sidebar-heading { color: #a2b1c7; }
 html[data-theme="dark"] .student-sidebar-link { color: #b9cee9; }
 html[data-theme="dark"] .student-sidebar-link:hover,
 html[data-theme="dark"] .student-sidebar-link[aria-current="page"] { background: #1b3356; color: #bddbff; }
+html[data-theme="dark"] .app-frame button.student-sidebar-disclosure { background: transparent; color: #b9cee9; }
+html[data-theme="dark"] .app-frame button.student-sidebar-disclosure:is(:hover, :active),
+html[data-theme="dark"] .app-frame button.student-sidebar-disclosure[data-current="true"] { background: #1b3356; color: #bddbff; }
+html[data-theme="dark"] .student-sidebar-submenu { border-color: #365074; }
+html[data-theme="dark"] .app-page-content button[role="tab"] { background: transparent; color: #aebed4; }
+html[data-theme="dark"] .app-page-content button[role="tab"]:is(:hover, :active),
+html[data-theme="dark"] .app-page-content button[role="tab"][aria-selected="true"] { background: #1b3356; border-color: #426894; color: #bddbff; }
+html[data-theme="dark"] .ui-status[data-tone="success"] { background: #153e32; color: #92e7bf; }
+html[data-theme="dark"] .ui-status[data-tone="warning"] { background: #463713; color: #fbd780; }
+html[data-theme="dark"] .ui-status[data-tone="danger"] { background: #4e2530; color: #ffb1b8; }
+html[data-theme="dark"] .ui-status[data-tone="info"] { background: #1b3356; color: #bddbff; }
+html[data-theme="dark"] .ui-status[data-tone="neutral"] { background: #29384e; color: #c4d1e4; }
 html[data-theme="dark"] :is(.app-nav-heading, .app-nav-hint) { color: #a2b1c7; }
 html[data-theme="dark"] .app-nav-link { color: #b9cee9; }
 html[data-theme="dark"] .app-nav-link:hover,

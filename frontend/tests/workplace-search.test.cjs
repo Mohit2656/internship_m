@@ -266,17 +266,17 @@ function pickerHarness(initial = {}) {
   return { props, selections, pending, addresses, render: () => h.render(OpenStreetMapWorkplacePicker, props), coordinateInputs: tree => nodes(tree).filter(node => node.type === "input" && node.props.inputMode === "decimal"), close: h.close };
 }
 
-test("manual coordinates create an unconfirmed map draft before explicit confirmation", () => {
+test("manual coordinates create an unconfirmed draft with an external map link before explicit confirmation", () => {
   const h = pickerHarness(); let tree = h.render();
   let coordinates = h.coordinateInputs(tree); coordinates[0].props.onChange({ target: { value: String(branch.latitude) } }); coordinates[1].props.onChange({ target: { value: String(branch.longitude) } });
-  tree = h.render(); button(tree, "Preview coordinates").props.onClick();
+  tree = h.render(); button(tree, "Use coordinates").props.onClick();
   assert.equal(h.selections.at(-1), null);
   tree = h.render();
-  let map = nodes(tree).find(node => node.type === "WorkplaceMap");
-  assert.equal(map.props.focus, null);
-  assert.deepEqual(map.props.position, { latitude: branch.latitude, longitude: branch.longitude });
+  const map = nodes(tree).find(node => node.props.label === "Open in Google Maps");
+  assert.equal(map.props.latitude, branch.latitude);
+  assert.equal(map.props.longitude, branch.longitude);
   assert.equal(nodes(tree).find(node => node.type === "input" && !node.props.inputMode).props.value, saved.address);
-  assert.match(text(tree), /Manually entered coordinates/);
+  assert.match(text(tree), /Student-entered coordinates/);
   assert.equal(h.pending.at(-1), true);
   button(tree, "Confirm workplace location").props.onClick();
   assert.equal(h.selections.at(-1).latitude, branch.latitude);
@@ -290,13 +290,14 @@ test("controlled company addresses are never overwritten by manual coordinate pr
   const h = pickerHarness({ address: saved.address });
   h.props.onAddressChange = address => { h.addresses.push(address); h.props.address = address; };
   let tree = h.render(); let coordinates = h.coordinateInputs(tree); coordinates[0].props.onChange({ target: { value: String(branch.latitude) } }); coordinates[1].props.onChange({ target: { value: String(branch.longitude) } });
-  tree = h.render(); button(tree, "Preview coordinates").props.onClick();
+  tree = h.render(); button(tree, "Use coordinates").props.onClick();
   assert.deepEqual(h.addresses, []);
   assert.equal(h.selections.at(-1), null);
   tree = h.render();
   assert.equal(h.coordinateInputs(tree).length, 2);
-  const map = nodes(tree).find(node => node.type === "WorkplaceMap");
-  assert.deepEqual(map.props.position, { latitude: branch.latitude, longitude: branch.longitude });
+  const map = nodes(tree).find(node => node.props.label === "Open in Google Maps");
+  assert.equal(map.props.latitude, branch.latitude);
+  assert.equal(map.props.longitude, branch.longitude);
   button(tree, "Confirm workplace location").props.onClick();
   assert.equal(h.selections.at(-1).address, saved.address);
   assert.equal(h.selections.at(-1).latitude, branch.latitude);
@@ -309,7 +310,7 @@ test("manual input respects disabled pickers and preserves unchanged saved metad
   assert.strictEqual(h.selections.at(-1), saved);
   h.props.disabled = true; tree = h.render();
   assert.ok(h.coordinateInputs(tree).every(field => field.props.disabled === undefined));
-  button(tree, "Preview coordinates").props.onClick();
+  button(tree, "Use coordinates").props.onClick();
   assert.equal(h.selections.length, 1);
   h.close();
 });
@@ -321,8 +322,8 @@ test("editing manual coordinates after confirmation invalidates the saved workpl
   h.coordinateInputs(tree)[0].props.onChange({ target: { value: "20" } });
   assert.equal(h.selections.at(-1), null);
   tree = h.render();
-  assert.equal(h.pending.at(-1), true);
-  assert.match(text(tree), /not confirmed/i);
+  assert.equal(button(tree, "Confirm workplace location").props.disabled, true);
+  assert.match(text(tree), /Enter the workplace coordinates/i);
   h.close();
 });
 

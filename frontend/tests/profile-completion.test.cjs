@@ -32,7 +32,8 @@ test("does not penalize student for internship details when not yet applicable (
     bloodGroup: "O+",
     rollNumber: "42",
     academicYear: "2026-2027",
-    semester: 6,
+    semester: 8,
+    section: "A",
     permanentAddress: "123 Main St",
     guardianName: "Parent",
     guardianContact: "9876543211",
@@ -82,4 +83,16 @@ test("calculates accurate percentage and lists missing fields when partially com
   const personalSection = result.sections.find(s => s.id === "personal");
   assert.ok(personalSection.missingFields.includes("Roll Number"));
   assert.ok(personalSection.missingFields.includes("Emergency Contact"));
+  assert.ok(personalSection.missingFields.includes("Section A or B"));
+});
+
+test("an otherwise complete profile still requires the student to choose an assigned section", () => {
+  const profile = { personalEmail: "student@example.com", phoneNumber: "9876543210", bloodGroup: "O+", rollNumber: "42", academicYear: "2026-2027", semester: 8, permanentAddress: "Address", guardianName: "Guardian", guardianContact: "9876543211", emergencyContact: "9876543212", maskedAadhaar: "XXXX XXXX 1234" };
+  const professionalProfile = { headline: "Developer", careerInterests: "Engineering", resume: { id: 1 }, skillsUpdatedAt: "2026-11-02T10:00:00Z" };
+  const incomplete = calculateProfileCompletion({ profile, professionalProfile });
+  assert.equal(incomplete.isComplete, false);
+  assert.ok(incomplete.percentage < 100);
+  assert.deepEqual(incomplete.sections[0].missingFields, ["Section A or B"]);
+  assert.equal(incomplete.nextAction.href, "/student/settings?tab=profile&edit=true");
+  assert.equal(calculateProfileCompletion({ profile: { ...profile, section: "B" }, professionalProfile }).isComplete, true);
 });

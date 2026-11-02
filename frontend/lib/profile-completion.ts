@@ -41,14 +41,15 @@ export function calculateProfileCompletion(params: {
 }): ProfileCompletionResult {
   const { profile, professionalProfile, skillsCount = 0, onboarding, details } = params;
 
-  // 1. Personal Profile Fields (11 required student-editable fields)
+  // 1. Personal and academic details, including the student's assigned section.
   const personalChecks: { label: string; done: boolean }[] = [
     { label: "Personal Email", done: hasValue(profile?.personalEmail) },
     { label: "Phone Number", done: hasValue(profile?.phoneNumber) },
     { label: "Blood Group", done: hasValue(profile?.bloodGroup) },
     { label: "Roll Number", done: hasValue(profile?.rollNumber) },
     { label: "Academic Year", done: hasValue(profile?.academicYear) },
-    { label: "Semester", done: hasValue(profile?.semester) },
+    { label: "Semester", done: profile?.semester === 8 },
+    { label: "Section A or B", done: profile?.section === "A" || profile?.section === "B" },
     { label: "Permanent Address", done: hasValue(profile?.permanentAddress) },
     { label: "Parent / Guardian Name", done: hasValue(profile?.guardianName) },
     { label: "Parent / Guardian Contact", done: hasValue(profile?.guardianContact) },

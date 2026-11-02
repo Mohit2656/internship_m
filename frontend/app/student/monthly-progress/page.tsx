@@ -59,7 +59,7 @@ export default function StudentMonthlyProgressPage() {
   }
 
   return <ProtectedRoute role="STUDENT"><AppFrame><main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
-    <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">← Back to dashboard</Link>
+    <div className="flex flex-wrap items-center justify-between gap-3"><Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">← Back to dashboard</Link><Link href="/student/progress-reports?tab=monthly" className="text-sm font-semibold text-blue-700 hover:underline">Progress overview · all internships</Link></div>
     <p className="mt-6 text-sm font-semibold text-blue-700">Internship records</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Monthly Progress</h1><p className="mt-2 text-slate-600">Upload a report for each internship month. Your assigned faculty mentor reviews it before approval.</p>
     {notice && <p role="status" className="mt-6 rounded-xl bg-blue-50 p-4 text-sm text-blue-800">{notice}</p>}
     {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}

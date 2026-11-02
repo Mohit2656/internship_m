@@ -18,7 +18,7 @@ export function DeleteStudentButton({ student, onDeleted }: { student: { id: num
   const busy = useRef(false);
   useEffect(() => { if (open) dialog.current?.showModal(); }, [open]);
   useEffect(() => () => { request.current?.abort(); }, []);
-  function close() { if (busy.current) return; request.current?.abort(); setOpen(false); setPreview(null); setReason(""); setConfirmed(false); setError(""); trigger.current?.focus(); }
+  function close() { if (busy.current) return; dialog.current?.close(); request.current?.abort(); setOpen(false); setPreview(null); setReason(""); setConfirmed(false); setError(""); trigger.current?.focus(); }
   async function start() {
     request.current?.abort(); const controller = new AbortController(); request.current = controller;
     setOpen(true); setPreview(null); setReason(""); setConfirmed(false); setError("");

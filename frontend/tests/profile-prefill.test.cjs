@@ -15,7 +15,7 @@ function load(file, imports = {}) {
   return module.exports;
 }
 const profileLib = load("lib/student-profile.ts");
-const imported = { studentName: "Institutional Student", uid: "23001107", instituteEmail: "student@college.edu", branch: "COMPUTER_ENGINEERING", branchLabel: "Computer Engineering", semester: 7,
+const imported = { studentName: "Institutional Student", uid: "23001107", instituteEmail: "student@college.edu", branch: "COMPUTER_ENGINEERING", branchLabel: "Computer Engineering", semester: 8, section: "A",
   readOnlyFields: ["studentName", "uid", "instituteEmail", "branch", "semester"] };
 function nodes(element, type) {
   const found = [];
@@ -44,7 +44,7 @@ function harness(institutional, existing) {
 
 test("imported account fields are prefilled, visibly read-only and have no typing handler", () => {
   const h = harness(imported);
-  for (const [name, value] of [["studentName", imported.studentName], ["uid", imported.uid], ["instituteEmail", imported.instituteEmail], ["branch", imported.branchLabel], ["semester", "7"]]) {
+  for (const [name, value] of [["studentName", imported.studentName], ["uid", imported.uid], ["instituteEmail", imported.instituteEmail], ["branch", imported.branchLabel], ["semester", "8th Semester"]]) {
     const input = h.input(name);
     assert.equal(input.props.value, value);
     assert.equal(input.props.readOnly, true);
@@ -69,26 +69,49 @@ test("editing legitimate contact fields preserves institutional payload values",
   const { method, url, payload } = h.requests[0];
   assert.equal(method, "post"); assert.equal(url, "/student/profile");
   assert.equal(payload.studentName, imported.studentName); assert.equal(payload.uid, imported.uid);
-  assert.equal(payload.instituteEmail, imported.instituteEmail); assert.equal(payload.branch, imported.branch); assert.equal(payload.semester, 7);
+  assert.equal(payload.instituteEmail, imported.instituteEmail); assert.equal(payload.branch, imported.branch); assert.equal(payload.semester, 8);
+  assert.equal(payload.section, "A");
   assert.equal(payload.personalEmail, "updated@example.com"); assert.equal(payload.phoneNumber, "+91 98765 43219"); assert.equal(h.saved.length, 1);
 });
 
-test("legacy accounts can supply missing UID, name and semester while prefilled email and department stay locked", async () => {
+test("legacy accounts supply missing identifiers and choose a section while semester stays fixed", async () => {
   const h = harness({ ...imported, studentName: null, uid: null, semester: null, readOnlyFields: ["instituteEmail", "branch"] });
   assert.equal(h.input("uid").props.readOnly, false); assert.equal(h.input("studentName").props.readOnly, false);
   assert.equal(h.input("instituteEmail").props.readOnly, true); assert.equal(h.input("branch").props.readOnly, true);
   h.input("uid").props.onChange({ target: { value: "LEGACY-UID" } }); h.input("studentName").props.onChange({ target: { value: "Legacy Student" } });
-  h.select("semester").props.onChange({ target: { value: "6" } }); await h.submit();
-  assert.equal(h.requests[0].payload.uid, "LEGACY-UID"); assert.equal(h.requests[0].payload.studentName, "Legacy Student"); assert.equal(h.requests[0].payload.semester, 6);
+  assert.equal(h.select("semester"), undefined); h.select("section").props.onChange({ target: { value: "B" } }); await h.submit();
+  assert.equal(h.requests[0].payload.uid, "LEGACY-UID"); assert.equal(h.requests[0].payload.studentName, "Legacy Student"); assert.equal(h.requests[0].payload.semester, 8);
 });
 
 test("existing values and identifiers remain intact when account prefill differs", async () => {
-  const existing = { ...profileLib.emptyProfile, id: 9, studentName: "Existing Name", uid: "EXISTING-UID", branch: "MECHANICAL", branchLabel: "Mechanical", instituteEmail: "existing@college.edu", semester: 8,
+  const existing = { ...profileLib.emptyProfile, id: 9, studentName: "Existing Name", uid: "EXISTING-UID", branch: "COMPUTER_ENGINEERING", branchLabel: "Computer Engineering", section: "B", instituteEmail: "existing@college.edu", semester: 8,
     currentAddress: null, createdAt: "2026-10-13T09:00:00Z", updatedAt: "2026-10-13T09:00:00Z", profileStatus: "COMPLETE", maskedAadhaar: "XXXX XXXX 9012" };
   const h = harness(imported, existing);
   assert.equal(h.input("studentName").props.value, "Existing Name"); assert.equal(h.input("uid").props.value, "EXISTING-UID");
-  assert.equal(h.input("branch").props.value, "Mechanical"); assert.equal(h.input("semester").props.value, "8");
+  assert.equal(h.input("branch").props.value, "Computer Engineering"); assert.equal(h.input("semester").props.value, "8th Semester");
   h.input("phoneNumber").props.onChange({ target: { value: "+91 98765 43219" } }); await h.submit();
   assert.equal(h.requests[0].method, "put"); assert.equal(h.requests[0].payload.uid, "EXISTING-UID"); assert.equal(h.requests[0].payload.instituteEmail, "existing@college.edu");
   assert.equal(h.requests[0].payload.studentName, "Existing Name"); assert.equal(h.requests[0].payload.semester, 8); assert.equal(h.requests[0].payload.aadhaarNumber, "");
+});
+
+test("student must choose A or B when completing a profile without a recorded section", async () => {
+  const h = harness({ ...imported, section: null });
+  const select = h.select("section");
+  assert.equal(select.props.value, ""); assert.equal(select.props.required, true);
+  assert.deepEqual(nodes(select, "option").map(node => node.props.value), ["", "A", "B"]);
+  await h.submit(); assert.equal(h.requests.length, 0);
+  assert.match(renderToStaticMarkup(h.render()), /Select Section A or Section B/);
+  h.select("section").props.onChange({ target: { value: "B" } });
+  await h.submit(); assert.equal(h.requests[0].payload.section, "B"); assert.equal(h.requests[0].payload.semester, 8);
+});
+
+test("existing sections are preserved and students can explicitly update them through PUT", async () => {
+  const existing = { ...profileLib.emptyProfile, id: 9, section: "A", semester: 8, uid: "EXISTING-UID", instituteEmail: "existing@college.edu" };
+  const h = harness(imported, existing);
+  assert.equal(h.select("section").props.value, "A");
+  h.select("section").props.onChange({ target: { value: "B" } });
+  await h.submit();
+  assert.equal(h.requests[0].method, "put");
+  assert.equal(h.requests[0].payload.section, "B");
+  assert.equal(h.requests[0].payload.uid, "EXISTING-UID");
 });

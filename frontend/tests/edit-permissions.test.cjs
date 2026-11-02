@@ -24,7 +24,9 @@ test("students can edit their own internship details and profile without mentor 
   const mentorStudent = fs.readFileSync(path.join(__dirname, "../app/mentor/students/[id]/page.tsx"), "utf8");
 
   // Internship details page allows editing without mentor edit permission locks
-  assert.match(internship, /<button onClick=\{\(\) => setEditing\(true\)\} className="text-sm">Edit Details<\/button>/);
+  for (const slot of [1, 2]) {
+    assert.match(internship, new RegExp(`<button onClick=\\{\\(\\) => setEditing${slot}\\(true\\)\\} className="ui-button text-sm">\\s*Edit Details\\s*<\\/button>`));
+  }
   assert.doesNotMatch(internship, /disabled=\{!editAllowed\}|StudentEditPermissionStatus/);
 
   // Student profile remains editable without mentor permission controls
@@ -38,5 +40,7 @@ test("students can edit their own internship details and profile without mentor 
   assert.match(profile, /<ProtectedRoute role="STUDENT">/);
 
   // Protected workplace location verification component is preserved
-  assert.match(internship, /<InternshipLocationManager key=\{details\.updatedAt\} scope="student"\/>/);
+  for (const slot of [1, 2]) {
+    assert.match(internship, new RegExp(`<InternshipLocationManager\\s+key=\\{details${slot}\\.updatedAt\\}\\s+scope="student"\\s+internshipId=\\{details${slot}\\.id\\}`));
+  }
 });

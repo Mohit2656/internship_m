@@ -90,7 +90,7 @@ test('admin professional view shows distinct profile, resume, and skill timestam
 test('mentor professional view keeps independent student profile, professional profile, and skill times', () => {
   let index = 0;
   const states = [{ studentName: 'Student', confirmedSkills: ['Java'], profileUpdatedAt: timestamp,
-    professionalUpdatedAt: '2026-10-02T08:00:00Z', skillsUpdatedAt: '2026-10-03T08:00:00Z' }, ''];
+    professionalUpdatedAt: '2026-10-02T08:00:00Z', skillsUpdatedAt: '2026-10-03T08:00:00Z' }, [], 1, ''];
   const wrap = ({ children }) => children;
   const { default: MentorStudentProfileRoute } = load('app/mentor/students/[id]/page.tsx', {
     ...imports, react: { useEffect() {}, useState: () => [states[index++], () => {}] },
@@ -128,22 +128,26 @@ test('mentor attendance history shows the authoritative timestamp only for stude
 test('admin directory keeps profile and onboarding dates independent with missing-record fallbacks', () => {
   let index = 0;
   const filters = { search: '' };
-  const states = [{}, '', null, { totalPages: 1, content: [
+  const states = [{}, '', '', null, { totalPages: 1, content: [
     { id: 1, studentName: 'Submitted Student', profileLastStudentUpdatedAt: timestamp, onboardingLastStudentUpdatedAt: '2026-10-02T08:00:00Z' },
     { id: 2, studentName: 'No submissions', profileLastStudentUpdatedAt: null, onboardingLastStudentUpdatedAt: null },
   ] }, false, '', [], filters, filters];
   const wrap = ({ children }) => children;
   const { default: StudentsPage } = load('app/admin/students/page.tsx', {
-    ...imports, react: { ...React, useEffect() {}, useCallback: value => value, useState: () => [states[index++], () => {}] },
+    ...imports, react: { ...React, Suspense: wrap, useEffect() {}, useCallback: value => value, useState: () => [states[index++], () => {}] },
     'next/navigation': { useSearchParams: () => new URLSearchParams() }, 'next/link': { default: wrap },
     '@/lib/api': {}, '@/components/AppFrame': { AppFrame: wrap }, '@/components/ProtectedRoute': { ProtectedRoute: wrap },
     '@/components/AttendanceAbsenceOverview': { StudentAttendanceHistory: () => null, formatAttendancePercentage: () => '?' },
     '@/components/ResetPasswordButton': { ResetPasswordButton: () => null },
+    '@/components/DeleteStudentButton': { DeleteStudentButton: () => null },
     '@/components/StatusBadge': { StatusBadge: () => null }, '@/components/WorkflowBadge': { WorkflowBadge: () => null },
   });
   const html = renderToStaticMarkup(React.createElement(StudentsPage));
-  assert.ok(html.includes(`dateTime="${timestamp}"`));
-  assert.match(html, /dateTime="2026-10-02T08:00:00Z"/i);
-  assert.equal((html.match(/Last updated by student:/g) || []).length, 4);
-  assert.equal((html.match(/Not updated yet/g) || []).length, 2);
+  const { formatDateTime } = load('lib/monthly-progress.ts', { '@/lib/api': {} });
+  assert.ok(html.includes(`Profile: ${formatDateTime(timestamp)}`), html);
+  assert.ok(html.includes(`Onboarding: ${formatDateTime('2026-10-02T08:00:00Z')}`));
+  const missing = html.split('<tr').find(row => row.includes('No submissions'));
+  assert.ok(missing);
+  assert.ok((missing.match(/Not available/g) || []).length >= 2);
+  assert.ok(!missing.includes(formatDateTime(timestamp)));
 });
