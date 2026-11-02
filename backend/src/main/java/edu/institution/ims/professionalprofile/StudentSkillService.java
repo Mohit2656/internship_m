@@ -40,6 +40,9 @@ public class StudentSkillService {
                 .orElseGet(List::of);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private edu.institution.ims.notification.StudentChangeNotificationService changeNotifications;
+
     @Transactional
     public SkillProfileResponse addOwn(UserPrincipal principal, SkillNameRequest request) {
         StudentProfessionalProfile profile = profileForUpdateOrCreate(principal.id());
@@ -47,26 +50,37 @@ public class StudentSkillService {
         ensureUnique(profile.getId(), value.normalizedName(), null);
         skills.saveAndFlush(new StudentSkill(profile, value, StudentSkillSource.STUDENT_ADDED, null));
         matching.skillsChanged();
+        if (changeNotifications != null) {
+            changeNotifications.notifySkillsUpdated(principal.id(), "added skill: " + value.displayName());
+        }
         return response(profile);
     }
 
     @Transactional
     public SkillProfileResponse renameOwn(UserPrincipal principal, Long skillId, SkillNameRequest request) {
         StudentSkill skill = ownActiveSkill(principal.id(), skillId);
+        String oldName = skill.getDisplayName();
         NormalizedSkill value = normalizer.normalize(request.name());
         ensureUnique(skill.getProfessionalProfile().getId(), value.normalizedName(), skill.getId());
         skill.rename(value);
         skills.saveAndFlush(skill);
         matching.skillsChanged();
+        if (changeNotifications != null) {
+            changeNotifications.notifySkillsUpdated(principal.id(), "renamed skill " + oldName + " to " + value.displayName());
+        }
         return response(skill.getProfessionalProfile());
     }
 
     @Transactional
     public SkillProfileResponse removeOwn(UserPrincipal principal, Long skillId) {
         StudentSkill skill = ownActiveSkill(principal.id(), skillId);
+        String name = skill.getDisplayName();
         skill.deactivate();
         skills.saveAndFlush(skill);
         matching.skillsChanged();
+        if (changeNotifications != null) {
+            changeNotifications.notifySkillsUpdated(principal.id(), "removed skill: " + name);
+        }
         return response(skill.getProfessionalProfile());
     }
 

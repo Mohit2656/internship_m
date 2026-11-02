@@ -44,7 +44,12 @@ public class MonthlyProgressService {
 
     @Transactional(readOnly = true)
     public MonthlyProgressOverviewResponse ownOverview(UserPrincipal principal) {
-        InternshipDetails internship = eligibleInternship(principal.id());
+        return ownOverview(principal, null);
+    }
+
+    @Transactional(readOnly = true)
+    public MonthlyProgressOverviewResponse ownOverview(UserPrincipal principal, Long internshipId) {
+        InternshipDetails internship = eligibleInternship(principal.id(), internshipId);
         Map<Integer, MonthlyProgressReport> submitted = new HashMap<>();
         reports.findAllByStudentInternshipIdOrderByReportMonthNumberAsc(internship.getId())
                 .forEach(report -> submitted.put(report.getReportMonthNumber(), report));
@@ -61,7 +66,12 @@ public class MonthlyProgressService {
 
     @Transactional
     public MonthlyProgressReportResponse submit(UserPrincipal principal, int monthNumber, String description, MultipartFile photo) {
-        InternshipDetails internship = eligibleInternship(principal.id());
+        return submit(principal, null, monthNumber, description, photo);
+    }
+
+    @Transactional
+    public MonthlyProgressReportResponse submit(UserPrincipal principal, Long internshipId, int monthNumber, String description, MultipartFile photo) {
+        InternshipDetails internship = eligibleInternship(principal.id(), internshipId);
         Period period = period(internship, monthNumber);
         if (LocalDate.now(clock).isBefore(period.start()))
             throw error(HttpStatus.CONFLICT, "REPORT_MONTH_UPCOMING", "This internship month has not started yet");
@@ -173,7 +183,13 @@ public class MonthlyProgressService {
     @Transactional(readOnly = true) public ProgressFileDownload adminPdf(Long id) { return pdf(require(id, report -> true)); }
 
     private InternshipDetails eligibleInternship(Long studentId) {
-        InternshipDetails internship = internships.findByOnboardingStudentId(studentId)
+        return eligibleInternship(studentId, null);
+    }
+
+    private InternshipDetails eligibleInternship(Long studentId, Long internshipId) {
+        InternshipDetails internship = (internshipId != null
+                ? internships.findByIdAndOnboardingStudentId(internshipId, studentId)
+                : internships.findByOnboardingStudentId(studentId))
                 .orElseThrow(() -> error(HttpStatus.CONFLICT, "MONTHLY_PROGRESS_NOT_ELIGIBLE", "Complete internship registration before submitting monthly progress"));
         if (internship.getOnboarding().getWorkflowStatus() != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE)
             throw error(HttpStatus.CONFLICT, "MONTHLY_PROGRESS_NOT_ELIGIBLE", "Complete internship registration before submitting monthly progress");

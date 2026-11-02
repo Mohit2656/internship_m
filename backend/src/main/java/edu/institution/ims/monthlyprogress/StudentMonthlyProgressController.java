@@ -12,12 +12,14 @@ public class StudentMonthlyProgressController {
     private final MonthlyProgressService service;
     public StudentMonthlyProgressController(MonthlyProgressService service) { this.service = service; }
 
-    @GetMapping public MonthlyProgressOverviewResponse overview(@AuthenticationPrincipal UserPrincipal principal) { return service.ownOverview(principal); }
+    @GetMapping public MonthlyProgressOverviewResponse overview(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) Long internshipId) { return service.ownOverview(principal, internshipId); }
     @PostMapping(value = "/{monthNumber}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<MonthlyProgressReportResponse> submit(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) Long internshipId,
             @PathVariable int monthNumber, @RequestPart("workDescription") String workDescription,
             @RequestPart("photo") MultipartFile photo) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.submit(principal, monthNumber, workDescription, photo));
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.submit(principal, internshipId, monthNumber, workDescription, photo));
     }
     @PostMapping(value="/{reportId}/resubmit",consumes=org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<MonthlyProgressReportResponse> resubmit(@AuthenticationPrincipal UserPrincipal principal,

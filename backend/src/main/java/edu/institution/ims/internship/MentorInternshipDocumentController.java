@@ -14,8 +14,9 @@ public class MentorInternshipDocumentController {
     public MentorInternshipDocumentController(InternshipOnboardingService service) { this.service = service; }
 
     @GetMapping
-    public OnboardingResponse get(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long studentId) {
-        return service.getForMentor(principal, studentId);
+    public OnboardingResponse get(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long studentId,
+            @RequestParam(required = false) Integer internshipNumber) {
+        return service.getForMentor(principal, studentId, internshipNumber);
     }
 
     @GetMapping("/documents/{documentId}/view")

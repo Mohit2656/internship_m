@@ -9,7 +9,7 @@ import { groupWeeklyStudents, InternshipWeek, WeeklyMonitoring, WeeklyOverview, 
 
 type Scope = "student" | "mentor" | "admin";
 const statusClass = (status: string) => status === "APPROVED" ? "bg-emerald-50 text-emerald-700" : status === "REJECTED" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-700";
-export function WeeklyProgress({ scope }: { scope: Scope }) {
+export function WeeklyProgress({ scope, internshipId }: { scope: Scope; internshipId?: number }) {
   const [weeks, setWeeks] = useState<InternshipWeek[]>([]);
   const [overview, setOverview] = useState<WeeklyOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -24,14 +24,15 @@ export function WeeklyProgress({ scope }: { scope: Scope }) {
   const [warnings, setWarnings] = useState<WeeklyWarning[]>([]);
   useEffect(() => {
     let active = true;
-    api.get<WeeklyOverview | WeeklyMonitoring>(`/${scope}/weekly-progress`).then(({ data }) => {
+    setLoading(true);
+    api.get<WeeklyOverview | WeeklyMonitoring>(`/${scope}/weekly-progress`, { params: internshipId ? { internshipId } : undefined }).then(({ data }) => {
       if (!active) return;
       setWeeks(data.weeks);
       if ("totalWeeks" in data) setOverview(data); else setWarnings(data.warnings);
     }).catch((cause: AxiosError<ApiError>) => { if (active) setError(cause.response?.data?.message ?? "Unable to load weekly progress."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [scope]);
+  }, [scope, internshipId]);
 
   function open(week: InternshipWeek, action: "submit" | "reject") {
     setSelected({ week, action }); setDescription(week.workDescription ?? ""); setReason(""); setError(""); setNotice("");

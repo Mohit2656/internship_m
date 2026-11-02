@@ -10,16 +10,29 @@ function render(pathname, hash = "") {
   return renderToStaticMarkup(React.createElement(module.exports.StudentSidebar, { pathname, hash, open: false, onNavigate() {}, onSignOut() {} }));
 }
 
-test("student sidebar contains every audited destination", () => {
+test("student sidebar contains simplified, grouped destinations without duplicate settings or nested report dropdowns", () => {
   const html = render("/student/dashboard");
-  for (const label of ["Home", "Profile", "Professional Profile", "Skill Gaps", "Internship", "Internship Details", "Second Internship", "Opportunities", "Weekly Progress", "Monthly Progress", "Attendance", "Documents &amp; Templates", "Notifications", "Change Password"]) assert.ok(html.includes(`>${label}<`), label);
-  assert.match(html, /href="\/student\/dashboard#daily-attendance"/);
+  for (const label of ["Dashboard", "My Internships", "Attendance History", "Progress Reports", "Opportunities", "Notifications"]) {
+    assert.ok(html.includes(`>${label}<`), label);
+  }
+  assert.match(html, /href="\/student\/attendance"/);
+  assert.match(html, /href="\/student\/progress-reports"/);
+  assert.doesNotMatch(html, /href="\/student\/settings"/);
+  assert.doesNotMatch(html, />Weekly Reports</);
+  assert.doesNotMatch(html, />Monthly Reports</);
 });
 
-test("nested routes and attendance anchor select only their correct item", () => {
+test("nested routes select only their correct item", () => {
   const opportunity = render("/student/opportunities/42");
   assert.match(opportunity, /href="\/student\/opportunities"[^>]*aria-current="page"/);
-  const attendance = render("/student/dashboard", "daily-attendance");
-  assert.match(attendance, /href="\/student\/dashboard#daily-attendance"[^>]*aria-current="page"/);
+
+  const attendance = render("/student/attendance");
+  assert.match(attendance, /href="\/student\/attendance"[^>]*aria-current="page"/);
   assert.doesNotMatch(attendance, /href="\/student\/dashboard" aria-current="page"/);
+
+  const progress = render("/student/progress-reports");
+  assert.match(progress, /href="\/student\/progress-reports"[^>]*aria-current="page"/);
+
+  const weeklyOld = render("/student/weekly-progress");
+  assert.match(weeklyOld, /href="\/student\/progress-reports"[^>]*aria-current="page"/);
 });

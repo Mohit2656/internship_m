@@ -8,7 +8,7 @@ import { LocationMapLink } from "@/components/LocationMapLink";
 import type { RegisteredWorkplace } from "@/lib/internship-details";
 import { InternshipLocation } from "@/lib/attendance";
 
-export function InternshipLocationManager({ studentId, scope = "admin" }: { studentId: number; scope?: "admin" | "mentor" } | { scope: "student"; studentId?: never }) {
+export function InternshipLocationManager({ studentId, scope = "admin", internshipId }: ({ studentId: number; scope?: "admin" | "mentor" } | { scope: "student"; studentId?: never }) & { internshipId?: number }) {
   const [correction, setCorrection] = useState(false);
   const [selection, setSelection] = useState<RegisteredWorkplace | null>(null);
   const [reason, setReason] = useState("");
@@ -49,14 +49,14 @@ export function InternshipLocationManager({ studentId, scope = "admin" }: { stud
     const version = ++requestVersion.current;
     mutationPending.current = false;
     setLoading(true); setLocation(null); setLatitude(""); setLongitude(""); setRadius("100"); setCorrection(false); setSelection(null); setReason(""); setError(""); setCorrectionPending(false); setSaving(false); setConfirming(false);
-    api.get<InternshipLocation>((scope === "student" ? "/student/internship/location" : `/${scope}/students/${studentId}/internship/location`), { signal: abort.signal })
+    api.get<InternshipLocation>((scope === "student" ? "/student/internship/location" : `/${scope}/students/${studentId}/internship/location`), { signal: abort.signal, params: internshipId ? { internshipId } : undefined })
       .then(response => { if (!abort.signal.aborted && version === requestVersion.current) useLocation(response.data); })
       .catch((cause: AxiosError) => {
         if (!abort.signal.aborted && version === requestVersion.current && cause.response?.status !== 404) setError("Internship location could not be loaded.");
       })
       .finally(() => { if (!abort.signal.aborted && version === requestVersion.current) setLoading(false); });
     return () => { abort.abort(); requestVersion.current++; };
-  }, [studentId, scope, refreshVersion]);
+  }, [studentId, scope, internshipId, refreshVersion]);
 
   useEffect(() => {
     if (typeof window === "undefined" || loading || saving || confirming || correction || radiusChanged || reason.trim()) return;
@@ -105,7 +105,7 @@ export function InternshipLocationManager({ studentId, scope = "admin" }: { stud
     const version = ++requestVersion.current;
     setConfirming(true); setError("");
     try {
-      const { data } = await api.post<InternshipLocation>(`/${scope}/students/${studentId}/internship/location/review`, { revision: location?.revision, decision, remarks: reason.trim() || null });
+      const { data } = await api.post<InternshipLocation>(`/${scope}/students/${studentId}/internship/location/review`, { revision: location?.revision, decision, remarks: reason.trim() || null }, { params: internshipId ? { internshipId } : undefined });
       if (version !== requestVersion.current) return;
       useLocation(data);
       setReason("");

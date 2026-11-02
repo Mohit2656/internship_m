@@ -131,6 +131,64 @@ public class StudentChangeNotificationService {
                 title, message, actionUrl, now);
     }
 
+    @Transactional
+    public void notifyProfessionalProfileChanged(Long studentId, String oldHeadline, String newHeadline, String oldInterests, String newInterests) {
+        List<Change> changes = new ArrayList<>();
+        check(changes, "Professional Headline", oldHeadline, newHeadline);
+        check(changes, "Career Interests", oldInterests, newInterests);
+        if (changes.isEmpty()) return;
+
+        Instant now = clock.instant();
+        String formattedDate = DATE_FORMATTER.format(now);
+        String uid = getStudentUid(studentId);
+        String changeSummary = formatChangeSummary(changes);
+        String message = "Student " + uid + " updated professional profile (" + changeSummary + ") on " + formattedDate + ".";
+        String title = "Professional profile updated (" + uid + ")";
+        String actionUrl = "/mentor/students/" + studentId;
+        String eventKey = "professional-update:" + studentId + ":" + now.toEpochMilli();
+
+        Map<String, String> beforeMap = new HashMap<>();
+        beforeMap.put("headline", oldHeadline);
+        beforeMap.put("careerInterests", oldInterests);
+        Map<String, String> afterMap = new HashMap<>();
+        afterMap.put("headline", newHeadline);
+        afterMap.put("careerInterests", newInterests);
+
+        audit(studentId, "PROFESSIONAL_UPDATE", null, changeSummary, beforeMap, afterMap, now);
+        mentorNotifications.workflowSubmitted(studentId, eventKey, "STUDENT_PROFILE_UPDATED",
+                title, message, actionUrl, now);
+    }
+
+    @Transactional
+    public void notifyResumeUpdated(Long studentId, String filename, boolean isUpdate) {
+        Instant now = clock.instant();
+        String formattedDate = DATE_FORMATTER.format(now);
+        String uid = getStudentUid(studentId);
+        String message = "Student " + uid + (isUpdate ? " updated their resume (" : " uploaded a resume (") + filename + ") on " + formattedDate + ".";
+        String title = "Resume " + (isUpdate ? "updated" : "uploaded") + " (" + uid + ")";
+        String actionUrl = "/mentor/students/" + studentId;
+        String eventKey = "resume-upload:" + studentId + ":" + now.toEpochMilli();
+
+        audit(studentId, "RESUME_UPDATE", null, filename, null, filename, now);
+        mentorNotifications.workflowSubmitted(studentId, eventKey, "STUDENT_RESUME_UPDATED",
+                title, message, actionUrl, now);
+    }
+
+    @Transactional
+    public void notifySkillsUpdated(Long studentId, String changeSummary) {
+        Instant now = clock.instant();
+        String formattedDate = DATE_FORMATTER.format(now);
+        String uid = getStudentUid(studentId);
+        String message = "Student " + uid + " updated skills (" + changeSummary + ") on " + formattedDate + ".";
+        String title = "Skills updated (" + uid + ")";
+        String actionUrl = "/mentor/students/" + studentId;
+        String eventKey = "skills-update:" + studentId + ":" + now.toEpochMilli();
+
+        audit(studentId, "SKILLS_UPDATE", null, changeSummary, null, changeSummary, now);
+        mentorNotifications.workflowSubmitted(studentId, eventKey, "STUDENT_SKILLS_UPDATED",
+                title, message, actionUrl, now);
+    }
+
     private void check(List<Change> list, String name, Object oldVal, Object newVal) {
         if (oldVal instanceof BigDecimal o && newVal instanceof BigDecimal n) {
             if (o.compareTo(n) == 0) return;

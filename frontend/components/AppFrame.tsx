@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 import { StudentSidebar } from "@/components/StudentSidebar";
 import { AdminSidebar } from "@/components/AdminSidebar";
 import { MentorSidebar } from "@/components/MentorSidebar";
+import { SettingsDropdown } from "@/components/SettingsDropdown";
 
 export function AppFrame({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth(); const router = useRouter();
@@ -72,6 +73,7 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
       <div className="app-topbar-actions" role="group" aria-label="Account controls" onClick={event => { if (event.target instanceof Element && event.target.closest("a")) setMenuOpen(false); }}>
         <ThemeToggle />
         {(user?.role === "STUDENT" || user?.role === "MENTOR" || user?.role === "ADMIN") && <NotificationMenu key={`${user.role}-${user.id}`} role={user.role} />}
+        {isStudent && <SettingsDropdown />}
         <button ref={menuButton} type="button" data-button-variant="outline" className="app-menu-toggle" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} aria-controls={isStudent ? "student-navigation" : isAdmin ? "admin-navigation" : isMentor ? "mentor-navigation" : "app-navigation"} onClick={() => setMenuOpen(open => !open)}>
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20"><path strokeLinecap="round" d={menuOpen ? "M6 6l12 12M6 18L18 6" : "M4 6h16M4 12h16M4 18h16"}/></svg><span className="app-menu-label">Menu</span>
         </button>

@@ -34,7 +34,12 @@ public class InternshipLocationService {
 
     @Transactional(readOnly = true)
     public InternshipLocationResponse getOwn(UserPrincipal principal) {
-        InternshipDetails internship = ownInternship(principal.id());
+        return getOwn(principal, null);
+    }
+
+    @Transactional(readOnly = true)
+    public InternshipLocationResponse getOwn(UserPrincipal principal, Long internshipId) {
+        InternshipDetails internship = ownInternship(principal.id(), internshipId);
         return response(locations.findByInternshipId(internship.getId()).orElseThrow(InternshipLocationService::notFound));
     }
 

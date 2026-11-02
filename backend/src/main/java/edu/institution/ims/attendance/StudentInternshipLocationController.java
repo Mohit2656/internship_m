@@ -13,8 +13,9 @@ public class StudentInternshipLocationController {
     public StudentInternshipLocationController(InternshipLocationService service) { this.service = service; }
 
     @GetMapping
-    public InternshipLocationResponse get(@AuthenticationPrincipal UserPrincipal principal) {
-        return service.getOwn(principal);
+    public InternshipLocationResponse get(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) Long internshipId) {
+        return internshipId == null ? service.getOwn(principal) : service.getOwn(principal, internshipId);
     }
 
     @PutMapping

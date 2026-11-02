@@ -13,24 +13,25 @@ import java.nio.charset.StandardCharsets;
 public class InternshipOnboardingController {
     private final InternshipOnboardingService service;
     public InternshipOnboardingController(InternshipOnboardingService service) { this.service = service; }
-    @GetMapping public OnboardingResponse get(@AuthenticationPrincipal UserPrincipal principal) { return service.getOwn(principal); }
+    @GetMapping public OnboardingResponse get(@AuthenticationPrincipal UserPrincipal principal, @RequestParam(required = false) Integer internshipNumber) { return service.getOwn(principal, internshipNumber); }
     @PostMapping("/secure") public ResponseEntity<OnboardingResponse> secure(@AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.secure(principal));
     }
-    @PutMapping("/source") public OnboardingResponse source(@AuthenticationPrincipal UserPrincipal principal, @Valid @RequestBody SourceRequest request) {
-        return service.selectSource(principal, request.source());
+    @PutMapping("/source") public OnboardingResponse source(@AuthenticationPrincipal UserPrincipal principal, @RequestParam(required = false) Integer internshipNumber, @Valid @RequestBody SourceRequest request) {
+        return service.selectSource(principal, request.source(), internshipNumber);
     }
     @PostMapping(value = "/documents/{documentType}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public OnboardingResponse upload(@AuthenticationPrincipal UserPrincipal principal, @PathVariable DocumentType documentType,
-            @RequestPart("file") MultipartFile file) { return service.upload(principal, documentType, file); }
-    @GetMapping("/documents") public java.util.List<DocumentResponse> documents(@AuthenticationPrincipal UserPrincipal principal) {
-        return service.getOwn(principal).documents();
+            @RequestParam(required = false) Integer internshipNumber,
+            @RequestPart("file") MultipartFile file) { return service.upload(principal, documentType, file, internshipNumber); }
+    @GetMapping("/documents") public java.util.List<DocumentResponse> documents(@AuthenticationPrincipal UserPrincipal principal, @RequestParam(required = false) Integer internshipNumber) {
+        return service.getOwn(principal, internshipNumber).documents();
     }
     @GetMapping("/documents/{documentId}/download") public ResponseEntity<org.springframework.core.io.Resource> download(
             @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long documentId) { return file(service.downloadOwn(principal, documentId)); }
     @GetMapping("/documents/{documentId}/view") public ResponseEntity<org.springframework.core.io.Resource> view(
             @AuthenticationPrincipal UserPrincipal principal, @PathVariable Long documentId) { return inlineFile(service.downloadOwn(principal, documentId)); }
-    @PostMapping("/diary/confirm") public OnboardingResponse confirmDiary(@AuthenticationPrincipal UserPrincipal principal) { return service.confirmDiary(principal); }
+    @PostMapping("/diary/confirm") public OnboardingResponse confirmDiary(@AuthenticationPrincipal UserPrincipal principal, @RequestParam(required = false) Integer internshipNumber) { return service.confirmDiary(principal, internshipNumber); }
 
     public static ResponseEntity<org.springframework.core.io.Resource> file(DocumentDownload download) {
         return file(download, false);

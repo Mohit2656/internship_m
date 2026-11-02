@@ -25,13 +25,13 @@ export function StudentAttendanceHistory({ role, studentId, name, onBack, onChan
       .catch(() => { if (!abort.signal.aborted) setError("Attendance history could not be loaded. Access may have changed."); });
     return () => abort.abort();
   }, [role, studentId, revision]);
-  return <section id={id} className="mt-5 rounded-xl border border-slate-200 bg-white p-5" aria-label={`Attendance history for ${name}`}>
+  return <section id={id} className="mt-5 w-full max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-5" aria-label={`Attendance history for ${name}`}>
     <button type="button" data-button-variant="outline" onClick={onBack} className="text-sm">Back to student list</button>
     <h3 className="mt-4 text-lg font-bold text-slate-950">Attendance history: {name}</h3>
     {error ? <p role="alert" className="mt-4 text-red-700">{error}</p> : !history ? <p role="status" className="mt-4 text-slate-500">Loading attendance history...</p> : <>
       <p className="mt-3 font-semibold text-slate-900">{history.totals.presentDays} present · {history.totals.absentDays} absent · {history.totals.totalDays} applicable recorded days · {formatAttendancePercentage(history.totals.percentage)}</p>
       <p className="mt-2 text-xs text-slate-500">Totals exclude future dates, weekends, configured holidays, approved leave and unscheduled days. Times use {history.attendanceZone}.</p>
-      <div className="mt-4 w-full overflow-x-auto"><table className="w-full min-w-[850px] border-collapse text-left text-sm text-slate-900"><thead><tr className="border-b border-slate-200">{["Date", "Status", "Submission time", "Liveness", "Late submission", "Mentor approval", ...(role === "MENTOR" ? ["Actions"] : [])].map(label => <th key={label} className="p-3 font-semibold text-slate-900 whitespace-nowrap">{label}</th>)}</tr></thead>
+      <div className="mt-4 w-full overflow-x-auto"><table className="w-full min-w-[950px] border-collapse text-left text-sm text-slate-900"><thead><tr className="border-b border-slate-200">{["Date", "Status", "Submission time", "Liveness", "Late submission", "Mentor approval", ...(role === "MENTOR" ? ["Actions"] : [])].map(label => <th key={label} className="p-3 font-semibold text-slate-900 whitespace-nowrap">{label}</th>)}</tr></thead>
         <tbody>{history.records.map(record => <tr key={record.id} className="border-t border-slate-100 align-top"><td className="p-3 text-slate-900 whitespace-nowrap">{record.attendanceDate}</td><td className="p-3 text-slate-900"><p className="font-semibold text-slate-900">{record.attendanceResult}</p><LocationVerificationResult evidence={record.evidence} />{record.evidence?.dailyWorkSummary && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-600">{record.evidence.dailyWorkSummary}</p>}</td><td className="p-3 text-slate-900">{isAutomaticAbsence(record) ? "— (automatic absence)" : record.serverSubmittedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: history.attendanceZone }).format(new Date(record.serverSubmittedAt)) : "—"}<AttendanceLocations evidence={record.evidence} /></td><td className="p-3 text-slate-900 whitespace-nowrap">{livenessLabel(record.livenessStatus)}</td><td className="p-3 text-slate-900 whitespace-nowrap">{record.submittedLate ? "Yes · mentor permission" : "—"}</td><td className="p-3 text-slate-900"><AttendanceReviewPanel record={record} role={role} onChanged={() => { setRevision(value => value + 1); onChanged?.(); }} /></td>{role === "MENTOR" && <td className="p-3 text-slate-900"><MentorRecordDelete kind="attendance" id={record.id} description={`${name} · ${record.attendanceDate}`} onDeleted={() => { setRevision(value => value + 1); onChanged?.(); }} /></td>}</tr>)}</tbody>
       </table>{!history.records.length && <p className="p-3 text-slate-500">No attendance records yet.</p>}</div>
     </>}
@@ -101,7 +101,7 @@ export function AttendanceAbsenceOverview({ role }: { role: "ADMIN" | "MENTOR" }
               </>
             )}
           </tr>
-          {expanded && <tr><td colSpan={role === "MENTOR" ? 6 : 9} className="px-3 pb-5"><StudentAttendanceHistory key={row.studentUserId} id={historyId} role={role} studentId={row.studentUserId} name={row.studentName || row.uid || "Student"} onBack={() => setSelected(null)} onChanged={() => setRevision(value => value + 1)} /></td></tr>}
+          {expanded && <tr><td colSpan={role === "MENTOR" ? 6 : 9} className="max-w-0 px-3 pb-5"><StudentAttendanceHistory key={row.studentUserId} id={historyId} role={role} studentId={row.studentUserId} name={row.studentName || row.uid || "Student"} onBack={() => setSelected(null)} onChanged={() => setRevision(value => value + 1)} /></td></tr>}
         </Fragment>;
       })}</tbody>
     </table>{!filtered.length && <p className="p-3 text-slate-500">No matching students.</p>}</div>}
