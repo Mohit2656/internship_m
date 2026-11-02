@@ -41,6 +41,7 @@ class AttendanceReviewIntegrationTest {
     @Autowired AttendanceReviewService service; @Autowired PlatformTransactionManager transactionManager; @Autowired Clock clock;
     @Autowired StudentProfessionalProfileRepository professionalProfiles; @Autowired StudentResumeRepository resumes;
     @Autowired ResumeAnalysisRepository analyses; @Autowired ResumeCorrectionService corrections;
+    @Autowired edu.institution.ims.internship.storage.FileStorageService storage;
     @MockitoSpyBean NotificationService notifications;
     User admin, mentor, otherMentor, student, otherStudent;
     MentorStudentAssignment assignment; InternshipDetails internship;
@@ -195,11 +196,18 @@ class AttendanceReviewIntegrationTest {
         mvc.perform(get(base+"/resume/analysis/corrections").with(user(UserPrincipal.from(mentor)))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.original.skills[0]").value("Java")).andExpect(jsonPath("$.values.skills[0]").value("Spring Boot"));
         for (String suffix:List.of("/professional-profile","/resume/download","/resume/analysis","/resume/analysis/corrections"))
-            mvc.perform(get(base+suffix).with(user(UserPrincipal.from(otherMentor)))).andExpect(status().isNotFound());
+            mvc.perform(get(base+suffix).with(user(UserPrincipal.from(otherMentor)))).andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("ASSIGNED_RESUME_NOT_FOUND"));
         mvc.perform(put(base+"/resume/analysis/corrections").with(user(UserPrincipal.from(mentor))).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isMethodNotAllowed());
+        storage.delete(resume.getStorageKey());
+        mvc.perform(get(base+"/resume/download").with(user(UserPrincipal.from(mentor))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESUME_FILE_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("The stored resume file was not found"));
         assignment.end(clock.instant()); assignments.flush();
-        mvc.perform(get(base+"/resume/download").with(user(UserPrincipal.from(mentor)))).andExpect(status().isNotFound());
+        mvc.perform(get(base+"/resume/download").with(user(UserPrincipal.from(mentor)))).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ASSIGNED_RESUME_NOT_FOUND"));
     }
 
     private org.springframework.test.web.servlet.ResultActions decide(AttendanceRecord record,User actor,String status,int revision,String reason) throws Exception {

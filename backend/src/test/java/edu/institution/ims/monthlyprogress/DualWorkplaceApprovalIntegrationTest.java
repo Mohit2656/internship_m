@@ -57,12 +57,13 @@ class DualWorkplaceApprovalIntegrationTest extends SharedWorkplaceIntegrationTes
   var approved=locationService.review(studentA.getId(),UserPrincipal.from(mentorA),new WorkplaceReview(location.revision(),WorkplaceReview.Decision.APPROVE,null));
   assertThat(approved.status()).isEqualTo(InternshipLocationStatus.APPROVED);assertThat(approved.iiicDecision()).isEqualTo("REJECT");assertThat(approved.iiicRemarks()).isEqualTo("Historical decision retained");
  }
- @Test void studentCoordinatesLockButUnrelatedAndIdempotentUpdatesRemainAllowed() throws Exception {
+ @Test void studentCoordinatesUpdateInvalidatesPreviousApprovalAndIdempotentUpdatesRemainApproved() throws Exception {
   register(studentA,"21.125","79.0875","Branch A");var original=locationService.getForAdmin(studentA.getId());locationService.review(studentA.getId(),UserPrincipal.from(mentorA),new WorkplaceReview(original.revision(),WorkplaceReview.Decision.APPROVE,null));
   var approved=locationService.getForAdmin(studentA.getId());var cookie=login(studentA,"StudentPassword!23");
-  mvc.perform(put("/api/v1/student/internship").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update(new RegisteredWorkplaceRequest(null,approved.workplaceAddress(),new BigDecimal("21.126"),approved.longitude(),approved.workplaceName()),"Company")))).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("WORKPLACE_COORDINATES_LOCKED"));
   mvc.perform(put("/api/v1/student/internship").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update(new RegisteredWorkplaceRequest(null,approved.workplaceAddress(),approved.latitude(),approved.longitude(),approved.workplaceName()),"Renamed Company")))).andExpect(status().isOk()).andExpect(jsonPath("$.companyName").value("Renamed Company"));
   assertThat(locationService.getForAdmin(studentA.getId()).status()).isEqualTo(InternshipLocationStatus.APPROVED);
+  mvc.perform(put("/api/v1/student/internship").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update(new RegisteredWorkplaceRequest(null,approved.workplaceAddress(),new BigDecimal("21.126"),approved.longitude(),approved.workplaceName()),"Company")))).andExpect(status().isOk());
+  assertThat(locationService.getForAdmin(studentA.getId()).status()).isEqualTo(InternshipLocationStatus.PENDING_MENTOR_APPROVAL);
  }
  @Test void concurrentApprovalAndStudentUpdateCannotCommitApprovedChangedPair() throws Exception {
   register(studentA,"21.125","79.0875","Concurrent branch");var original=locationService.getForAdmin(studentA.getId());var change=update(new RegisteredWorkplaceRequest(null,"Changed branch",new BigDecimal("19.076"),new BigDecimal("72.8777"),"Changed branch"),"Company");

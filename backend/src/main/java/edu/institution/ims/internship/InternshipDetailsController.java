@@ -18,5 +18,10 @@ public class InternshipDetailsController {
     @PostMapping("/second") public ResponseEntity<InternshipDetailsResponse> createSecond(@AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody InternshipDetailsRequest request) { return ResponseEntity.status(HttpStatus.CREATED).body(service.createSecond(principal, request)); }
     @PutMapping public InternshipDetailsResponse update(@AuthenticationPrincipal UserPrincipal principal,
-            @Valid @RequestBody InternshipDetailsRequest request) { return service.updateOwn(principal, request); }
+            @RequestParam(required = false) Long internshipId,
+            @Valid @RequestBody InternshipDetailsRequest request) {
+        return internshipId != null ? service.updateOwn(principal, internshipId, request) : service.updateOwn(principal, request);
+    }
+    @PutMapping("/second") public InternshipDetailsResponse updateSecond(@AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody InternshipDetailsRequest request) { return service.updateSecond(principal, request); }
 }

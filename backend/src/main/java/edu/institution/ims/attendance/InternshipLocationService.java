@@ -82,9 +82,8 @@ public class InternshipLocationService {
     }
 
     /**
-     * Enforces the permanent student coordinate lock for a revision that has been
-     * approved by an assigned mentor. The caller must hold the workflow student lock.
-     * Returns true when location metadata must also remain untouched by the student.
+     * When student coordinates match an approved location, approval is retained.
+     * When coordinates change, approval is invalidated and fresh mentor verification is required.
      */
     @Transactional
     public boolean validateStudentWorkplaceUpdate(InternshipDetails internship,
@@ -94,8 +93,12 @@ public class InternshipLocationService {
         var current = existing.get();
         if (place != null && (current.getLatitude().compareTo(normalizeLatitude(place.latitude())) != 0
                 || current.getLongitude().compareTo(normalizeLongitude(place.longitude())) != 0)) {
-            throw error(HttpStatus.CONFLICT, "WORKPLACE_COORDINATES_LOCKED",
-                    "Location approved by mentor — coordinates locked. Ask the III Cell to use the audited correction workflow if the workplace is wrong.");
+            current.updateProposal(normalizeLatitude(place.latitude()), normalizeLongitude(place.longitude()),
+                    current.getGeofenceRadiusMeters(), clock.instant());
+            if (place.address() != null) current.selectedPlace(place.placeId(), place.address());
+            if (place.name() != null) current.name(place.name());
+            locations.saveAndFlush(current);
+            return false;
         }
         return true;
     }
@@ -125,7 +128,7 @@ public class InternshipLocationService {
         if (!"MENTOR".equals(principal.role()) || assignments.findByStudentIdAndActiveTrue(studentId).filter(a -> a.getMentor().getId().equals(principal.id())).isEmpty())
             throw error(HttpStatus.NOT_FOUND,"INTERNSHIP_LOCATION_NOT_FOUND","Workplace was not found in your assigned scope");
         var internship=ownInternship(studentId,internshipId);
-        return locations.findByInternshipId(internship.getId()).map(InternshipLocationService::response).orElseThrow(InternshipLocationService::notFound);
+        return locations.findByInternshipId(internship.getId()).map(this::response).orElseThrow(InternshipLocationService::notFound);
     }
 
     @Transactional

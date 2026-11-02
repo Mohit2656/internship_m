@@ -129,8 +129,15 @@ public class ProfessionalProfileService {
     }
 
     private ResumeDownload download(StudentResume resume) {
-        StoredFile file = storage.load(resume.getStorageKey());
-        return new ResumeDownload(file.resource(), resume.getOriginalFilename(), resume.getContentType(), file.size());
+        try {
+            StoredFile file = storage.load(resume.getStorageKey());
+            return new ResumeDownload(file.resource(), resume.getOriginalFilename(), resume.getContentType(), file.size());
+        } catch (edu.institution.ims.internship.OnboardingException e) {
+            if (e.getStatus() == HttpStatus.NOT_FOUND) {
+                throw notFound("RESUME_FILE_NOT_FOUND", "The stored resume file was not found");
+            }
+            throw e;
+        }
     }
 
     private static ResumeResponse resumeResponse(StudentResume resume) {

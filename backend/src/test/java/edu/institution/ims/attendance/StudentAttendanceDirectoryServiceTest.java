@@ -22,7 +22,7 @@ class StudentAttendanceDirectoryServiceTest {
     private final StudentAttendanceDirectoryService service = new StudentAttendanceDirectoryService(users, assignments, internships, records, policies, calendar, clock);
     private final User student = student();
     private final InternshipDetails internship = internship();
-    private User student() { User user = mock(User.class); when(user.getId()).thenReturn(1L); when(user.getRole()).thenReturn(Role.STUDENT); return user; }
+    private User student() { User user = mock(User.class); when(user.getId()).thenReturn(1L); when(user.getRole()).thenReturn(Role.STUDENT); when(user.isActive()).thenReturn(true); return user; }
     private InternshipDetails internship() {
         InternshipDetails i = mock(InternshipDetails.class);
         when(i.getStartDate()).thenReturn(LocalDate.of(2026, 10, 1)); when(i.getEndDate()).thenReturn(LocalDate.of(2026, 11, 1));
@@ -64,5 +64,14 @@ class StudentAttendanceDirectoryServiceTest {
         var history = service.history(principal("ADMIN"), 1L);
         assertThat(history.studentUserId()).isEqualTo(1L);
         assertThat(history.records()).extracting(AttendanceResponse::attendanceDate).containsExactly(LocalDate.parse("2026-10-19"), LocalDate.parse("2026-10-22"));
+    }
+    @Test void doesNotCountPendingMentorReviewAsAbsent() {
+        var totals = service.totals(List.of(
+                row("2026-10-19", AttendanceResult.PRESENT),
+                row("2026-10-22", AttendanceResult.PENDING_MENTOR_REVIEW)));
+        assertThat(totals.presentDays()).isEqualTo(1);
+        assertThat(totals.absentDays()).isEqualTo(0);
+        assertThat(totals.totalDays()).isEqualTo(1);
+        assertThat(totals.percentage()).isEqualByComparingTo("100.0");
     }
 }

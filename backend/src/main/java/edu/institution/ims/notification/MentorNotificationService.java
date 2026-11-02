@@ -26,7 +26,7 @@ public class MentorNotificationService {
 
     public MentorNotificationService(JdbcTemplate jdbc, Clock clock) { this.jdbc = jdbc; this.clock = clock; }
 
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.REQUIRED)
     public void workflowSubmitted(Long studentId, String eventKey, String type, String title, String message,
             String actionUrl, java.time.Instant at) {
         jdbc.update("insert into mentor_notifications(mentor_user_id,student_user_id,event_key,notification_type,title,message,action_url,created_at) "

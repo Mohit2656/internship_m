@@ -18,11 +18,25 @@ test("student permission labels distinguish pre-start, active and locked access"
   assert.match(permissionLabel({ internshipStarted: true, editable: false, status: "LOCKED" }), /Locked/);
 });
 
-test("mentor control is internship-only while student profile remains editable", () => {
-  const control = fs.readFileSync(path.join(__dirname, "../components/EditPermissionStatus.tsx"), "utf8");
+test("students can edit their own internship details and profile without mentor permission", () => {
   const internship = fs.readFileSync(path.join(__dirname, "../app/student/internship/details/page.tsx"), "utf8");
   const profile = fs.readFileSync(path.join(__dirname, "../app/student/profile/page.tsx"), "utf8");
-  assert.match(control, /Grant Edit Access/); assert.match(control, /Revoke Edit Access/);
-  assert.match(control, /Internship details edit access/); assert.doesNotMatch(control, /Student profile<\/p>/);
-  assert.match(internship, /disabled={!editAllowed}/); assert.doesNotMatch(profile, /editAllowed|StudentEditPermissionStatus/);
+  const mentorStudent = fs.readFileSync(path.join(__dirname, "../app/mentor/students/[id]/page.tsx"), "utf8");
+
+  // Internship details page allows editing without mentor edit permission locks
+  assert.match(internship, /<button onClick=\{\(\) => setEditing\(true\)\} className="text-sm">Edit Details<\/button>/);
+  assert.doesNotMatch(internship, /disabled=\{!editAllowed\}|StudentEditPermissionStatus/);
+
+  // Student profile remains editable without mentor permission controls
+  assert.doesNotMatch(profile, /editAllowed|StudentEditPermissionStatus/);
+
+  // Mentor student view no longer renders mentor edit permission controls
+  assert.doesNotMatch(mentorStudent, /MentorEditPermissionPanel/);
+
+  // Authorization and protected routes are preserved
+  assert.match(internship, /<ProtectedRoute role="STUDENT">/);
+  assert.match(profile, /<ProtectedRoute role="STUDENT">/);
+
+  // Protected workplace location verification component is preserved
+  assert.match(internship, /<InternshipLocationManager key=\{details\.updatedAt\} scope="student"\/>/);
 });

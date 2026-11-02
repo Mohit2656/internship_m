@@ -51,17 +51,33 @@ public class StudentProfileService {
         apply(profile, request, uid, instituteEmail, branch, studentName, semester); protectAadhaar(profile, aadhaar);
         return save(profile);
     }
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private edu.institution.ims.notification.StudentChangeNotificationService changeNotifications;
+
     @Transactional public StudentProfileResponse updateOwn(UserPrincipal principal, StudentProfileRequest request) {
         if (!WorkflowUserLocks.student(jdbc, principal.id(), true))
             throw new ProfileConflictException("STUDENT_ACCOUNT_INACTIVE", "Deactivated students cannot change their profile");
         StudentProfile profile = profiles.findByUserId(principal.id()).orElseThrow(ProfileNotFoundException::new);
+        StudentProfile before = new StudentProfile();
+        before.apply(profile.getStudentName(), profile.getBranch(), profile.getUid(), profile.getRollNumber(),
+                profile.getPermanentAddress(), profile.getCurrentAddress(), profile.getPersonalEmail(), profile.getInstituteEmail(),
+                profile.getPhoneNumber(), profile.getGuardianName(), profile.getGuardianContact(), profile.getEmergencyContact(),
+                profile.getBloodGroup(), profile.getFacultyMentorName(), profile.getFacultyMentorContact(),
+                profile.getInternshipCoordinatorName(), profile.getInternshipCoordinatorContact(),
+                profile.getCdcCoordinatorName(), profile.getCdcCoordinatorContact(),
+                profile.getAcademicYear(), profile.getSemester());
+        before.setCurrentCgpa(profile.getCurrentCgpa());
         StudentAccount account = profile.getUser().getStudentAccount();
         String studentName = account != null && hasValue(account.getStudentName()) ? profile.getStudentName() : clean(request.studentName());
         int semester = account != null && account.getSemester() != null ? profile.getSemester() : request.semester();
         validateUnique(profile.getUid(), profile.getInstituteEmail(), profile.getBranch(), request, profile.getId());
         apply(profile, request, profile.getUid(), profile.getInstituteEmail(), profile.getBranch(), studentName, semester);
         String aadhaar = normalizedAadhaar(request.aadhaarNumber()); if (!aadhaar.isBlank()) protectAadhaar(profile, aadhaar);
-        return save(profile);
+        StudentProfileResponse res = save(profile);
+        if (changeNotifications != null) {
+            changeNotifications.notifyProfileChanged(principal.id(), before, profile);
+        }
+        return res;
     }
     private StudentProfileResponse save(StudentProfile profile) {
         try { return response(profiles.saveAndFlush(profile)); }

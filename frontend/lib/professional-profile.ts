@@ -58,13 +58,28 @@ export function resumeError(cause: unknown, fallback: string) {
 }
 
 export async function downloadResume(url: string, fileName: string) {
-  const response = await api.get<Blob>(url, { responseType: "blob" });
-  const objectUrl = URL.createObjectURL(response.data);
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.download = fileName;
-  anchor.click();
-  URL.revokeObjectURL(objectUrl);
+  try {
+    const response = await api.get<Blob>(url, { responseType: "blob" });
+    const objectUrl = URL.createObjectURL(response.data);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.data) {
+      const data = error.response.data as unknown;
+      if (typeof (data as Blob).text === "function") {
+        try {
+          const text = await (data as Blob).text();
+          error.response.data = JSON.parse(text);
+        } catch {
+          // Keep response data as is if not valid JSON
+        }
+      }
+    }
+    throw error;
+  }
 }
 
 export function readableFileSize(bytes: number) {

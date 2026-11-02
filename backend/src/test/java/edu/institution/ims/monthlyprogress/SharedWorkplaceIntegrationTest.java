@@ -72,8 +72,8 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
     "qualityPassed",true,"livenessPassed",true,"modelVersion","mediapipe-face-landmarker@1.0.1/test")));
    mvc.perform(multipart("/api/v1/student/attendance/today/physical")
     .file(new MockMultipartFile("photo","capture.jpg","image/jpeg",ProgressPhotoValidatorTest.fixture(true,true,21)))
-    .file(ai).param("latitude","21.125").param("longitude","79.0875").param("accuracy","5").cookie(cookie))
-    .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+    .file(ai).param("latitude","21.125").param("longitude","79.0875").param("accuracy","5").param("locationCapturedAt",NOW.toString()).cookie(cookie))
+    .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceResult").value(student == studentA ? "PRESENT" : "PENDING_MENTOR_REVIEW"))
     .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
     .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
     .andExpect(jsonPath("$.evidence.verificationReason").value("EDGE_AI_VERIFIED"))

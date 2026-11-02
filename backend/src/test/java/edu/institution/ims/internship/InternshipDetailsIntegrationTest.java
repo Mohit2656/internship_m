@@ -157,73 +157,51 @@ class InternshipDetailsIntegrationTest {
         assertThat(details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(updated);
     }
 
-    @Test void startedInternshipRequiresAssignedMentorSingleUseScopedEditPermission() throws Exception {
+    @Test void startedInternshipCanBeEditedWithoutMentorPermission() throws Exception {
         readyAndCreate(studentACookie, "A", "UID-A", "a@college.edu", "Acme Systems");
         jdbc.update("update internship_details set start_date=?,end_date=? where id=?",
                 java.time.LocalDate.now().minusDays(2), java.time.LocalDate.now().plusMonths(3),
                 details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getId());
         User mentor = users.save(new User("mentor.edit@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
-        User otherMentor = users.save(new User("other.mentor@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
         assignments.saveAndFlush(new edu.institution.ims.mentor.MentorStudentAssignment(mentor, studentA, admin, java.time.Instant.now()));
-        Cookie mentorCookie = login(mentor.getEmail(), "MentorPassword!23");
-        Cookie otherCookie = login(otherMentor.getEmail(), "MentorPassword!23");
-        Map<String,Object> update = internship("Allowed Once");
+
+        Map<String,Object> update = internship("Updated Company");
         update.put("startDate", java.time.LocalDate.now().minusDays(2).toString());
         update.put("endDate", java.time.LocalDate.now().plusMonths(3).toString());
 
+        // Student can edit started internship directly without mentor permission
         mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(update))).andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("EDIT_PERMISSION_REQUIRED"));
-        mvc.perform(put("/api/v1/mentor/students/{id}/edit-permissions", studentA.getId()).cookie(otherCookie)
-                .contentType(MediaType.APPLICATION_JSON).content("{\"scope\":\"INTERNSHIP_DETAILS\",\"enabled\":true}"))
-                .andExpect(status().isForbidden());
-        mvc.perform(put("/api/v1/mentor/students/{id}/edit-permissions", studentA.getId()).cookie(mentorCookie)
-                .contentType(MediaType.APPLICATION_JSON).content("{\"scope\":\"INTERNSHIP_DETAILS\",\"enabled\":true}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$[0].editable").value(true))
-                .andExpect(jsonPath("$.length()").value(1));
+                .content(json.writeValueAsString(update))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.companyName").value("Updated Company"));
 
+        // Validation still applies
         Map<String,Object> invalid = new LinkedHashMap<>(update); invalid.put("endDate", "2020-01-01");
         mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(invalid))).andExpect(status().isBadRequest());
-        mvc.perform(get("/api/v1/student/edit-permissions").cookie(studentACookie)).andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].editable").value(true));
+
+        // Student can edit again anytime
+        update.put("companyName", "Updated Company Second Time");
         mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(update))).andExpect(status().isOk());
-        mvc.perform(put("/api/v1/student/internship").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(update))).andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("EDIT_PERMISSION_REQUIRED"));
+                .content(json.writeValueAsString(update))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.companyName").value("Updated Company Second Time"));
+
+        // Student can edit profile anytime
         mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(profile("A", "UID-A", "a@college.edu"))))
                 .andExpect(status().isOk());
 
-        assertThat(jdbc.queryForObject("select count(*) from student_edit_permission_audit where student_user_id=? and event_type='CONSUMED' and before_value is not null and after_value is not null", Integer.class, studentA.getId())).isEqualTo(1);
+        mvc.perform(get("/api/v1/student/edit-permissions").cookie(studentACookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].editable").value(true));
     }
 
-    @Test void editPermissionCanBeRevokedExpiresAndOnlyOneConcurrentSaveWins() throws Exception {
+    @Test void concurrentInternshipUpdatesSucceedWithoutPermissionConflict() throws Exception {
         readyAndCreate(studentACookie, "A", "UID-A", "a@college.edu", "Acme Systems");
         Long internshipId = details.findByOnboardingStudentId(studentA.getId()).orElseThrow().getId();
         jdbc.update("update internship_details set start_date=?,end_date=? where id=?",
                 java.time.LocalDate.now().minusDays(2), java.time.LocalDate.now().plusMonths(3), internshipId);
         User mentor = users.save(new User("mentor.concurrent@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
         assignments.saveAndFlush(new edu.institution.ims.mentor.MentorStudentAssignment(mentor, studentA, admin, java.time.Instant.now()));
-        Cookie mentorCookie = login(mentor.getEmail(), "MentorPassword!23");
 
-        String profileGrant = "{\"scope\":\"STUDENT_PROFILE\",\"enabled\":true}";
-        mvc.perform(put("/api/v1/mentor/students/{id}/edit-permissions", studentA.getId()).cookie(mentorCookie)
-                .contentType(MediaType.APPLICATION_JSON).content(profileGrant)).andExpect(status().isBadRequest());
-        mvc.perform(get("/api/v1/student/edit-permissions").cookie(studentACookie)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1));
-        Map<String,Object> profileUpdate = profile("A", "UID-A", "a@college.edu"); profileUpdate.put("aadhaarNumber", "");
-        profileUpdate.put("phoneNumber", "+91 98765 43219");
-        mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(profileUpdate))).andExpect(status().isOk())
-                .andExpect(jsonPath("$.phoneNumber").value("+91 98765 43219"));
-        mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(profileUpdate))).andExpect(status().isOk());
-
-        mvc.perform(put("/api/v1/mentor/students/{id}/edit-permissions", studentA.getId()).cookie(mentorCookie)
-                .contentType(MediaType.APPLICATION_JSON).content("{\"scope\":\"INTERNSHIP_DETAILS\",\"enabled\":true}"))
-                .andExpect(status().isOk());
         Map<String,Object> update = internship("Concurrent Company");
         update.put("startDate", java.time.LocalDate.now().minusDays(2).toString());
         update.put("endDate", java.time.LocalDate.now().plusMonths(3).toString());
@@ -234,10 +212,10 @@ class InternshipDetailsIntegrationTest {
                     .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getStatus());
             var second = executor.submit(() -> mvc.perform(put("/api/v1/student/internship").cookie(studentACookie)
                     .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getStatus());
-            assertThat(List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 409);
+            assertThat(List.of(first.get(), second.get())).containsExactly(200, 200);
         } finally { executor.shutdownNow(); }
-        assertThat(jdbc.queryForObject("select count(*) from student_edit_permission_audit where student_user_id=? and scope='STUDENT_PROFILE'", Integer.class, studentA.getId())).isZero();
     }
+
 
     @Test void duplicateInternshipDetailsCannotBeCreated() throws Exception {
         readyAndCreate(studentACookie, "A", "UID-A", "a@college.edu", "Acme Systems");

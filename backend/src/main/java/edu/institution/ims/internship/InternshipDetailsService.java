@@ -57,29 +57,64 @@ public class InternshipDetailsService {
         return response(entity);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private edu.institution.ims.notification.StudentChangeNotificationService changeNotifications;
+
     @Transactional public InternshipDetailsResponse updateOwn(UserPrincipal principal, InternshipDetailsRequest request) {
+        return updateOwn(principal, (Long) null, request);
+    }
+
+    @Transactional public InternshipDetailsResponse updateOwn(UserPrincipal principal, Long internshipId, InternshipDetailsRequest request) {
         if (!edu.institution.ims.user.WorkflowUserLocks.student(jdbc, principal.id(), true))
             throw conflict("STUDENT_ACCOUNT_INACTIVE", "Deactivated students cannot change internship details");
-        InternshipDetails entity = details.findForUpdateByStudentId(principal.id()).orElseThrow(InternshipDetailsService::notFound);
-        InternshipDetailsResponse before = response(entity);
-        var editAuthorization = editPermissions.authorizeUpdate(principal.id(), edu.institution.ims.editing.EditPermissionScope.INTERNSHIP_DETAILS);
-        if ("COMPLETED".equals(jdbc.queryForObject("select completion_status from internship_details where id=?",String.class,entity.getId())))
+        InternshipDetails entity = internshipId != null
+                ? details.findForUpdateByIdAndStudentId(internshipId, principal.id()).orElseThrow(InternshipDetailsService::notFound)
+                : details.findForUpdateByStudentId(principal.id()).orElseThrow(InternshipDetailsService::notFound);
+        return updateEntity(principal, entity, request);
+    }
+
+    @Transactional public InternshipDetailsResponse updateSecond(UserPrincipal principal, InternshipDetailsRequest request) {
+        if (!edu.institution.ims.user.WorkflowUserLocks.student(jdbc, principal.id(), true))
+            throw conflict("STUDENT_ACCOUNT_INACTIVE", "Deactivated students cannot change internship details");
+        InternshipOnboarding onboarding = onboardings.findByStudentIdAndInternshipNumber(principal.id(), (short) 2)
+                .orElseThrow(InternshipDetailsService::notFound);
+        InternshipDetails entity = details.findByOnboardingId(onboarding.getId()).orElseThrow(InternshipDetailsService::notFound);
+        return updateEntity(principal, entity, request);
+    }
+
+    private InternshipDetailsResponse updateEntity(UserPrincipal principal, InternshipDetails entity, InternshipDetailsRequest request) {
+        if ("COMPLETED".equals(jdbc.queryForObject("select completion_status from internship_details where id=?", String.class, entity.getId())))
             throw conflict("INTERNSHIP_COMPLETED", "IIIC must reopen the completed internship before its details can be changed");
         WorkflowStatus status = entity.getOnboarding().getWorkflowStatus();
         if (status != WorkflowStatus.DIARY_ISSUED && status != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE)
             throw conflict("INVALID_WORKFLOW_STATE", "Internship details cannot be updated in the current workflow state");
         validate(request);
+
+        InternshipDetails before = new InternshipDetails(entity.getOnboarding());
+        before.apply(entity.getCompanyName(), entity.getCompanyType(), entity.getOtherCompanyType(),
+                entity.getCompanyAddress(), entity.getCompanyPhone(), entity.getIndustrySupervisorName(),
+                entity.getIndustrySupervisorDesignation(), entity.getIndustrySupervisorContact(),
+                entity.getDurationMonths(), entity.getStartDate(), entity.getEndDate(), entity.getTotalWeeks(),
+                entity.getInternshipMode(), entity.getStipendPerMonth(), entity.isFullTimeEmploymentOffered());
+        RegisteredWorkplaceRequest oldWorkplace = entity.getWorkplace() == null || entity.getWorkplace().getWorkplaceAddress() == null ? null
+                : new RegisteredWorkplaceRequest(entity.getWorkplace().getPlaceId(), entity.getWorkplace().getWorkplaceAddress(),
+                        entity.getWorkplace().getLatitude(), entity.getWorkplace().getLongitude(), entity.getWorkplace().getWorkplaceName());
+
         boolean coordinatesLocked = locations.validateStudentWorkplaceUpdate(entity, request.workplace());
         String nextAddress = coordinatesLocked || request.workplace() == null ? clean(request.companyAddress()) : request.workplace().address();
         boolean addressChanged = !java.util.Objects.equals(entity.getCompanyAddress(), nextAddress);
         if (!coordinatesLocked && (addressChanged || !java.util.Objects.equals(entity.getCompanyName(), clean(request.companyName()))))
             locations.invalidateForCompanyChange(entity, addressChanged, request.workplace() != null);
-        apply(entity, request, coordinatesLocked); entity.getOnboarding().markInternshipDetailsComplete();
+        apply(entity, request, coordinatesLocked);
+        entity.getOnboarding().markInternshipDetailsComplete();
         details.saveAndFlush(entity);
         if (!coordinatesLocked) locations.registerSelectedPlace(entity, request.workplace());
         weekly.synchronize(entity);
+
         InternshipDetailsResponse result = response(entity);
-        editPermissions.consume(editAuthorization, before, result);
+        if (changeNotifications != null) {
+            changeNotifications.notifyInternshipChanged(principal.id(), before, entity, oldWorkplace, request.workplace());
+        }
         return result;
     }
 

@@ -82,13 +82,17 @@ public class StudentAttendanceDirectoryService {
             if (date.isAfter(LocalDate.now(clock)) || date.isBefore(internship.getStartDate()) || date.isAfter(internship.getEndDate())
                     || date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY
                     || calendar.isExcluded(record.getStudent().getId(), date) || !policies.resolve(internship, date).configurationReady()) continue;
+            if (record.getAttendanceResult() == AttendanceResult.PENDING_MENTOR_REVIEW) continue;
+            if (record.getAttendanceResult() != AttendanceResult.PRESENT && record.getAttendanceResult() != AttendanceResult.ABSENT) continue;
             // A day counts once even if legacy related entries contain that day more than once.
             days.merge(date, record.getAttendanceResult(), (a, b) -> a == AttendanceResult.PRESENT || b == AttendanceResult.PRESENT
                     ? AttendanceResult.PRESENT : AttendanceResult.ABSENT);
         }
         long present = days.values().stream().filter(r -> r == AttendanceResult.PRESENT).count();
-        return new Totals(present, days.size() - present, days.size(), days.isEmpty() ? null :
-                BigDecimal.valueOf(present * 100).divide(BigDecimal.valueOf(days.size()), 1, RoundingMode.HALF_UP));
+        long absent = days.values().stream().filter(r -> r == AttendanceResult.ABSENT).count();
+        long total = present + absent;
+        return new Totals(present, absent, total, total == 0 ? null :
+                BigDecimal.valueOf(present * 100).divide(BigDecimal.valueOf(total), 1, RoundingMode.HALF_UP));
     }
 
     private ReviewTotals reviewTotals(List<AttendanceRecord> records) {

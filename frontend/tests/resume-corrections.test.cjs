@@ -86,3 +86,41 @@ test("mentor read-only review preserves snapshots and history without edit or sa
   assert.equal(h.button("Edit parsed information"), undefined); assert.equal(h.button("Save corrections"), undefined);
   assert.equal(findAll(h.tree(), node => node.type === "form").length, 0); h.unmount();
 });
+
+test("downloadResume extracts clear error messages from Blob responses on download failure", async () => {
+  const axios = require("axios");
+  const profileLib = { exports: {} };
+  let mockGet;
+  const mockApi = { get: (...args) => mockGet(...args) };
+  new Function("require", "module", "exports", ts.transpileModule(fs.readFileSync(path.join(__dirname, "../lib/professional-profile.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText)(name => {
+    if (name === "@/lib/api") return { api: mockApi };
+    if (name === "axios") return axios;
+    return require(name);
+  }, profileLib, profileLib.exports);
+
+  const { downloadResume, resumeError } = profileLib.exports;
+
+  const missingFileBlob = new Blob([JSON.stringify({ status: 404, code: "RESUME_FILE_NOT_FOUND", message: "The stored resume file was not found" })], { type: "application/json" });
+  const missingFileErr = new axios.AxiosError("Not Found", "404", {}, {}, { status: 404, data: missingFileBlob });
+  mockGet = async () => { throw missingFileErr; };
+
+  await assert.rejects(
+    async () => downloadResume("/mentor/students/2/resume/download", "resume.pdf"),
+    err => {
+      assert.equal(resumeError(err, "Resume could not be downloaded."), "The stored resume file was not found");
+      return true;
+    }
+  );
+
+  const unauthorizedBlob = new Blob([JSON.stringify({ status: 404, code: "ASSIGNED_RESUME_NOT_FOUND", message: "Resume was not found in your assigned scope" })], { type: "application/json" });
+  const unauthorizedErr = new axios.AxiosError("Not Found", "404", {}, {}, { status: 404, data: unauthorizedBlob });
+  mockGet = async () => { throw unauthorizedErr; };
+
+  await assert.rejects(
+    async () => downloadResume("/mentor/students/2/resume/download", "resume.pdf"),
+    err => {
+      assert.equal(resumeError(err, "Resume could not be downloaded."), "Resume was not found in your assigned scope");
+      return true;
+    }
+  );
+});

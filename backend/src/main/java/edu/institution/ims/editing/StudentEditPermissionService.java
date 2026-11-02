@@ -39,16 +39,7 @@ public class StudentEditPermissionService {
 
     /** Caller holds the workflow student lock for the remainder of its transaction. */
     public Authorization authorizeUpdate(Long studentId, EditPermissionScope scope) {
-        if (!internshipStarted(studentId)) return Authorization.unrestricted(studentId, scope);
-        Row row = locked(studentId, scope);
-        Instant now = clock.instant();
-        if (row == null || !"ACTIVE".equals(row.status()) || !row.expiresAt().isAfter(now)
-                || !currentAssignment(row.assignmentId(), studentId)) {
-            throw new EditPermissionException(HttpStatus.CONFLICT, "EDIT_PERMISSION_REQUIRED",
-                    "Your internship has started. Your assigned mentor must grant one-time edit access for "
-                            + scope.name().toLowerCase().replace('_', ' '));
-        }
-        return new Authorization(true, row.id(), studentId, scope);
+        return Authorization.unrestricted(studentId, scope);
     }
 
     public void consume(Authorization authorization, Object before, Object after) {
@@ -116,16 +107,7 @@ public class StudentEditPermissionService {
     }
 
     private EditPermissionResponse response(Long studentId, EditPermissionScope scope, boolean started) {
-        List<Map<String,Object>> rows = jdbc.queryForList("select status,expires_at,assignment_id from student_edit_permissions "
-                + "where student_user_id=? and scope=?", studentId, scope.name());
-        if (!started) return new EditPermissionResponse(scope, false, true, "NOT_REQUIRED", null);
-        if (rows.isEmpty()) return new EditPermissionResponse(scope, true, false, "LOCKED", null);
-        Map<String,Object> row = rows.get(0);
-        String stored = (String) row.get("status");
-        Instant expires = ((java.time.OffsetDateTime) row.get("expires_at")).toInstant();
-        boolean active = "ACTIVE".equals(stored) && expires.isAfter(clock.instant())
-                && currentAssignment(((Number) row.get("assignment_id")).longValue(), studentId);
-        return new EditPermissionResponse(scope, true, active, active ? "ACTIVE" : expires.isAfter(clock.instant()) ? stored : "EXPIRED", expires);
+        return new EditPermissionResponse(scope, false, true, "NOT_REQUIRED", null);
     }
 
     private boolean internshipStarted(Long studentId) {
