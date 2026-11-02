@@ -15,6 +15,7 @@ export type AttendanceLocationEvidence = {
 export type AttendanceReviewStatus = "PENDING" | "APPROVED" | "REJECTED" | "MANUAL_REVIEW" | "NOT_APPLICABLE";
 export type AttendanceReview = { status: AttendanceReviewStatus; revision: number; reviewerId: number | null; reviewerName: string | null; reviewedAt: string | null; reason: string | null; approvalAllowed: boolean };
 export type AttendanceReviewAudit = { revision: number; previousStatus: AttendanceReviewStatus; status: AttendanceReviewStatus; reviewerId: number; reviewerName: string; reviewedAt: string; reason: string | null };
+export type AttendanceAcknowledgement = { mentorId: number; seenAt: string };
 export const attendanceReviewLabel = (status?: AttendanceReviewStatus) => status === "APPROVED" ? "Approved" : status === "REJECTED" ? "Rejected" : status === "MANUAL_REVIEW" ? "Manual review required" : status === "NOT_APPLICABLE" ? "Not applicable" : "Pending mentor approval";
 
 export function locationVerificationLabel(status?: LocationVerificationStatus | null) {
@@ -44,6 +45,7 @@ export type Attendance = {
   serverSubmittedAt: string;
   evidence?: AttendanceLocationEvidence | null;
   review?: AttendanceReview | null;
+  acknowledgement?: AttendanceAcknowledgement | null;
 };
 
 export function attendanceLabel(attendance: Attendance) {

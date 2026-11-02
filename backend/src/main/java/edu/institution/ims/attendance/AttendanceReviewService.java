@@ -54,6 +54,8 @@ public class AttendanceReviewService {
         AttendanceRecord record=attendance.findForReviewUpdate(id).orElseThrow(AttendanceReviewService::missing);
         if (record.isAutomaticAbsent() || record.getEvidence()==null)
             throw error(HttpStatus.CONFLICT,"ATTENDANCE_NOT_SUBMITTED","Only student-submitted attendance can be reviewed");
+        if (record.getAttendanceResult()!=AttendanceResult.PENDING_MENTOR_REVIEW)
+            throw error(HttpStatus.CONFLICT,"ATTENDANCE_ALREADY_FINALIZED","Only attendance pending mentor review can be approved or rejected");
         AttendanceReviewResponse previous=AttendanceReviewResponse.from(record);
         if (request.revision()!=previous.revision())
             throw error(HttpStatus.CONFLICT,"ATTENDANCE_REVIEW_CHANGED","This attendance review changed. Reload before reviewing it");
@@ -75,6 +77,24 @@ public class AttendanceReviewService {
         notifications.create(studentId,"attendance-review:"+id+":"+review.getRevision(),"ATTENDANCE_"+request.status().name(),
                 request.status()==AttendanceReviewStatus.MANUAL_REVIEW?"Attendance requires manual review":"Attendance "+action,
                 message,reason,name,"/student/dashboard#daily-attendance",at);
+        return AttendanceService.response(record);
+    }
+
+    @Transactional
+    public AttendanceResponse acknowledge(Long id, UserPrincipal principal) {
+        if (principal == null || !principal.active() || !"MENTOR".equals(principal.role()))
+            throw error(HttpStatus.FORBIDDEN,"MENTOR_REQUIRED","An active faculty mentor is required");
+        User actor=users.findByIdForWorkflowRead(principal.id()).filter(u -> u.isActive() && u.getRole()==Role.MENTOR)
+                .orElseThrow(() -> error(HttpStatus.FORBIDDEN,"MENTOR_REQUIRED","An active faculty mentor is required"));
+        Long studentId=attendance.findStudentIdForReview(id).orElseThrow(AttendanceReviewService::missing);
+        if (!WorkflowUserLocks.student(jdbc,studentId,false)) throw missing();
+        assignments.findByStudentIdAndActiveTrueForLateAttendanceUpdate(studentId)
+                .filter(a -> a.getMentor().getId().equals(actor.getId())).orElseThrow(AttendanceReviewService::missing);
+        AttendanceRecord record=attendance.findForReviewUpdate(id).orElseThrow(AttendanceReviewService::missing);
+        if (record.getAttendanceResult()==AttendanceResult.PENDING_MENTOR_REVIEW)
+            throw error(HttpStatus.CONFLICT,"ATTENDANCE_REVIEW_REQUIRED","Pending attendance must be approved or rejected");
+        record.acknowledge(actor.getId(),clock.instant());
+        attendance.saveAndFlush(record);
         return AttendanceService.response(record);
     }
 

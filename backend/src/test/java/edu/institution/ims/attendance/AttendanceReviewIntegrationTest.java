@@ -54,13 +54,14 @@ class AttendanceReviewIntegrationTest {
 
     @Test void approvalPersistsReviewerAuditAndOneNotificationWithoutChangingSubmittedGpsOrLiveness() throws Exception {
         var record=record(student,internship,LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.BASIC);
-        var original=jdbc.queryForMap("select attendance_result,verification_status,submission_type,server_submitted_at from attendance_records where id=?",record.getId());
+        var original=jdbc.queryForMap("select verification_status,submission_type,server_submitted_at from attendance_records where id=?",record.getId());
         var location=jdbc.queryForMap("select latitude,longitude,gps_accuracy_meters,distance_meters,location_verification_status from attendance_evidence where attendance_id=?",record.getId());
         decide(record,mentor,"APPROVED",0,null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.review.status").value("APPROVED")).andExpect(jsonPath("$.review.reviewerId").value(mentor.getId()))
                 .andExpect(jsonPath("$.review.reviewedAt").isNotEmpty()).andExpect(jsonPath("$.review.revision").value(1));
         decide(record,mentor,"APPROVED",1,null).andExpect(status().isConflict());
-        assertThat(jdbc.queryForMap("select attendance_result,verification_status,submission_type,server_submitted_at from attendance_records where id=?",record.getId())).isEqualTo(original);
+        assertThat(jdbc.queryForMap("select verification_status,submission_type,server_submitted_at from attendance_records where id=?",record.getId())).isEqualTo(original);
+        assertThat(attendance.findById(record.getId()).orElseThrow().getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
         assertThat(jdbc.queryForMap("select latitude,longitude,gps_accuracy_meters,distance_meters,location_verification_status from attendance_evidence where attendance_id=?",record.getId())).isEqualTo(location);
         assertThat(jdbc.queryForObject("select count(*) from attendance_review_audit where attendance_id=?",Long.class,record.getId())).isEqualTo(1);
         assertThat(jdbc.queryForObject("select count(*) from student_notifications where student_user_id=? and notification_type='ATTENDANCE_APPROVED'",Long.class,student.getId())).isEqualTo(1);
@@ -137,6 +138,31 @@ class AttendanceReviewIntegrationTest {
         decide(record,mentor,"REJECTED",0,"Deleted record must remain unavailable.").andExpect(status().isNotFound());
     }
 
+    @Test void finalizedAttendanceCanOnlyBeAcknowledgedWithoutChangingItsResult() throws Exception {
+        var record=record(student,internship,LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.BASIC);
+        record.finalizeSubmission(true); attendance.saveAndFlush(record);
+        assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+        decide(record,mentor,"APPROVED",0,null).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ATTENDANCE_ALREADY_FINALIZED"));
+        mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(otherMentor))))
+                .andExpect(status().isNotFound());
+        var first=mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(mentor))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.acknowledgement.mentorId").value(mentor.getId()))
+                .andExpect(jsonPath("$.acknowledgement.seenAt").isNotEmpty()).andReturn();
+        String seen=json.readTree(first.getResponse().getContentAsString()).at("/acknowledgement/seenAt").asText();
+        mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(mentor))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.acknowledgement.seenAt").value(seen));
+        assertThat(attendance.findById(record.getId()).orElseThrow().getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+    }
+
+    @Test void pendingAttendanceRequiresDecisionAndCannotBeAcknowledged() throws Exception {
+        var record=record(student,internship,LocationVerificationStatus.OUTSIDE_RADIUS,AttendanceSubmissionType.BASIC);
+        mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(mentor))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_REVIEW_REQUIRED"));
+        assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
+    }
+
     @Test void failedNotificationTransactionRollsBackReviewAuditAndNoticeTogether() {
         var failedId=new AtomicLong();
         doAnswer(call -> { call.callRealMethod(); throw new IllegalStateException("Simulated review notification failure"); })
@@ -189,8 +215,7 @@ class AttendanceReviewIntegrationTest {
         return internships.saveAndFlush(details);
     }
     private AttendanceRecord record(User owner,InternshipDetails details,LocationVerificationStatus gps,AttendanceSubmissionType type) {
-        var initial=gps==LocationVerificationStatus.VERIFIED && type==AttendanceSubmissionType.BASIC?AttendanceResult.PRESENT:AttendanceResult.PENDING_MENTOR_REVIEW;
-        var record=attendance.saveAndFlush(new AttendanceRecord(owner,details,LocalDate.now(clock),initial,VerificationStatus.UNVERIFIED,type,clock.instant()));
+        var record=attendance.saveAndFlush(new AttendanceRecord(owner,details,LocalDate.now(clock),AttendanceResult.PENDING_MENTOR_REVIEW,VerificationStatus.UNVERIFIED,type,clock.instant()));
         var captured=new AttendanceEvidence(record,SubmissionLocation.require(new BigDecimal("18.52"),new BigDecimal("73.85"),BigDecimal.TEN),clock.instant());
         captured.recordLocationVerification(null,new LocationVerificationDecision(gps,BigDecimal.ONE,gps==LocationVerificationStatus.VERIFIED),clock.instant());
         evidence.saveAndFlush(captured); return record;

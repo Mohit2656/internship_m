@@ -63,6 +63,8 @@ public class AttendanceRecord {
     private Instant lateAuthorizedAt;
     @Column(name = "automatic_absent_at")
     private Instant automaticAbsentAt;
+    @Column(name = "mentor_seen_by") private Long mentorSeenBy;
+    @Column(name = "mentor_seen_at") private Instant mentorSeenAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -112,6 +114,13 @@ public class AttendanceRecord {
     public User getLateAuthorizedBy() { return lateAuthorizedBy; }
     public Instant getLateAuthorizedAt() { return lateAuthorizedAt; }
     public Instant getAutomaticAbsentAt() { return automaticAbsentAt; }
+    public Long getMentorSeenBy() { return mentorSeenBy; }
+    public Instant getMentorSeenAt() { return mentorSeenAt; }
+    void acknowledge(Long mentorId, Instant seenAt) {
+        if (attendanceResult == AttendanceResult.PENDING_MENTOR_REVIEW)
+            throw new IllegalStateException("Pending attendance requires a decision, not acknowledgement");
+        if (mentorSeenAt == null) { mentorSeenBy = mentorId; mentorSeenAt = seenAt; }
+    }
 
     void replaceAutomaticAbsence(VerificationStatus status, AttendanceSubmissionType type, Instant submittedAt) {
         if (!isAutomaticAbsent() || evidence != null) throw new IllegalStateException("Only an automatic absence can be replaced");

@@ -3,7 +3,7 @@ const fs = require("node:fs"), path = require("node:path"), ts = require("typesc
 const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
 require("./register-tsx.cjs");
 const flush = () => new Promise(resolve => setImmediate(resolve));
-const record = { id: 91, attendanceDate: "2026-10-30", attendanceResult: "PRESENT", submissionType: "BASIC", review: { status: "PENDING", revision: 3, approvalAllowed: true } };
+const record = { id: 91, attendanceDate: "2026-10-30", attendanceResult: "PENDING_MENTOR_REVIEW", submissionType: "BASIC", review: { status: "PENDING", revision: 3, approvalAllowed: true } };
 function all(node, predicate) { if (Array.isArray(node)) return node.flatMap(child => all(child, predicate)); if (!React.isValidElement(node)) return []; return [...(predicate(node) ? [node] : []), ...all(node.props.children, predicate)]; }
 function harness(api, props = {}) {
   const states = []; let cursor = 0;
@@ -21,24 +21,32 @@ function harness(api, props = {}) {
 test("mentor approval uses the selected record revision and refreshes after success", async () => {
   const calls = []; let changed = 0;
   const h = harness({ async post(url, body) { calls.push({ url, body }); return { data: {} }; } }, { onChanged() { changed++; } });
-  assert.equal(h.button("Approve").props.disabled, false);
-  h.button("Approve").props.onClick(); await flush();
+  assert.equal(h.button("Mark present").props.disabled, false);
+  h.button("Mark present").props.onClick(); await flush();
   assert.deepEqual(calls, [{ url: "/mentor/attendance/91/review", body: { status: "APPROVED", revision: 3, reason: null } }]); assert.equal(changed, 1);
 });
 test("rejection needs a reason and failures retain the draft for correction", async () => {
   const calls = []; const h = harness({ async post(url, body) { calls.push(body); throw new Error("The review changed. Reload before retrying."); } });
-  h.button("Reject").props.onClick(); await flush(); assert.equal(calls.length, 0); assert.match(h.html(), /at least 5 characters/);
-  h.reason("Wrong workplace evidence"); h.button("Reject").props.onClick(); await flush();
+  h.button("Mark absent").props.onClick(); await flush(); assert.equal(calls.length, 0); assert.match(h.html(), /at least 5 characters/);
+  h.reason("Wrong workplace evidence"); h.button("Mark absent").props.onClick(); await flush();
   assert.equal(calls[0].reason, "Wrong workplace evidence"); assert.match(h.html(), /The review changed/); assert.match(h.html(), /Wrong workplace evidence/);
 });
 test("IIIC gets read-only review and audit history is fetched only when opened", async () => {
   const calls = []; const h = harness({ async get(url) { calls.push(url); return { data: [{ revision: 1, previousStatus: "PENDING", status: "REJECTED", reviewerName: "Faculty A", reviewedAt: "2026-10-30T08:00:00Z", reason: "GPS evidence needs review" }] }; } }, { role: "ADMIN" });
-  assert.equal(h.button("Approve"), undefined); assert.deepEqual(calls, []); await h.audit(false); assert.deepEqual(calls, []);
+  assert.equal(h.button("Mark present"), undefined); assert.deepEqual(calls, []); await h.audit(false); assert.deepEqual(calls, []);
   await h.audit(); await h.audit(); assert.deepEqual(calls, ["/admin/attendance/91/review/history"]); assert.match(h.html(), /Faculty A/); assert.match(h.html(), /GPS evidence needs review/);
 });
 test("verification failures disable approval and completed decisions hide mutation controls", () => {
   const failed = harness({}, { record: { ...record, review: { ...record.review, approvalAllowed: false } } });
-  assert.equal(failed.button("Approve").props.disabled, true); assert.match(failed.html(), /does not permit approval/); assert.ok(failed.button("Manual review"));
-  const completed = harness({}, { record: { ...record, review: { ...record.review, status: "APPROVED", reviewerName: "Faculty A", reviewedAt: "2026-10-30T08:00:00Z" } } });
-  assert.equal(completed.button("Approve"), undefined); assert.equal(completed.button("Reject"), undefined); assert.match(completed.html(), /Faculty A/);
+  assert.equal(failed.button("Mark present").props.disabled, true); assert.ok(failed.button("Keep pending"));
+  const completed = harness({}, { record: { ...record, attendanceResult: "PRESENT", review: { ...record.review, status: "APPROVED", reviewerName: "Faculty A", reviewedAt: "2026-10-30T08:00:00Z" } } });
+  assert.equal(completed.button("Mark present"), undefined); assert.equal(completed.button("Mark absent"), undefined); assert.match(completed.html(), /Faculty A/); assert.ok(completed.button("Mark as Seen"));
+});
+
+test("finalized attendance acknowledgement is independent of approval", async () => {
+  const calls = []; let changed = 0;
+  const finalized = { ...record, attendanceResult: "PRESENT", review: { ...record.review, approvalAllowed: false } };
+  const h = harness({ async post(url, body) { calls.push({ url, body }); return { data: {} }; } }, { record: finalized, onChanged() { changed++; } });
+  h.button("Mark as Seen").props.onClick(); await flush();
+  assert.deepEqual(calls, [{ url: "/mentor/attendance/91/acknowledgement", body: undefined }]); assert.equal(changed, 1);
 });

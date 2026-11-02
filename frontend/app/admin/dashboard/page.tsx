@@ -57,7 +57,7 @@ export default function AdminDashboard() {
     {session.error && <p role="alert" className="mt-4 text-sm text-red-700">{session.error}</p>}
     {completions && session.selected && completions.sessionId === session.selected && <CompletionStatistics stats={completions.stats} sessionId={session.selected} />}
     <RecentNotifications role="ADMIN" />
-    <AdminDualInternshipPanel />
+    <div id="second-internship-requests"><AdminDualInternshipPanel /></div>
     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6"><h2 className="text-lg font-bold">Weekly internship progress</h2><p className="mt-2 text-sm text-slate-600">Monitor generated weeks, missing submissions, mentor decisions and attendance summaries.</p><Link href="/admin/weekly-progress" className="ui-button mt-4 inline-block text-sm">Monitor Weekly Progress</Link></section>
     {error && <p className="mt-7 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}{!summary && !error && session.selected && <p className="mt-8 rounded-2xl border border-slate-200 bg-white p-8 text-slate-500">Loading dashboard…</p>}
     {summary && <div className="mt-8 space-y-6">

@@ -169,6 +169,22 @@ html { scroll-padding-top: 6rem; }
 .notification-badge { display: inline-flex; min-width: 1.4rem; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
 .app-page-content { min-width: 0; }
 .app-page-content main { width: 100%; }
+.student-app-layout { min-width: 0; }
+.student-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 60; visibility: hidden; width: min(19rem, calc(100vw - 3rem)); padding-top: 1rem; border-right: 1px solid #dce5f0; background: white; box-shadow: 8px 0 24px rgb(18 48 82 / .14); pointer-events: none; transform: translateX(-105%); transition: transform .18s ease, visibility 0s linear .18s; }
+.student-sidebar[data-open="true"] { visibility: visible; pointer-events: auto; transform: translateX(0); transition-delay: 0s; }
+.student-sidebar-scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 1rem; }
+.student-sidebar-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding-bottom: .75rem; }
+.student-sidebar-title { padding-left: .65rem; color: #123052; font-size: 1rem; font-weight: 800; }
+.student-sidebar-close { min-width: 2.5rem; padding: .35rem; font-size: 1.5rem; line-height: 1; }
+.student-sidebar-nav { display: grid; gap: 1rem; }
+.student-sidebar-group { display: grid; gap: .2rem; }
+.student-sidebar-heading { padding: 0 .65rem .25rem; color: #64748b; font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.student-sidebar-link { display: flex; min-height: 2.55rem; align-items: center; border-radius: .7rem; padding: .55rem .7rem; color: #31537b; font-size: .875rem; font-weight: 600; text-decoration: none; }
+.student-sidebar-link:hover { background: #eff6ff; color: #1d4ed8; }
+.student-sidebar-link[aria-current="page"] { background: #eaf1ff; color: #1d4ed8; box-shadow: inset 3px 0 #2563eb; }
+.student-sidebar-signout { width: 100%; margin-top: 1rem; }
+.student-sidebar-backdrop { position: fixed; inset: 0; z-index: 50; display: none; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(15 23 42 / .48); }
+.student-sidebar-backdrop[data-open="true"] { display: block; }
 .app-page-content h1 { color: #123052; font-size: clamp(1.625rem, 4vw, 2rem); letter-spacing: -.035em; line-height: 1.25; text-wrap: balance; }
 .app-page-content h2 { line-height: 1.4; }
 .app-page-content :is(section, form).rounded-2xl.bg-white { border-color: #dce5ef; box-shadow: 0 3px 16px rgb(18 48 82 / .035); }
@@ -195,11 +211,14 @@ html { scroll-padding-top: 6rem; }
   .app-navigation, .app-navigation[data-open="true"] { display: flex; flex-wrap: wrap; grid-column: 2; grid-row: 1; gap: .125rem; max-height: none; overflow: visible; padding: 0; margin: 0; border: 0; }
   .app-topbar-actions { grid-column: 3; grid-row: 1; }
   .app-menu-toggle { display: none; }
-  .app-frame[data-role="ADMIN"] .app-topbar-inner { grid-template-columns: minmax(20rem, 1fr) auto auto; }
-  .app-frame[data-role="ADMIN"] .app-topbar-actions { grid-column: 3; grid-row: 1; }
+  .app-frame:is([data-role="STUDENT"],[data-role="ADMIN"],[data-role="MENTOR"]) .app-topbar-inner { grid-template-columns: minmax(0, 1fr) auto; }
+  .app-frame:is([data-role="STUDENT"],[data-role="ADMIN"],[data-role="MENTOR"]) .app-topbar-actions { grid-column: 2; }
+  .app-frame:is([data-role="STUDENT"],[data-role="ADMIN"],[data-role="MENTOR"]) .student-app-layout { display: grid; grid-template-columns: 17rem minmax(0, 1fr); max-width: 96rem; margin-inline: auto; }
+  .app-frame:is([data-role="STUDENT"],[data-role="ADMIN"],[data-role="MENTOR"]) .student-sidebar { position: sticky; top: 4.75rem; z-index: 20; visibility: visible; width: 17rem; height: calc(100dvh - 4.75rem); padding-top: 1rem; box-shadow: none; pointer-events: auto; transform: none; }
+  .app-frame:is([data-role="STUDENT"],[data-role="ADMIN"],[data-role="MENTOR"]) .student-sidebar-close { display: none; }
+  .app-frame:is([data-role="STUDENT"],[data-role="ADMIN"],[data-role="MENTOR"]) .student-sidebar-backdrop { display: none; }
   .app-primary-links { display: flex; grid-column: 2; grid-row: 1; align-items: center; gap: .25rem; }
   .app-primary-links .app-nav-link { white-space: nowrap; }
-  .app-frame[data-role="ADMIN"] .app-menu-toggle { display: inline-flex; }
   .app-navigation-grouped, .app-navigation-grouped[data-open="true"] { display: none; grid-column: 1 / -1; grid-row: 2; padding-top: .875rem; margin-top: .875rem; border-top: 1px solid #e2e8f0; }
   .app-navigation-grouped[data-open="true"] { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; max-height: calc(100dvh - 6rem); }
 }
@@ -264,6 +283,12 @@ html[data-theme="dark"] .app-topbar { border-color: #2a3b53; background: rgb(15 
 html[data-theme="dark"] .app-brand-name { color: #edf4ff; }
 html[data-theme="dark"] .app-brand-role { color: #a2b1c7; }
 html[data-theme="dark"] .app-navigation { border-color: #2a3b53; }
+html[data-theme="dark"] .student-sidebar { border-color: #2a3b53; background: #101d33; box-shadow: 8px 0 24px rgb(0 0 0 / .28); }
+html[data-theme="dark"] .student-sidebar-title { color: #edf4ff; }
+html[data-theme="dark"] .student-sidebar-heading { color: #a2b1c7; }
+html[data-theme="dark"] .student-sidebar-link { color: #b9cee9; }
+html[data-theme="dark"] .student-sidebar-link:hover,
+html[data-theme="dark"] .student-sidebar-link[aria-current="page"] { background: #1b3356; color: #bddbff; }
 html[data-theme="dark"] :is(.app-nav-heading, .app-nav-hint) { color: #a2b1c7; }
 html[data-theme="dark"] .app-nav-link { color: #b9cee9; }
 html[data-theme="dark"] .app-nav-link:hover,

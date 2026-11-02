@@ -128,7 +128,8 @@ public class AttendanceService {
                 record.getAttendanceResult(), record.getVerificationStatus(), record.getSubmissionType(),
                 record.getServerSubmittedAt(), AttendanceEvidenceResponse.from(record.getEvidence()),
                 record.getVerificationBasis(), record.getLivenessStatus(), record.isAutomaticAbsent(),
-                record.isSubmittedLate(), AttendanceReviewResponse.from(record));
+                record.isSubmittedLate(), AttendanceReviewResponse.from(record),
+                record.getMentorSeenAt() == null ? null : new AttendanceAcknowledgementResponse(record.getMentorSeenBy(), record.getMentorSeenAt()));
     }
 
     static AttendanceException error(HttpStatus status, String code, String message) {

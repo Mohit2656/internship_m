@@ -146,6 +146,9 @@ test("app navigation enables notification bell for IIIC, mentors and students", 
       "@/lib/auth": { useAuth: () => ({ user: { id: 5, role, roleLabel: role }, async logout() {} }) },
       "@/components/ThemeToggle": { ThemeToggle: () => null },
       "@/components/NotificationMenu": { NotificationMenu: ({ role: notificationRole }) => React.createElement("span", { "data-notification-role": notificationRole }) },
+      "@/components/StudentSidebar": { StudentSidebar: () => null },
+      "@/components/AdminSidebar": { AdminSidebar: () => null },
+      "@/components/MentorSidebar": { MentorSidebar: () => null },
     } });
     assert.ok(h.html().includes(`data-notification-role="${role}"`));
   }
