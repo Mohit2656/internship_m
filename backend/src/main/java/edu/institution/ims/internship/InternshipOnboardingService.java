@@ -45,11 +45,15 @@ public class InternshipOnboardingService {
     }
 
     @Transactional public OnboardingResponse secure(UserPrincipal principal) {
+        return secure(principal, null);
+    }
+    @Transactional public OnboardingResponse secure(UserPrincipal principal, Integer internshipNumber) {
         if (!profiles.existsByUserId(principal.id())) throw conflict("PROFILE_INCOMPLETE", "Complete your student profile before registering an internship");
-        InternshipOnboarding onboarding = onboardings.findByStudentId(principal.id()).orElseGet(() -> {
+        short num = (short) (internshipNumber != null && internshipNumber == 2 ? 2 : 1);
+        InternshipOnboarding onboarding = onboardings.findByStudentIdAndInternshipNumber(principal.id(), num).orElseGet(() -> {
             User student = users.findById(principal.id()).filter(u -> u.getRole() == Role.STUDENT)
                     .orElseThrow(() -> notFound("STUDENT_NOT_FOUND", "Student account was not found"));
-            return onboardings.saveAndFlush(new InternshipOnboarding(student));
+            return onboardings.saveAndFlush(new InternshipOnboarding(student, num));
         });
         return response(onboarding);
     }

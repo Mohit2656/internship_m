@@ -45,25 +45,29 @@ public class NotificationService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void workplaceApprovedByMentor(InternshipLocation location, User reviewer) {
         if (reviewer.getRole() != Role.MENTOR) throw new IllegalArgumentException("Reviewer must be a mentor");
-        String message = "Your faculty mentor has approved your internship workplace at "
+        int slot = location.getInternship() != null && location.getInternship().getOnboarding() != null
+                ? location.getInternship().getOnboarding().getInternshipNumber() : 1;
+        String message = "Your faculty mentor has approved your Internship " + slot + " workplace at "
                 + location.getInternship().getCompanyName() + " (revision " + location.getRevision() + "). "
                 + "The coordinates are verified for attendance and are now locked against student editing.";
         create(location.getInternship().getOnboarding().getStudent().getId(),
                 "internship-approved:" + location.getId() + ":" + location.getRevision() + ":"
                         + reviewer.getRole() + ":" + reviewer.getId(),
                 "INTERNSHIP_MENTOR_APPROVED", "Workplace approved by faculty mentor", message, null, null,
-                "/student/internship/details", location.getMentorReviewedAt());
+                "/student/internship/details" + (slot == 2 ? "?tab=2" : ""), location.getMentorReviewedAt());
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void workplaceRejected(InternshipLocation location, User reviewer, String reason) {
         if (reviewer.getRole()!=Role.MENTOR) throw new IllegalArgumentException("Reviewer must be a mentor");
+        int slot = location.getInternship() != null && location.getInternship().getOnboarding() != null
+                ? location.getInternship().getOnboarding().getInternshipNumber() : 1;
         create(location.getInternship().getOnboarding().getStudent().getId(),
                 "workplace-rejected:"+location.getId()+":"+location.getRevision()+":"+reviewer.getRole()+":"+reviewer.getId(),
                 "WORKPLACE_REJECTED","Workplace requires correction",
-                "Your faculty mentor rejected the workplace at "
+                "Your faculty mentor rejected the Internship " + slot + " workplace at "
                         +location.getInternship().getCompanyName()+". Review the feedback and correct your workplace details; fresh approvals are required.",
-                reason,null,"/student/internship/details",location.getMentorReviewedAt());
+                reason,null,"/student/internship/details" + (slot == 2 ? "?tab=2" : ""),location.getMentorReviewedAt());
     }
 
     @Transactional

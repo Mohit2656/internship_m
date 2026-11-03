@@ -24,7 +24,7 @@ public class StudentOpportunityService {
         Sort ordering = sort == StudentOpportunitySort.DEADLINE_SOON
                 ? Sort.by(Sort.Order.asc("applicationDeadline").nullsLast(), Sort.Order.desc("publishedAt"), Sort.Order.desc("id"))
                 : Sort.by(Sort.Order.desc("publishedAt"), Sort.Order.desc("id"));
-        String query = search == null || search.isBlank() ? null : search.trim();
+        String query = search == null || search.isBlank() ? null : "%" + search.trim().toLowerCase() + "%";
         Page<Opportunity> result = opportunities.findActiveForStudents(OpportunityStatus.PUBLISHED, LocalDate.now(), query, mode,
                 PageRequest.of(safePage, safeSize, ordering));
         List<Long> ids = result.getContent().stream().map(Opportunity::getId).toList();

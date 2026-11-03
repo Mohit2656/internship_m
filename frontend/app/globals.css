@@ -55,7 +55,7 @@ button, input { font: inherit; }
   --button-disabled: #bfdbfe;
   --button-radius: .75rem;
 }
-:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]) {
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item) {
   min-height: 2.75rem;
   padding: .625rem 1rem;
   border: 1px solid var(--button-blue);
@@ -94,8 +94,8 @@ button.text-left { text-align: left; }
   justify-content: center;
 }
 button[data-button-variant="icon"].absolute { top: 50%; right: .25rem; bottom: auto; transform: translateY(-50%); }
-:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):enabled:hover,
-.ui-button:not([aria-disabled="true"]):hover {
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):enabled:hover,
+.ui-button:not([aria-disabled="true"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):hover {
   background: var(--button-hover);
   border-color: var(--button-hover);
   color: white;
@@ -105,13 +105,163 @@ button[data-button-variant="icon"].absolute { top: 50%; right: .25rem; bottom: a
   border-color: var(--button-blue);
   color: var(--button-active);
 }
-:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not(:disabled):not([aria-disabled="true"]):active,
-button[aria-pressed="true"] {
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not(:disabled):not([aria-disabled="true"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):active,
+button[aria-pressed="true"]:not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item) {
   background: var(--button-active);
   border-color: var(--button-active);
   color: white;
 }
-button[aria-pressed="true"] > span { color: inherit; }
+button[aria-pressed="true"]:not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item) > span { color: inherit; }
+
+/* Student Selection Rows inside Mentor Documents */
+.student-select-btn {
+  min-height: unset !important;
+  border-radius: 0.5rem !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  box-shadow: none !important;
+  padding: 0.5rem 0.75rem !important;
+  display: flex !important;
+  width: 100% !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+.student-select-btn:hover:not([aria-selected="true"]) {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.student-select-btn[aria-selected="true"] {
+  background: #eff6ff !important;
+  border-color: #bfdbfe !important;
+  border-left-width: 3.5px !important;
+  border-left-color: #2563eb !important;
+  color: #1e3a8a !important;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
+}
+
+.student-select-btn:focus-visible {
+  outline: 2px solid var(--button-blue) !important;
+  outline-offset: 1px !important;
+}
+
+/* Segmented tab controls across IMS (Weekly/Monthly, Internship slots, Settings) */
+:is(button, .ui-button)[role="tab"],
+.segmented-tab {
+  min-height: unset;
+  border-radius: 0.375rem;
+  line-height: 1.25;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #475569;
+}
+:is(button, .ui-button)[role="tab"][aria-selected="true"],
+.segmented-tab[aria-selected="true"] {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  font-weight: 600;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+:is(button, .ui-button)[role="tab"]:focus-visible,
+.segmented-tab:focus-visible {
+  outline: 2px solid var(--button-blue);
+  outline-offset: 1px;
+}
+
+/* Report Navigation selection items */
+.report-nav-item {
+  min-height: unset;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  box-shadow: none;
+  background: white;
+  border: 1px solid #e2e8f0;
+  color: #1e293b;
+}
+.report-nav-item:hover:not([aria-current="page"]) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+.report-nav-item[aria-current="page"] {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  border-left-width: 4px;
+  border-left-color: #2563eb;
+  color: #1e3a8a;
+  font-weight: 600;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.report-nav-item:focus-visible {
+  outline: 2px solid var(--button-blue);
+  outline-offset: 1px;
+}
+
+/* ==========================================================================
+   Global Dropdown (Select) Design & Cross-Browser Alignment
+   Ensures custom chevron arrow is vertically centered, inset 14px from right,
+   with safe right padding to prevent text-arrow overlap on macOS Chrome/Safari.
+   ========================================================================== */
+select,
+.input-select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e") !important;
+  background-position: right 0.875rem center !important;
+  background-repeat: no-repeat !important;
+  background-size: 1.125rem 1.125rem !important;
+  padding-right: 2.5rem !important;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+  color: #1e293b;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  cursor: pointer;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+select:focus,
+.input-select:focus {
+  border-color: #2563eb !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.14) !important;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%232563eb' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' d='m6 8 4 4 4-4'/%3e%3c/svg%3e") !important;
+}
+
+select:disabled,
+.input-select:disabled {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+  color: #94a3b8 !important;
+  cursor: not-allowed !important;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e") !important;
+  opacity: 0.75;
+}
+
+html[data-theme="dark"] select,
+html[data-theme="dark"] .input-select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e") !important;
+}
+
+html[data-theme="dark"] select:focus,
+html[data-theme="dark"] .input-select:focus {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2360a5fa' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' d='m6 8 4 4 4-4'/%3e%3c/svg%3e") !important;
+}
 :is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):focus-visible {
   outline: 3px solid var(--button-blue);
   outline-offset: 3px;
@@ -377,6 +527,23 @@ html[data-theme="dark"] button[data-button-variant="approved"]:disabled {
   color: #1e3a8a;
   opacity: 1;
   cursor: default;
+}
+
+html[data-theme="dark"] .student-select-btn {
+  background: #16263d !important;
+  border-color: #2b3e5a !important;
+  color: #e2e8f0 !important;
+}
+html[data-theme="dark"] .student-select-btn:hover:not([aria-selected="true"]) {
+  background: #1f3350 !important;
+  border-color: #3b5275 !important;
+  color: #ffffff !important;
+}
+html[data-theme="dark"] .student-select-btn[aria-selected="true"] {
+  background: #1e3a66 !important;
+  border-color: #3b82f6 !important;
+  border-left-color: #60a5fa !important;
+  color: #ffffff !important;
 }
 
 @media (max-width: 420px) {

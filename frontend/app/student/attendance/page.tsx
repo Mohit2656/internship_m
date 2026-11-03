@@ -162,42 +162,50 @@ export default function StudentAttendancePage() {
           </div>
 
           {/* Internship Tabs */}
-          <div className="mt-6 flex border-b border-slate-200">
-            <button
-              id="tab-attendance-slot-1"
-              role="tab"
-              aria-selected={activeTab === 1}
-              onClick={() => handleTabChange(1)}
-              className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
-                activeTab === 1
-                  ? "border-blue-600 text-blue-700"
-                  : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
-              }`}
-            >
-              <span>Internship 1</span>
-              {details1 && (
-                <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClass(status1)}`}>
-                  {status1}
-                </span>
-              )}
-            </button>
-            <button
-              id="tab-attendance-slot-2"
-              role="tab"
-              aria-selected={activeTab === 2}
-              onClick={() => handleTabChange(2)}
-              className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
-                activeTab === 2
-                  ? "border-blue-600 text-blue-700"
-                  : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
-              }`}
-            >
-              <span>Internship 2</span>
-              <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClass(status2)}`}>
-                {status2}
-              </span>
-            </button>
-          </div>
+          {details2 && (
+            <div className="mt-6">
+              <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100/90 p-1 border border-slate-200/80 shadow-xs" role="tablist" aria-label="Internship attendance tabs">
+                <button
+                  id="tab-attendance-slot-1"
+                  role="tab"
+                  aria-selected={activeTab === 1}
+                  onClick={() => handleTabChange(1)}
+                  className={`segmented-tab flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
+                    activeTab === 1
+                      ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
+                  }`}
+                >
+                  <span>Internship 1</span>
+                  {details1 && (
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                      activeTab === 1 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status1)
+                    }`}>
+                      {status1}
+                    </span>
+                  )}
+                </button>
+                <button
+                  id="tab-attendance-slot-2"
+                  role="tab"
+                  aria-selected={activeTab === 2}
+                  onClick={() => handleTabChange(2)}
+                  className={`segmented-tab flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
+                    activeTab === 2
+                      ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
+                  }`}
+                >
+                  <span>Internship 2</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                    activeTab === 2 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status2)
+                  }`}>
+                    {status2}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Active Internship Info banner */}
           {activeInternship && (

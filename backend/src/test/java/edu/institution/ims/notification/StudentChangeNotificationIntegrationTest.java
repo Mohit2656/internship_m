@@ -280,6 +280,16 @@ public class StudentChangeNotificationIntegrationTest {
                 .content("{\"approved\":true}"))
                 .andExpect(status().isOk());
 
+        // Student completes initial onboarding and diary for Internship 2
+        mvc.perform(put("/api/v1/student/internship-onboarding/source?internshipNumber=2").cookie(studentACookie)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"source\":\"SELF\"}")).andExpect(status().isOk());
+        for (DocumentType type : DocumentType.values()) {
+            mvc.perform(multipart("/api/v1/student/internship-onboarding/documents/{type}?internshipNumber=2", type)
+                    .file(pdf(type.name() + "_2.pdf")).cookie(studentACookie)).andExpect(status().isOk());
+        }
+        mvc.perform(post("/api/v1/student/internship-onboarding/diary/confirm?internshipNumber=2").cookie(studentACookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.diaryIssued").value(true));
+
         // Student creates second internship
         Map<String, Object> createSecond = internship("Internship 2 Company");
         createSecond.put("startDate", "2027-07-01");

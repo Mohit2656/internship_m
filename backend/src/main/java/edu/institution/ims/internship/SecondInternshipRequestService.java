@@ -55,11 +55,11 @@ public class SecondInternshipRequestService {
             if(onboardings.findByStudentIdAndInternshipNumber(studentId,(short)2).isPresent()) throw conflict("Internship 2 already exists");
             User student=users.findById(studentId).orElseThrow();
             InternshipOnboarding second=new InternshipOnboarding(student,2);
-            second.selectSource(InternshipSource.SELF); second.markDocumentsComplete(); second.confirmDiary(); onboardings.saveAndFlush(second);
+            onboardings.saveAndFlush(second);
             jdbc.update("update second_internship_requests set status=\'APPROVED\',pending_student_id=null,approved_student_id=student_user_id,reviewed_by=?,reviewed_at=? where id=?",
                     principal.id(),Timestamp.from(now),id);
             notifications.create(studentId,"second-internship-approved:"+id,"SECOND_INTERNSHIP_APPROVED","Second internship approved",
-                    "III Cell approved your request. You may now create Internship 2.",null,null,"/student/internship/second",now);
+                    "III Cell approved your request. You may now start your Internship 2 onboarding.",null,null,"/student/internship?tab=2",now);
         } else {
             String reason=request.reason()==null?"":request.reason().trim();
             if(reason.isEmpty() || reason.length()>1000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"A rejection reason is required");

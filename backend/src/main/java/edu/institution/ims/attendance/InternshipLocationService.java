@@ -186,7 +186,14 @@ public class InternshipLocationService {
         else throw error(HttpStatus.FORBIDDEN,"MENTOR_REVIEW_REQUIRED","Only the student's assigned mentor may approve or reject workplace coordinates");
         var location=locations.findByInternshipId(ownInternship(studentId,internshipId).getId()).orElseThrow(InternshipLocationService::notFound);
         if(location.getRevision()!=request.revision()) throw error(HttpStatus.CONFLICT,"WORKPLACE_REVISION_CHANGED","Refresh the changed workplace before reviewing");
-        if(location.getWorkplaceAddress()==null) throw error(HttpStatus.CONFLICT,"MAP_REGISTRATION_REQUIRED","Register the actual workplace on the map before approval");
+        if(location.getWorkplaceAddress()==null) {
+            if (location.getInternship() != null && location.getInternship().getCompanyAddress() != null) {
+                location.selectedPlace(null, location.getInternship().getCompanyAddress());
+                locations.saveAndFlush(location);
+            } else {
+                throw error(HttpStatus.CONFLICT,"MAP_REGISTRATION_REQUIRED","Register the actual workplace on the map before approval");
+            }
+        }
         if (actor.getRole() == Role.MENTOR && mentorCoordinatesLocked(location)) {
             if (request.decision() == WorkplaceReview.Decision.APPROVE
                     && location.getMentorReviewer() != null
@@ -212,8 +219,14 @@ public class InternshipLocationService {
     private InternshipDetails ownInternship(Long studentId) {
         return ownInternship(studentId,null);
     }
-    private InternshipDetails ownInternship(Long studentId,Long internshipId) {
-        return (internshipId==null?internships.findByOnboardingStudentId(studentId):internships.findByIdAndOnboardingStudentId(internshipId,studentId))
+    private InternshipDetails ownInternship(Long studentId, Long internshipId) {
+        if (internshipId != null) {
+            return internships.findByIdAndOnboardingStudentId(internshipId, studentId)
+                    .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "INTERNSHIP_DETAILS_NOT_FOUND",
+                            "Internship details were not found"));
+        }
+        return internships.findByOnboardingStudentId(studentId)
+                .or(() -> internships.findAllByOnboardingStudentIdOrderByOnboardingInternshipNumber(studentId).stream().findFirst())
                 .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "INTERNSHIP_DETAILS_NOT_FOUND",
                         "Internship details were not found"));
     }

@@ -216,8 +216,15 @@ export type AdminSkillGapAnalysis = {
   preferredGaps: { skill: string; studentsMissing: number }[];
 };
 
-export function formatOpportunityDate(value: string | null) {
-  return value ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`)) : "No deadline";
+export function formatOpportunityDate(value: string | null | undefined) {
+  if (!value) return "No deadline";
+  try {
+    const d = new Date(value.includes("T") ? value : `${value}T00:00:00`);
+    if (isNaN(d.getTime())) return value;
+    return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(d);
+  } catch {
+    return value;
+  }
 }
 
 export function formatOpportunityStipend(amount: number, currency: string) {

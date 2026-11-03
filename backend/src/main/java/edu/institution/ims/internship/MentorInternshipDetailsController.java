@@ -21,6 +21,7 @@ public class MentorInternshipDetailsController {
         this.assignments = assignments;
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     @GetMapping
     public List<InternshipDetailsResponse> getAllForAssignedStudent(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long studentId) {
         requireAssigned(principal.id(), studentId);

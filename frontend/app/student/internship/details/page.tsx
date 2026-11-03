@@ -37,6 +37,7 @@ export default function InternshipDetailsPage() {
   const [editing1, setEditing1] = useState(false);
 
   // Slot 2 state
+  const [onboarding2, setOnboarding2] = useState<InternshipOnboarding | null>(null);
   const [details2, setDetails2] = useState<InternshipDetails | null>(null);
   const [location2, setLocation2] = useState<InternshipLocation | null>(null);
   const [editing2, setEditing2] = useState(false);
@@ -51,11 +52,18 @@ export default function InternshipDetailsPage() {
   const [geofenceRadiusMeters, setGeofenceRadiusMeters] = useState<number | null>(null);
 
   useEffect(() => {
-    setActiveTab(getSelectedInternship());
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const tabParam = params?.get("tab") || params?.get("internshipNumber");
+    const initialTab: 1 | 2 = tabParam === "2" ? 2 : tabParam === "1" ? 1 : getSelectedInternship();
+    setActiveTab(initialTab);
+    setSelectedInternship(initialTab);
 
     Promise.all([
       // Primary internship onboarding & details
       api.get<InternshipOnboarding>("/student/internship-onboarding?internshipNumber=1")
+        .then((r) => r.data)
+        .catch(() => null),
+      api.get<InternshipOnboarding>("/student/internship-onboarding?internshipNumber=2")
         .then((r) => r.data)
         .catch(() => null),
       api.get<InternshipDetails[]>("/student/internship/all")
@@ -69,8 +77,9 @@ export default function InternshipDetailsPage() {
         .then((r) => r.data)
         .catch(() => []),
     ])
-      .then(async ([wf1, allDetails, loc1, requests]) => {
+      .then(async ([wf1, wf2, allDetails, loc1, requests]) => {
         setOnboarding1(wf1);
+        setOnboarding2(wf2);
         const d1 = allDetails.find((d) => d.internshipNumber === 1) ?? null;
         const d2 = allDetails.find((d) => d.internshipNumber === 2) ?? null;
         setDetails1(d1);
@@ -219,39 +228,45 @@ export default function InternshipDetailsPage() {
           </div>
 
           {/* Internship Tabs */}
-          <div className="mt-8 flex border-b border-slate-200">
-            <button
-              id="tab-details-slot-1"
-              role="tab"
-              aria-selected={activeTab === 1}
-              onClick={() => handleTabChange(1)}
-              className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
-                activeTab === 1
-                  ? "border-blue-600 text-blue-700"
-                  : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
-              }`}
-            >
-              <span>Internship 1</span>
-              <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClass(status1)}`}>
-                {status1}
-              </span>
-            </button>
-            <button
-              id="tab-details-slot-2"
-              role="tab"
-              aria-selected={activeTab === 2}
-              onClick={() => handleTabChange(2)}
-              className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
-                activeTab === 2
-                  ? "border-blue-600 text-blue-700"
-                  : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
-              }`}
-            >
-              <span>Internship 2</span>
-              <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClass(status2)}`}>
-                {status2}
-              </span>
-            </button>
+          <div className="mt-8">
+            <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100/90 p-1 border border-slate-200/80 shadow-xs" role="tablist" aria-label="Internship slots">
+              <button
+                id="tab-details-slot-1"
+                role="tab"
+                aria-selected={activeTab === 1}
+                onClick={() => handleTabChange(1)}
+                className={`segmented-tab flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
+                  activeTab === 1
+                    ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                    : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
+                }`}
+              >
+                <span>Internship 1</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                  activeTab === 1 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status1)
+                }`}>
+                  {status1}
+                </span>
+              </button>
+              <button
+                id="tab-details-slot-2"
+                role="tab"
+                aria-selected={activeTab === 2}
+                onClick={() => handleTabChange(2)}
+                className={`segmented-tab flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
+                  activeTab === 2
+                    ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                    : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
+                }`}
+              >
+                <span>Internship 2</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                  activeTab === 2 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status2)
+                }`}>
+                  {status2}
+                </span>
+              </button>
+            </div>
           </div>
 
           {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
@@ -386,24 +401,36 @@ export default function InternshipDetailsPage() {
                   />
                 </div>
               ) : latestSecondRequest?.status === "APPROVED" ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-8">
-                  <div className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">
-                    <p className="font-semibold">III Cell Approval Granted</p>
-                    <p className="mt-1 text-emerald-800">
-                      Your request for a second internship has been approved. Please enter your Internship 2 details below.
+                onboarding2?.workflowStatus !== "DIARY_ISSUED" && onboarding2?.workflowStatus !== "INTERNSHIP_DETAILS_COMPLETE" ? (
+                  <section className="rounded-2xl border border-amber-200 bg-amber-50 p-8">
+                    <h2 className="font-bold text-amber-900">Internship 2 diary required</h2>
+                    <p className="mt-2 text-sm text-amber-800">
+                      Complete Step 1 (Source, Required Documents, and Diary Confirmation) before entering company details for Internship 2.
                     </p>
+                    <Link href="/student/internship?tab=2" onClick={() => setSelectedInternship(2)} className="ui-button mt-5 inline-block text-sm">
+                      Return to Internship 2 Onboarding
+                    </Link>
+                  </section>
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-8">
+                    <div className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">
+                      <p className="font-semibold">III Cell Approval Granted</p>
+                      <p className="mt-1 text-emerald-800">
+                        Your request for a second internship has been approved. Please enter your Internship 2 details below.
+                      </p>
+                    </div>
+                    <div className="mt-6">
+                      <InternshipDetailsForm
+                        key="new-2"
+                        initial={emptyInternshipDetails}
+                        saving={saving}
+                        fieldErrors={fieldErrors}
+                        geofenceRadiusMeters={geofenceRadiusMeters}
+                        onSubmit={submitSlot2}
+                      />
+                    </div>
                   </div>
-                  <div className="mt-6">
-                    <InternshipDetailsForm
-                      key="new-2"
-                      initial={emptyInternshipDetails}
-                      saving={saving}
-                      fieldErrors={fieldErrors}
-                      geofenceRadiusMeters={geofenceRadiusMeters}
-                      onSubmit={submitSlot2}
-                    />
-                  </div>
-                </div>
+                )
               ) : latestSecondRequest?.status === "PENDING" ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-amber-900">
                   <h2 className="font-bold">Request Pending Approval</h2>

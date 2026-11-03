@@ -184,7 +184,7 @@ function SettingsContent() {
       </div>
 
       <div className="mt-8">
-        <div className="flex border-b border-slate-200" role="tablist" aria-label="Settings sections">
+        <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100/90 p-1 border border-slate-200/80 shadow-xs" role="tablist" aria-label="Settings sections">
           <button
             type="button"
             role="tab"
@@ -192,10 +192,10 @@ function SettingsContent() {
             aria-selected={activeSection === "profile"}
             aria-controls="panel-profile"
             onClick={() => setActiveSection("profile")}
-            className={`border-b-2 px-6 py-3.5 text-sm font-semibold transition-colors ${
+            className={`segmented-tab rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
               activeSection === "profile"
-                ? "border-blue-700 text-blue-700"
-                : "border-transparent text-slate-500 hover:text-slate-700"
+                ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
             }`}
           >
             My Profile
@@ -207,10 +207,10 @@ function SettingsContent() {
             aria-selected={activeSection === "security"}
             aria-controls="panel-security"
             onClick={() => setActiveSection("security")}
-            className={`border-b-2 px-6 py-3.5 text-sm font-semibold transition-colors ${
+            className={`segmented-tab rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
               activeSection === "security"
-                ? "border-blue-700 text-blue-700"
-                : "border-transparent text-slate-500 hover:text-slate-700"
+                ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
             }`}
           >
             Security
@@ -222,10 +222,10 @@ function SettingsContent() {
             aria-selected={activeSection === "documents"}
             aria-controls="panel-documents"
             onClick={() => setActiveSection("documents")}
-            className={`border-b-2 px-6 py-3.5 text-sm font-semibold transition-colors ${
+            className={`segmented-tab rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
               activeSection === "documents"
-                ? "border-blue-700 text-blue-700"
-                : "border-transparent text-slate-500 hover:text-slate-700"
+                ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
             }`}
           >
             Documents &amp; Templates

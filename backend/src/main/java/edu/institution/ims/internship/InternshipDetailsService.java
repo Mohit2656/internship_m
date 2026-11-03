@@ -42,6 +42,9 @@ public class InternshipDetailsService {
         locations.registerSelectedPlace(entity, request.workplace());
         onboarding.markInternshipDetailsComplete(); onboardings.saveAndFlush(onboarding);
         weekly.synchronize(entity);
+        if (changeNotifications != null) {
+            changeNotifications.notifyInternshipSubmitted(principal.id(), entity, request.workplace());
+        }
         return response(entity);
     }
     @Transactional public InternshipDetailsResponse createSecond(UserPrincipal principal, InternshipDetailsRequest request) {
@@ -51,9 +54,14 @@ public class InternshipDetailsService {
         if (details.existsByOnboardingId(onboarding.getId())) throw conflict("SECOND_INTERNSHIP_ALREADY_EXISTS", "Internship 2 already exists");
         Integer permission=jdbc.queryForObject("select count(*) from second_internship_requests where student_user_id=? and status='APPROVED'",Integer.class,principal.id());
         if(permission==null || permission!=1) throw conflict("SECOND_INTERNSHIP_NOT_APPROVED", "III Cell approval is required before creating Internship 2");
+        if (onboarding.getWorkflowStatus() != WorkflowStatus.DIARY_ISSUED)
+            throw conflict("DIARY_REQUIRED", "Internship details can be entered only after the internship diary is issued");
         validate(request); InternshipDetails entity=new InternshipDetails(onboarding); apply(entity,request);
         try{details.saveAndFlush(entity);}catch(DataIntegrityViolationException e){throw conflict("SECOND_INTERNSHIP_ALREADY_EXISTS","Internship 2 already exists");}
         locations.registerSelectedPlace(entity,request.workplace()); onboarding.markInternshipDetailsComplete(); onboardings.saveAndFlush(onboarding); weekly.synchronize(entity);
+        if (changeNotifications != null) {
+            changeNotifications.notifyInternshipSubmitted(principal.id(), entity, request.workplace());
+        }
         return response(entity);
     }
 

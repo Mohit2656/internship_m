@@ -15,7 +15,7 @@ import type { StudentProfile } from "@/lib/student-profile";
 import type { ProfessionalProfile } from "@/lib/professional-profile";
 import { formatDateTime } from "@/lib/monthly-progress";
 
-import { getSelectedInternship, setSelectedInternship } from "@/lib/internship-selection";
+import { getSelectedInternship, setSelectedInternship, deriveInternshipStatus } from "@/lib/internship-selection";
 
 type StudentMentorInfo = {
   mentorName: string | null;
@@ -238,6 +238,7 @@ export default function StudentDashboard() {
   const [activeTab, setActiveTabState] = useState<1 | 2>(1);
   const [secondRequests, setSecondRequests] = useState<SecondInternshipRequest[]>([]);
   const [secondDetails, setSecondDetails] = useState<InternshipDetails | null>(null);
+  const [secondOnboarding, setSecondOnboarding] = useState<InternshipOnboarding | null>(null);
   const [secondStarting, setSecondStarting] = useState(false);
   const [secondError, setSecondError] = useState("");
   const [recentNotifications, setRecentNotifications] = useState<NotificationItem[]>([]);
@@ -254,16 +255,18 @@ export default function StudentDashboard() {
       api.get<StudentProfile>("/student/profile").then((r) => r.data).catch(() => null),
       api.get<ProfessionalProfile>("/student/professional-profile").then((r) => r.data).catch(() => null),
       api.get<InternshipOnboarding>("/student/internship-onboarding").then((r) => r.data),
+      api.get<InternshipOnboarding>("/student/internship-onboarding", { params: { internshipNumber: 2 } }).then((r) => r.data).catch(() => null),
       api.get<InternshipDetails>("/student/internship").then((r) => r.data).catch(() => null),
       api.get<InternshipDetails[]>("/student/internship/all").then((r) => r.data).catch(() => []),
       api.get<SecondInternshipRequest[]>("/student/second-internship-requests").then((r) => r.data).catch(() => []),
       api.get<{ content: NotificationItem[] }>("/student/notifications", { params: { page: 0 } }).then((r) => r.data?.content ?? []).catch(() => []),
       api.get<StudentMentorInfo>("/student/mentor").then((r) => r.data).catch(() => null),
     ])
-      .then(([studentProfile, professional, internship, internshipDetails, allDetails, requests, notifs, mentor]) => {
+      .then(([studentProfile, professional, internship, secondOb, internshipDetails, allDetails, requests, notifs, mentor]) => {
         setProfile(studentProfile);
         setProfessionalProfile(professional);
         setOnboarding(internship);
+        setSecondOnboarding(secondOb);
         setDetails(internshipDetails);
         const slot2 = Array.isArray(allDetails) ? allDetails.find((x) => x.internshipNumber === 2) ?? null : null;
         setSecondDetails(slot2);
@@ -348,300 +351,27 @@ export default function StudentDashboard() {
       }
     }
     if (latestSecondRequest?.status === "APPROVED" && !secondDetails) {
-      pendingActions.push({
-        id: "second-approved",
-        title: "Complete Internship 2 Registration",
-        description: "Your second internship request was approved. Provide details to finalize registration.",
-        href: "/student/internship/second",
-        label: "Enter Internship 2 Details",
-      });
+      if (secondOnboarding?.workflowStatus === "DIARY_ISSUED") {
+        pendingActions.push({
+          id: "second-approved",
+          title: "Complete Internship 2 Details",
+          description: "Your diary has been issued. Enter finalized information to complete registration.",
+          href: "/student/internship/details?tab=2",
+          label: "Enter Details",
+        });
+      } else {
+        pendingActions.push({
+          id: "second-approved",
+          title: "Complete Internship 2 Initial Information",
+          description: "Your second internship request was approved. Provide initial documents and diary confirmation.",
+          href: "/student/internship?tab=2",
+          label: "Fill Details",
+        });
+      }
     }
   }
 
-  function renderInternshipOverview() {
-    return (
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
-              {isInternshipStarted ? "Active Internship" : "Internship Registration"}
-            </p>
-            <h2 className="mt-1 text-2xl font-bold text-slate-950">Internship Slots &amp; Requests</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Switch between your internship slots to view details or raise requests.
-            </p>
-          </div>
-        </div>
 
-        <div className="mt-6">
-          <div className="flex border-b border-slate-200" role="tablist" aria-label="Internship slots">
-            <button
-              type="button"
-              role="tab"
-              id="tab-slot-1"
-              aria-selected={activeTab === 1}
-              aria-controls="panel-slot-1"
-              onClick={() => setActiveTab(1)}
-              className={`border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
-                activeTab === 1
-                  ? "border-blue-700 text-blue-700"
-                  : "border-transparent text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              Internship 1 {details ? `(${details.companyName})` : "(Slot 1)"}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="tab-slot-2"
-              aria-selected={activeTab === 2}
-              aria-controls="panel-slot-2"
-              onClick={() => setActiveTab(2)}
-              className={`border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
-                activeTab === 2
-                  ? "border-blue-700 text-blue-700"
-                  : "border-transparent text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              Internship 2 {secondDetails ? `(${secondDetails.companyName})` : "(Slot 2)"}
-            </button>
-          </div>
-
-          {/* TAB 1: FIRST INTERNSHIP */}
-          {activeTab === 1 && (
-            <div id="panel-slot-1" role="tabpanel" aria-labelledby="tab-slot-1" className="mt-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">First Internship Slot</p>
-                  <h3 className="mt-1 text-xl font-bold text-slate-900">
-                    {loading
-                      ? "Checking status…"
-                      : details
-                      ? details.companyName
-                      : onboarding?.workflowStatus === "DIARY_ISSUED"
-                      ? "Internship Details Pending"
-                      : onboarding?.workflowStatus === "NOT_SECURED"
-                      ? "Not Secured"
-                      : "Internship Onboarding"}
-                  </h3>
-                </div>
-                {!loading && onboarding && <WorkflowBadge status={onboarding.workflowStatus} />}
-              </div>
-
-              {!loading && !profile ? (
-                <div className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
-                  <p className="font-semibold">Profile required</p>
-                  <p className="mt-1 text-slate-600">Complete your student profile before registering an internship.</p>
-                  <Link href="/student/profile" className="ui-button mt-4 inline-block text-sm">
-                    Complete Profile
-                  </Link>
-                </div>
-              ) : !loading && onboarding ? (
-                <>
-                  {details ? (
-                    <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-5">
-                      <div>
-                        <p className="text-xs text-slate-500">Company</p>
-                        <p className="mt-1 font-semibold">{details.companyName}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Mode</p>
-                        <p className="mt-1 font-semibold">{details.internshipModeLabel}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Start Date</p>
-                        <p className="mt-1 font-semibold">{details.startDate}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">End Date</p>
-                        <p className="mt-1 font-semibold">{details.endDate}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Faculty Mentor</p>
-                        <p className="mt-1 font-semibold">{mentorInfo?.internship1MentorName ?? "Not assigned yet"}</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-4">
-                      <div>
-                        <p className="text-xs text-slate-500">Source</p>
-                        <p className="mt-1 font-semibold">{onboarding.sourceLabel ?? "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Documents</p>
-                        <p className="mt-1 font-semibold">{onboarding.documentsCompleted} / {onboarding.documentsRequired}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Diary</p>
-                        <p className="mt-1 font-semibold">{onboarding.diaryIssued ? "Received" : "Not issued"}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Faculty Mentor</p>
-                        <p className="mt-1 font-semibold">{mentorInfo?.internship1MentorName ?? "Not assigned yet"}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    {details ? (
-                      <>
-                        <Link href="/student/internship/details" className="ui-button text-sm">
-                          View Details
-                        </Link>
-                        <Link data-button-variant="outline" href="/student/internship/details#edit" className="ui-button text-sm">
-                          Edit Details
-                        </Link>
-                      </>
-                    ) : onboarding.workflowStatus === "NOT_SECURED" ? (
-                      <button
-                        id="raise-request-slot-1"
-                        disabled={starting}
-                        onClick={secureInternship}
-                        className="ui-button text-sm"
-                      >
-                        {starting ? "Starting…" : "Raise Internship Request"}
-                      </button>
-                    ) : onboarding.workflowStatus === "DIARY_ISSUED" ? (
-                      <Link href="/student/internship/details" className="ui-button text-sm">
-                        Complete Internship Details
-                      </Link>
-                    ) : (
-                      <Link href="/student/internship" className="ui-button text-sm">
-                        Continue Internship Registration
-                      </Link>
-                    )}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          )}
-
-          {/* TAB 2: SECOND INTERNSHIP */}
-          {activeTab === 2 && (
-            <div id="panel-slot-2" role="tabpanel" aria-labelledby="tab-slot-2" className="mt-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Second Internship Slot</p>
-                  <h3 className="mt-1 text-xl font-bold text-slate-900">
-                    {secondDetails
-                      ? secondDetails.companyName
-                      : latestSecondRequest
-                      ? `Request: ${latestSecondRequest.status.replace("_", " ")}`
-                      : "Second Internship"}
-                  </h3>
-                </div>
-                {latestSecondRequest && (
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-bold ${
-                      latestSecondRequest.status === "APPROVED"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : latestSecondRequest.status === "REJECTED"
-                        ? "bg-red-100 text-red-800"
-                        : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
-                    {latestSecondRequest.status}
-                  </span>
-                )}
-              </div>
-
-              <p className="mt-2 text-sm text-slate-600">
-                Institutional III Cell approval is required before a second internship slot can be registered.
-              </p>
-
-              {secondError && (
-                <p role="alert" className="mt-3 text-sm text-red-700">
-                  {secondError}
-                </p>
-              )}
-
-              {!details ? (
-                <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
-                  <p className="font-semibold">Prerequisite required</p>
-                  <p className="mt-1 text-amber-800">
-                    Complete your primary internship (Internship 1) before requesting permission for a second internship.
-                  </p>
-                </div>
-              ) : secondDetails ? (
-                <>
-                  <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-5">
-                    <div>
-                      <p className="text-xs text-slate-500">Company</p>
-                      <p className="mt-1 font-semibold">{secondDetails.companyName}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">Mode</p>
-                      <p className="mt-1 font-semibold">{secondDetails.internshipModeLabel}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">Start Date</p>
-                      <p className="mt-1 font-semibold">{secondDetails.startDate}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">End Date</p>
-                      <p className="mt-1 font-semibold">{secondDetails.endDate}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">Faculty Mentor</p>
-                      <p className="mt-1 font-semibold">{mentorInfo?.internship2MentorName ?? "Not assigned yet"}</p>
-                    </div>
-                  </div>
-                  <div className="mt-5 flex gap-3">
-                    <Link href="/student/internship/second" className="ui-button text-sm">
-                      View / Edit Internship 2
-                    </Link>
-                  </div>
-                </>
-              ) : latestSecondRequest?.status === "APPROVED" ? (
-                <div className="mt-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">
-                  <p className="font-semibold">Request Approved</p>
-                  <p className="mt-1 text-emerald-800">
-                    The III Cell has approved your request for a second internship. You may now complete your second internship registration.
-                  </p>
-                  <div className="mt-4">
-                    <Link href="/student/internship/second" className="ui-button text-sm">
-                      Create / Complete Internship 2
-                    </Link>
-                  </div>
-                </div>
-              ) : latestSecondRequest?.status === "PENDING" ? (
-                <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
-                  <p className="font-semibold">Request Submitted</p>
-                  <p className="mt-1 text-amber-800">
-                    Your second internship request was submitted on {formatDateTime(latestSecondRequest.requestedAt)} and is currently awaiting III Cell decision.
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-4">
-                  {latestSecondRequest?.status === "REJECTED" && (
-                    <div className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-900">
-                      <p className="font-semibold">Previous Request Rejected</p>
-                      <p className="mt-1 text-red-800">
-                        Reason: {latestSecondRequest.rejectionReason || "No rejection reason provided."}
-                      </p>
-                    </div>
-                  )}
-                  <p className="text-sm text-slate-600">
-                    You are eligible to request permission for a second internship slot.
-                  </p>
-                  <div className="mt-4">
-                    <button
-                      id="raise-request-slot-2"
-                      disabled={secondStarting}
-                      onClick={raiseSecondRequest}
-                      className="ui-button text-sm"
-                    >
-                      {secondStarting ? "Submitting…" : "Raise Internship Request"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
-    );
-  }
 
   function renderRecentNotifications() {
     if (recentNotifications.length === 0) return null;
@@ -756,48 +486,87 @@ export default function StudentDashboard() {
           )}
 
           {/* Conditional Layout Based on Internship Lifecycle */}
-          {!isInternshipStarted ? (
-            /* PRE-COMMENCEMENT: REGISTRATION & ONBOARDING PROMINENT */
-            <div className="mt-6 space-y-6">
-              {renderInternshipOverview()}
-              {renderRecentNotifications()}
-              <div className="space-y-2">
-                <TodayAttendanceCard />
-                <div className="flex justify-end">
-                  <Link
-                    href="/student/attendance"
-                    className="text-xs font-semibold text-blue-700 hover:underline inline-flex items-center gap-1"
-                  >
-                    <span>View complete attendance history</span>
-                    <span aria-hidden="true">→</span>
-                  </Link>
+          {(() => {
+            const availableInternships = [
+              ...(details
+                ? [
+                    {
+                      id: details.id,
+                      internshipNumber: 1,
+                      companyName: details.companyName,
+                      status: deriveInternshipStatus(details),
+                    },
+                  ]
+                : []),
+              ...(secondDetails
+                ? [
+                    {
+                      id: secondDetails.id,
+                      internshipNumber: 2,
+                      companyName: secondDetails.companyName,
+                      status: deriveInternshipStatus(secondDetails),
+                    },
+                  ]
+                : []),
+            ];
+
+            const activeInternshipId =
+              activeTab === 2 && secondDetails ? secondDetails.id : details ? details.id : undefined;
+
+            return !isInternshipStarted ? (
+              /* PRE-COMMENCEMENT: REGISTRATION & ONBOARDING PROMINENT */
+              <div className="mt-6 space-y-6">
+                {renderRecentNotifications()}
+                {!loading && availableInternships.length > 0 && (
+                  <div className="mt-6">
+                    <InternshipLocationManager
+                      scope="student"
+                      internships={availableInternships}
+                      initialInternshipId={activeInternshipId}
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <TodayAttendanceCard />
+                  <div className="flex justify-end">
+                    <Link
+                      href="/student/attendance"
+                      className="text-xs font-semibold text-blue-700 hover:underline inline-flex items-center gap-1"
+                    >
+                      <span>View complete attendance history</span>
+                      <span aria-hidden="true">→</span>
+                    </Link>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            /* POST-COMMENCEMENT: ATTENDANCE PROMINENT AT TOP */
-            <div className="mt-6 space-y-6">
-              <div className="space-y-2">
-                <TodayAttendanceCard />
-                <div className="flex justify-end">
-                  <Link
-                    href="/student/attendance"
-                    className="text-xs font-semibold text-blue-700 hover:underline inline-flex items-center gap-1"
-                  >
-                    <span>View complete attendance history</span>
-                    <span aria-hidden="true">→</span>
-                  </Link>
+            ) : (
+              /* POST-COMMENCEMENT: ATTENDANCE PROMINENT AT TOP */
+              <div className="mt-6 space-y-6">
+                <div className="space-y-2">
+                  <TodayAttendanceCard />
+                  <div className="flex justify-end">
+                    <Link
+                      href="/student/attendance"
+                      className="text-xs font-semibold text-blue-700 hover:underline inline-flex items-center gap-1"
+                    >
+                      <span>View complete attendance history</span>
+                      <span aria-hidden="true">→</span>
+                    </Link>
+                  </div>
                 </div>
+                {renderRecentNotifications()}
+                {!loading && availableInternships.length > 0 && (
+                  <div className="mt-6">
+                    <InternshipLocationManager
+                      scope="student"
+                      internships={availableInternships}
+                      initialInternshipId={activeInternshipId}
+                    />
+                  </div>
+                )}
               </div>
-              {renderInternshipOverview()}
-              {renderRecentNotifications()}
-              {!loading && details && (
-                <div className="mt-6">
-                  <InternshipLocationManager key={details.id} scope="student" />
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
         </main>
       </AppFrame>
     </ProtectedRoute>

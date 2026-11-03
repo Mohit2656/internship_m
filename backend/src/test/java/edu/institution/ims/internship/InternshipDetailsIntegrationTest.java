@@ -76,6 +76,17 @@ class InternshipDetailsIntegrationTest {
                 .andExpect(jsonPath("$.status").value("APPROVED")).andExpect(jsonPath("$.studentId").value(studentA.getId()));
         mvc.perform(get("/api/v1/admin/second-internship-requests/999999").cookie(adminCookie)).andExpect(status().isNotFound());
         mvc.perform(post("/api/v1/student/internship/second").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(internship("Internship Two")))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DIARY_REQUIRED"));
+        mvc.perform(put("/api/v1/student/internship-onboarding/source?internshipNumber=2").cookie(studentACookie)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"source\":\"SELF\"}")).andExpect(status().isOk());
+        for (DocumentType type : DocumentType.values()) {
+            mvc.perform(multipart("/api/v1/student/internship-onboarding/documents/{type}?internshipNumber=2", type)
+                    .file(pdf(type.name() + "_2.pdf")).cookie(studentACookie)).andExpect(status().isOk());
+        }
+        mvc.perform(post("/api/v1/student/internship-onboarding/diary/confirm?internshipNumber=2").cookie(studentACookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.diaryIssued").value(true));
+        mvc.perform(post("/api/v1/student/internship/second").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(internship("Internship Two")))).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.internshipNumber").value(2));
         mvc.perform(post("/api/v1/student/internship/second").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)

@@ -79,6 +79,26 @@ public class StudentChangeNotificationService {
     }
 
     @Transactional
+    public void notifyInternshipSubmitted(Long studentId, InternshipDetails entity, RegisteredWorkplaceRequest workplace) {
+        if (entity == null) return;
+        Instant now = clock.instant();
+        String formattedDate = DATE_FORMATTER.format(now);
+        int internshipNum = entity.getOnboarding() != null ? entity.getOnboarding().getInternshipNumber() : 1;
+        String studentName = getStudentDisplayName(studentId);
+        String company = entity.getCompanyName() != null ? entity.getCompanyName() : "Company";
+        String title = "Internship " + internshipNum + " submitted (" + studentName + ")";
+        String message = "Student " + studentName + " submitted Internship " + internshipNum + " details for "
+                + company + " on " + formattedDate + ". Action required: review internship details and verify workplace location coordinates for attendance approval.";
+        String actionUrl = "/mentor/students/" + studentId + "?slot=" + internshipNum;
+        String eventKey = "internship-" + entity.getId() + "-submitted";
+
+        audit(studentId, internshipNum == 2 ? "INTERNSHIP_2_SUBMITTED" : "INTERNSHIP_SUBMITTED",
+                entity.getId(), "Submitted details for " + company, null, entity, now);
+        mentorNotifications.workflowSubmitted(studentId, eventKey, "INTERNSHIP_DETAILS_SUBMITTED",
+                title, message, actionUrl, now);
+    }
+
+    @Transactional
     public void notifyInternshipChanged(Long studentId,
                                         InternshipDetails before,
                                         InternshipDetails after,
@@ -120,9 +140,10 @@ public class StudentChangeNotificationService {
         String prefix = internshipNum == 2 ? "Internship 2 " : "";
         String uid = getStudentUid(studentId);
         String changeSummary = formatChangeSummary(changes);
-        String message = "Student " + uid + " updated " + prefix + changeSummary + " on " + formattedDate + ".";
+        String message = "Student " + uid + " updated " + prefix + changeSummary + " on " + formattedDate
+                + ". Action required: review updated internship details.";
         String title = (internshipNum == 2 ? "Internship 2" : "Internship") + " details updated (" + uid + ")";
-        String actionUrl = "/mentor/students/" + studentId;
+        String actionUrl = "/mentor/students/" + studentId + (internshipNum == 2 ? "?slot=2" : "");
         String eventKey = "internship-" + after.getId() + "-update:" + now.toEpochMilli();
 
         audit(studentId, internshipNum == 2 ? "INTERNSHIP_2_UPDATE" : "INTERNSHIP_UPDATE",
@@ -233,6 +254,23 @@ public class StudentChangeNotificationService {
         } catch (Exception e) {
             return String.valueOf(studentId);
         }
+    }
+
+    private String getStudentDisplayName(Long studentId) {
+        String name = null;
+        try {
+            name = jdbc.queryForObject("select coalesce(p.student_name, sa.student_name, u.email) from users u "
+                    + "left join student_profiles p on p.user_id=u.id "
+                    + "left join student_accounts sa on sa.user_id=u.id where u.id=?", String.class, studentId);
+        } catch (Exception ignored) {}
+        String uid = getStudentUid(studentId);
+        if (name != null && !name.isBlank()) {
+            if (uid != null && !uid.isBlank() && !uid.equals(String.valueOf(studentId)) && !name.equals(uid)) {
+                return name + " (" + uid + ")";
+            }
+            return name;
+        }
+        return uid != null ? uid : String.valueOf(studentId);
     }
 
     private void audit(Long studentId, String changeType, Long internshipId, String changedFields, Object before, Object after, Instant at) {

@@ -112,8 +112,38 @@ export function ReportsCenter({ role, attendanceOnly = false }: { role: "ADMIN" 
     <div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-bold">{attendanceOnly ? "Attendance Records" : "Reports Center"}</h1><p className="mt-2 text-slate-600">{options?.scope || "Loading authorized report options…"}</p></div>{!attendanceOnly && <DashboardReportExport role={role} />}</div>
     {notice && <p role="status" className="mt-5 text-sm text-emerald-700">{notice}</p>}
     {error && <div role="alert" className="mt-5 rounded-lg bg-red-50 p-4 text-red-700">{error} <button data-button-variant="text" type="button" onClick={() => { setReload(n => n + 1); setRequestKey(n => n + 1); }} className="underline">Retry</button></div>}
-    <div className="mt-7 grid gap-6 lg:grid-cols-[18rem_1fr]">
-      <nav aria-label="Report types" className="space-y-2">{options?.types.filter(item => !attendanceOnly || item.id.startsWith("ATTENDANCE")).map(item => <button data-button-variant="outline" key={item.id} type="button" disabled={busy} onClick={() => changeType(item.id)} aria-pressed={type === item.id} className={`w-full rounded-xl border p-4 text-left ${type === item.id ? "border-blue-600 bg-blue-50" : "border-slate-200 bg-white"}`}><span className="block font-semibold">{item.title}</span><span className="mt-1 block text-xs text-slate-600">{item.available ? item.description : `Unavailable. ${item.description}`}</span></button>)}</nav>
+    <div className="mt-6 grid gap-6 lg:grid-cols-[16.5rem_1fr] items-start">
+      <nav aria-label="Report types" className="space-y-1.5 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-xs">
+        <p className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          Report Selection
+        </p>
+        {options?.types.filter(item => !attendanceOnly || item.id.startsWith("ATTENDANCE")).map(item => {
+          const isSelected = type === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              disabled={busy}
+              onClick={() => changeType(item.id)}
+              aria-current={isSelected ? "page" : undefined}
+              className={`report-nav-item w-full rounded-xl px-3.5 py-2.5 text-left transition-all ${
+                isSelected
+                  ? "border-blue-200 border-l-[3.5px] border-l-blue-600 bg-blue-50/80 text-blue-900 shadow-xs"
+                  : "border-slate-100 bg-white text-slate-700 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <span className={`block text-xs sm:text-sm leading-tight ${isSelected ? "text-blue-950 font-bold" : "text-slate-800 font-semibold"}`}>
+                {item.title}
+              </span>
+              {item.description && (
+                <span className={`mt-0.5 block text-[11px] leading-snug line-clamp-1 ${isSelected ? "text-blue-700/90" : "text-slate-500"}`}>
+                  {item.available ? item.description : `Unavailable · ${item.description}`}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
       <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="report-document text-xl font-bold">{report?.title}</h2><p className="mt-2 text-sm text-slate-600">{report?.description}</p>
         {report?.available && <div className="mt-4"><button data-button-variant="text" type="button" disabled={busy} className="text-sm underline" onClick={() => setPickerOpen(value => !value)}>Choose {role === "MENTOR" ? "assigned " : ""}students</button>{pickerOpen && <div className="mt-3 rounded-lg border border-slate-200 p-4"><label className="text-sm">Search students<input className={control} value={pickerSearch} onChange={e => { setPickerSearch(e.target.value); setPickerPage(0); }} /></label><button data-button-variant="text" type="button" className="mt-2 text-sm" onClick={() => { setIds(""); setPage(0); }}>Use all authorized students</button>{pickerError && <p role="alert" className="text-red-700">{pickerError}</p>}<div className="mt-3 space-y-2">{picker?.rows.map(row => <label key={String(row.studentId)} className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={busy} checked={ids.split(",").map(id => id.trim()).includes(String(row.studentId))} onChange={e => { const next = new Set(ids.split(",").map(id => id.trim()).filter(Boolean)); if (e.target.checked) next.add(String(row.studentId)); else next.delete(String(row.studentId)); setIds([...next].join(", ")); setPage(0); }} />{display(row.studentName)} · {display(row.uid)} · {display(row.company)}</label>)}</div>{picker && <div className="mt-3 flex gap-4"><button data-button-variant="text" type="button" disabled={pickerPage === 0} onClick={() => setPickerPage(p => p - 1)} className="text-sm">Previous students</button><button data-button-variant="text" type="button" disabled={(pickerPage + 1) * 50 >= picker.totalRows} onClick={() => setPickerPage(p => p + 1)} className="text-sm">Next students</button></div>}</div>}</div>}

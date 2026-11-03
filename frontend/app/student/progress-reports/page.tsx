@@ -413,44 +413,52 @@ function ProgressReportsContent() {
       </div>
 
       {/* Level 1 Navigation: Internship Tabs */}
-      <div className="mt-8 flex border-b border-slate-200" role="tablist" aria-label="Internship selection">
-        <button
-          type="button"
-          role="tab"
-          id="tab-internship-1"
-          aria-selected={internshipTab === 1}
-          onClick={() => handleInternshipTabChange(1)}
-          className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-semibold transition-colors ${
-            internshipTab === 1
-              ? "border-blue-700 text-blue-700"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          <span>Internship 1</span>
-          {details1 && (
-            <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClass(status1)}`}>
-              {status1}
-            </span>
-          )}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-internship-2"
-          aria-selected={internshipTab === 2}
-          onClick={() => handleInternshipTabChange(2)}
-          className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-semibold transition-colors ${
-            internshipTab === 2
-              ? "border-blue-700 text-blue-700"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          <span>Internship 2</span>
-          <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClass(status2)}`}>
-            {status2}
-          </span>
-        </button>
-      </div>
+      {details2 && (
+        <div className="mt-8">
+          <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100/90 p-1 border border-slate-200/80 shadow-xs" role="tablist" aria-label="Internship selection">
+            <button
+              type="button"
+              role="tab"
+              id="tab-internship-1"
+              aria-selected={internshipTab === 1}
+              onClick={() => handleInternshipTabChange(1)}
+              className={`segmented-tab flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
+                internshipTab === 1
+                  ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
+              }`}
+            >
+              <span>Internship 1</span>
+              {details1 && (
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                  internshipTab === 1 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status1)
+                }`}>
+                  {status1}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tab-internship-2"
+              aria-selected={internshipTab === 2}
+              onClick={() => handleInternshipTabChange(2)}
+              className={`segmented-tab flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
+                internshipTab === 2
+                  ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                  : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
+              }`}
+            >
+              <span>Internship 2</span>
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                internshipTab === 2 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status2)
+              }`}>
+                {status2}
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Active Internship Info banner */}
       {activeInternship && (
@@ -468,7 +476,7 @@ function ProgressReportsContent() {
 
       {/* Level 2 Navigation: Weekly vs Monthly */}
       <div className="mt-6">
-        <div className="flex border-b border-slate-200" role="tablist" aria-label="Progress report types">
+        <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100/90 p-1 border border-slate-200/80 shadow-xs" role="tablist" aria-label="Progress report types">
           <button
             type="button"
             role="tab"
@@ -476,15 +484,14 @@ function ProgressReportsContent() {
             aria-selected={reportType === "weekly"}
             aria-controls="panel-weekly"
             onClick={() => setReportType("weekly")}
-            className={`border-b-2 px-6 py-2.5 text-sm font-semibold transition-colors ${
+            className={`segmented-tab rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
               reportType === "weekly"
-                ? "border-blue-700 text-blue-700"
-                : "border-transparent text-slate-500 hover:text-slate-700"
+                ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
             }`}
           >
             Weekly Reports
           </button>
-          <span className="self-center text-slate-300 select-none">|</span>
           <button
             type="button"
             role="tab"
@@ -492,10 +499,10 @@ function ProgressReportsContent() {
             aria-selected={reportType === "monthly"}
             aria-controls="panel-monthly"
             onClick={() => setReportType("monthly")}
-            className={`border-b-2 px-6 py-2.5 text-sm font-semibold transition-colors ${
+            className={`segmented-tab rounded-md px-3.5 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
               reportType === "monthly"
-                ? "border-blue-700 text-blue-700"
-                : "border-transparent text-slate-500 hover:text-slate-700"
+                ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
             }`}
           >
             Monthly Reports

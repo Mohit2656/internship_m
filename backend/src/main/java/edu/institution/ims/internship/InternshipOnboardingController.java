@@ -14,8 +14,8 @@ public class InternshipOnboardingController {
     private final InternshipOnboardingService service;
     public InternshipOnboardingController(InternshipOnboardingService service) { this.service = service; }
     @GetMapping public OnboardingResponse get(@AuthenticationPrincipal UserPrincipal principal, @RequestParam(required = false) Integer internshipNumber) { return service.getOwn(principal, internshipNumber); }
-    @PostMapping("/secure") public ResponseEntity<OnboardingResponse> secure(@AuthenticationPrincipal UserPrincipal principal) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.secure(principal));
+    @PostMapping("/secure") public ResponseEntity<OnboardingResponse> secure(@AuthenticationPrincipal UserPrincipal principal, @RequestParam(required = false) Integer internshipNumber) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.secure(principal, internshipNumber));
     }
     @PutMapping("/source") public OnboardingResponse source(@AuthenticationPrincipal UserPrincipal principal, @RequestParam(required = false) Integer internshipNumber, @Valid @RequestBody SourceRequest request) {
         return service.selectSource(principal, request.source(), internshipNumber);

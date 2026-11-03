@@ -4,6 +4,7 @@ import axios from "axios";
 import Link from "next/link";
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
+import { InternshipSlotsSection } from "@/components/InternshipSlotsSection";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { WorkflowBadge } from "@/components/WorkflowBadge";
 import { ApiError, api } from "@/lib/api";
@@ -61,14 +62,19 @@ export default function InternshipOnboardingPage() {
   }, []);
 
   useEffect(() => {
-    const tab = getSelectedInternship();
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const tabParam = params?.get("tab") || params?.get("internshipNumber");
+    const tab = tabParam === "2" ? 2 : tabParam === "1" ? 1 : getSelectedInternship();
     setActiveTab(tab);
+    setSelectedInternship(tab);
+    setDiaryConfirmed(false);
     void load(tab);
   }, [load]);
 
   function handleTabChange(tab: 1 | 2) {
     setActiveTab(tab);
     setSelectedInternship(tab);
+    setDiaryConfirmed(false);
     void load(tab);
   }
 
@@ -197,46 +203,13 @@ export default function InternshipOnboardingPage() {
             </p>
           </div>
 
-          {/* Internship Tabs */}
-          <div className="mt-8 flex border-b border-slate-200" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              id="tab-onboarding-1"
-              aria-selected={activeTab === 1}
-              onClick={() => handleTabChange(1)}
-              className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-semibold transition-colors ${
-                activeTab === 1
-                  ? "border-blue-700 text-blue-700"
-                  : "border-transparent text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <span>Internship 1</span>
-              {activeTab === 1 && onboarding && (
-                <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClass(statusBadge)}`}>
-                  {statusBadge}
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="tab-onboarding-2"
-              aria-selected={activeTab === 2}
-              onClick={() => handleTabChange(2)}
-              className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-semibold transition-colors ${
-                activeTab === 2
-                  ? "border-blue-700 text-blue-700"
-                  : "border-transparent text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <span>Internship 2</span>
-              {activeTab === 2 && onboarding && (
-                <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusBadgeClass(statusBadge)}`}>
-                  {statusBadge}
-                </span>
-              )}
-            </button>
+          {/* Internship Slots & Requests */}
+          <div className="mt-8">
+            <InternshipSlotsSection
+              activeTab={activeTab}
+              onTabChange={handleTabChange}
+              onOnboardingUpdated={() => void load(activeTab)}
+            />
           </div>
 
           {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
@@ -384,7 +357,7 @@ export default function InternshipOnboardingPage() {
                         Confirmed {onboarding.diaryIssuedAt && new Date(onboarding.diaryIssuedAt).toLocaleString()}
                       </p>
                       <Link
-                        href="/student/internship/details"
+                        href={activeTab === 2 ? "/student/internship/details?tab=2" : "/student/internship/details"}
                         className="ui-button mt-5 inline-block text-sm"
                       >
                         {onboarding.workflowStatus === "INTERNSHIP_DETAILS_COMPLETE"
