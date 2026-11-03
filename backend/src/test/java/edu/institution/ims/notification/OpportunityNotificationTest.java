@@ -26,7 +26,7 @@ class OpportunityNotificationTest {
     }
 
     @Test void publicationUsesExistingInboxWithCompanySummaryDateAndCorrectDetailsLink() {
-        when(jdbc.queryForList("select id from users where role='STUDENT' and active=true", Long.class))
+        when(jdbc.queryForList("select id from users where role='STUDENT' and active=true order by id", Long.class))
                 .thenReturn(List.of(11L, 12L));
         var opportunity = opportunity(OpportunityStatus.PUBLISHED, LocalDate.now(), "Build\n useful   software.");
 

@@ -35,6 +35,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @ContextConfiguration(classes = {edu.institution.ims.ImsApplication.class, MonthlyProgressIntegrationTest.FixedClockConfiguration.class})
 class MonthlyProgressIntegrationTest {
+    private static final String TEST_STORAGE_ROOT = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "ims-monthly-tests-" + UUID.randomUUID()).toString();
+    @DynamicPropertySource
+    static void isolatedTestStorage(DynamicPropertyRegistry registry) {
+        registry.add("app.file-storage.root", () -> TEST_STORAGE_ROOT);
+    }
     static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
     // Keep ordinary attendance regression submissions before the noon deadline.
     static final Instant NOW = Instant.parse("2026-11-10T06:29:00Z");

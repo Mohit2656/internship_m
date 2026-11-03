@@ -19,7 +19,7 @@ import java.util.List;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest @AutoConfigureMockMvc @ActiveProfiles("test")
+@SpringBootTest(properties="spring.datasource.url=jdbc:h2:mem:ims_student_feed;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE") @AutoConfigureMockMvc @ActiveProfiles("test")
 class StudentOpportunityFeedIntegrationTest {
     @Autowired MockMvc mvc; @Autowired ObjectMapper json; @Autowired UserRepository users;
     @Autowired OpportunityRepository opportunities; @Autowired OpportunitySkillRepository skills;

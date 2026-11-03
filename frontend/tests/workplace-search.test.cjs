@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
+require("./register-tsx.cjs");
 
 function load(relative, imports = {}) {
   const module = { exports: {} };

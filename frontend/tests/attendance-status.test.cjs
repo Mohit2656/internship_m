@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
+require("./register-tsx.cjs");
 const React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 function load(file, imports = {}) {

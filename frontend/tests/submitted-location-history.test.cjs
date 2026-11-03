@@ -27,10 +27,10 @@ const history = (studentUserId, records) => ({ studentUserId, attendanceZone: "A
 
 // Exercise the real history component's request/effect lifecycle while rendering the
 // real location components. No location or workplace data is supplied by the harness.
-function historyHarness(role, responses) {
+function historyHarness(role, responses, options = {}) {
   const states = [], effectStates = [], calls = [];
   let cursor, effectCursor, pending, dirty, tree;
-  let props = { role, studentId: 42, name: "First student", onBack() {} };
+  let props = { role, studentId: 42, name: "First student", onBack() {}, ...options };
   const hooks = {
     ...React,
     useState(initial) {
@@ -97,6 +97,18 @@ function assertSubmittedLinks(html, coordinates) {
 }
 
 for (const role of ["ADMIN", "MENTOR"]) {
+  test(`${role} identifies approved late requests as manual attendance without claiming GPS capture`, async t => {
+    const manual = { ...entry(1, null), submissionType: "LATE_REQUEST", verificationBasis: "MANUAL", livenessStatus: "NOT_PERFORMED", submittedLate: true };
+    const h = historyHarness(role, { 42: history(42, [manual]) }, { recordFilters: true, showSummary: false });
+    t.after(() => h.close());
+    const html = await h.flush();
+    assert.match(html, /Not applicable — approved manual request/);
+    assert.match(html, /No student GPS capture — approved manual request/);
+    assert.match(html, /Approved late request · manual decision/);
+    assert.doesNotMatch(html, /Yes · mentor permission|Workplace location verified/);
+    assertSubmittedLinks(html, []);
+  });
+
   test(`${role} dashboard history links each saved attendance location and switches students independently`, async t => {
     const responses = {
       42: history(42, [

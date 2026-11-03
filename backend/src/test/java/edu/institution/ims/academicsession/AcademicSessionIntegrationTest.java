@@ -80,8 +80,8 @@ class AcademicSessionIntegrationTest {
     MockMultipartFile workbook(String uid) throws Exception {
         try(var workbook=new XSSFWorkbook();var output=new ByteArrayOutputStream()) {
             var sheet=workbook.createSheet("Students");var header=sheet.createRow(0);
-            var labels=List.of("Name","UID","Email ID","Semester");for(int i=0;i<labels.size();i++)header.createCell(i).setCellValue(labels.get(i));
-            var row=sheet.createRow(1);row.createCell(0).setCellValue("New student");row.createCell(1).setCellValue(uid);row.createCell(2).setCellValue(uid.toLowerCase()+"@test.edu");row.createCell(3).setCellValue("8");
+            var labels=List.of("Name","UID","Email ID","Semester","Section");for(int i=0;i<labels.size();i++)header.createCell(i).setCellValue(labels.get(i));
+            var row=sheet.createRow(1);row.createCell(0).setCellValue("New student");row.createCell(1).setCellValue(uid);row.createCell(2).setCellValue(uid.toLowerCase()+"@test.edu");row.createCell(3).setCellValue("8");row.createCell(4).setCellValue("A");
             workbook.write(output);return new MockMultipartFile("file","students.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",output.toByteArray());
         }
     }

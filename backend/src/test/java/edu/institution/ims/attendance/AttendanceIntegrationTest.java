@@ -91,7 +91,7 @@ class AttendanceIntegrationTest {
                         .content("{\"studentUserId\":" + studentB.getId() + ",\"attendanceDate\":\"2099-01-01\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.attendanceDate").value("2026-09-18"))
-                .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.attendanceResult").value("PENDING_MENTOR_REVIEW"))
                 .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("NOT_PERFORMED"))
                 .andExpect(jsonPath("$.verificationBasis").value("LIVENESS"))

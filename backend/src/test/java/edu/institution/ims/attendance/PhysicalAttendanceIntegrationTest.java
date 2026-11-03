@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
+@SpringBootTest(properties="logging.level.edu.institution.ims.attendance=INFO")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @ContextConfiguration(classes = {edu.institution.ims.ImsApplication.class, PhysicalAttendanceIntegrationTest.FixedClockConfiguration.class})

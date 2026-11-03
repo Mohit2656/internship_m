@@ -110,7 +110,7 @@ class EdgeAiAttendanceIntegrationTest {
         assertRemoteFailure("quality", new AiFlags(1, false, true), VerificationReason.EDGE_AI_QUALITY_FAILED);
         assertRemoteFailure("liveness", new AiFlags(1, true, false), VerificationReason.EDGE_AI_LIVENESS_FAILED);
         assertThat(attendance.findAll()).allSatisfy(record -> {
-            assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+            assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
             assertThat(record.getVerificationStatus()).isEqualTo(VerificationStatus.UNVERIFIED);
         });
     }
@@ -127,7 +127,7 @@ class EdgeAiAttendanceIntegrationTest {
 
         mvc.perform(remote(cookie, aiEvidence(session, 1, true, true)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.attendanceResult").value("PENDING_MENTOR_REVIEW"))
                 .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("FAILED"));
         AttendanceEvidence stored = storedEvidence(student);
@@ -164,7 +164,7 @@ class EdgeAiAttendanceIntegrationTest {
         if (ai != null) request.file(ai);
         request.cookie(cookie);
         mvc.perform(request).andExpect(status().isCreated())
-                .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.attendanceResult").value("PENDING_MENTOR_REVIEW"))
                 .andExpect(jsonPath("$.verificationStatus").value("UNVERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value(flags == null ? "NOT_PERFORMED" : "FAILED"));
         assertThat(storedEvidence(student).getAiFailureReason()).isEqualTo(reason);

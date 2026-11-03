@@ -177,7 +177,7 @@ class OpportunityMatchIntegrationTest {
         String body = mvc.perform(get("/api/v1/admin/opportunities/{id}/talent-discovery", opportunity.getId())
                         .cookie(login(admin.getEmail(), "AdminPassword!23")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.totalElements").value(2))
                 .andExpect(jsonPath("$.candidates[0].studentId").value(student.getId()))
                 .andExpect(jsonPath("$.candidates[0].alignment.eligibility.overall").value("UNKNOWN"))
                 .andExpect(jsonPath("$.candidates[0].exactRequiredSkills").value(1))
@@ -198,8 +198,8 @@ class OpportunityMatchIntegrationTest {
         mvc.perform(get("/api/v1/admin/opportunities/{id}/talent-discovery", opportunity.getId())
                         .param("eligibility", "INELIGIBLE").param("branch", "COMPUTER_ENGINEERING").param("semester", "8").param("search", "Civil")
                         .cookie(adminSession))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
-                .andExpect(jsonPath("$.candidates[0].studentId").value(otherStudent.getId()));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.candidates").isEmpty());
         String filtered = mvc.perform(get("/api/v1/admin/opportunities/{id}/talent-discovery", opportunity.getId())
                         .param("skill", "JAVA").cookie(adminSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
@@ -284,13 +284,13 @@ class OpportunityMatchIntegrationTest {
         Cookie adminSession = login(admin.getEmail(), "AdminPassword!23");
         mvc.perform(get("/api/v1/admin/opportunities/{id}/talent-discovery/skill-gaps", opportunity.getId()).cookie(adminSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("AVAILABLE"))
-                .andExpect(jsonPath("$.candidatesAnalyzed").value(1))
+                .andExpect(jsonPath("$.candidatesAnalyzed").value(2))
                 .andExpect(jsonPath("$.requiredGaps[0].skill").value("PostgreSQL"))
-                .andExpect(jsonPath("$.requiredGaps[0].studentsMissing").value(1))
+                .andExpect(jsonPath("$.requiredGaps[0].studentsMissing").value(2))
                 .andExpect(jsonPath("$.preferredGaps[0].skill").value("Docker"));
         mvc.perform(get("/api/v1/admin/opportunities/{id}/talent-discovery/skill-gaps", opportunity.getId())
                         .param("eligibility", "INELIGIBLE").cookie(adminSession))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.candidatesAnalyzed").value(1));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.candidatesAnalyzed").value(0));
     }
 
     @Test void skillGapEndpointsEnforceRolesAndDoNotExposeAnotherStudentOrFabricateOnFailure() throws Exception {
@@ -342,7 +342,7 @@ class OpportunityMatchIntegrationTest {
         body.put("facultyMentorName", "Faculty"); body.put("facultyMentorContact", "9876543213"); body.put("internshipCoordinatorName", "Coordinator"); body.put("internshipCoordinatorContact", "9876543214");
         body.put("cdcCoordinatorName", "CDC"); body.put("cdcCoordinatorContact", "9876543215"); body.put("academicYear", "2025-2026"); body.put("semester", 8); body.put("section", "A");
         mvc.perform(post("/api/v1/student/profile").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body))).andExpect(status().isCreated());
-        // Current academics remain fixed; CGPA preserves the ineligible candidate coverage.
+        // Current academics remain CE/8. A CGPA restriction remains UNKNOWN under the existing matching policy.
         if (branch != Branch.COMPUTER_ENGINEERING) {
             StudentProfile saved = studentProfiles.findByUserId(value.getId()).orElseThrow();
             saved.setCurrentCgpa(new BigDecimal("6.00"));

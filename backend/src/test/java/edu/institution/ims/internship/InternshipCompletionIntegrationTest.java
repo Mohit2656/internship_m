@@ -152,8 +152,8 @@ class InternshipCompletionIntegrationTest {
     }
     MockMultipartFile workbook(String uid) throws Exception {
         try(var book=new XSSFWorkbook();var output=new ByteArrayOutputStream()) {
-            var sheet=book.createSheet("Students"); var header=sheet.createRow(0); String[] values={"Name","UID","Email ID","Semester"}; for(int c=0;c<4;c++)header.createCell(c).setCellValue(values[c]);
-            var row=sheet.createRow(1); row.createCell(0).setCellValue("New Student");row.createCell(1).setCellValue(uid);row.createCell(2).setCellValue(uid.toLowerCase()+"@test.edu");row.createCell(3).setCellValue(8);book.write(output);
+            var sheet=book.createSheet("Students"); var header=sheet.createRow(0); String[] values={"Name","UID","Email ID","Semester","Section"}; for(int c=0;c<5;c++)header.createCell(c).setCellValue(values[c]);
+            var row=sheet.createRow(1); row.createCell(0).setCellValue("New Student");row.createCell(1).setCellValue(uid);row.createCell(2).setCellValue(uid.toLowerCase()+"@test.edu");row.createCell(3).setCellValue(8);row.createCell(4).setCellValue("A");book.write(output);
             return new MockMultipartFile("file","students.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",output.toByteArray());
         }
     }

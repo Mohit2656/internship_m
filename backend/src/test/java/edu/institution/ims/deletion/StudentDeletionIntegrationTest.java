@@ -106,10 +106,11 @@ class StudentDeletionIntegrationTest {
         assertThat(jdbc.queryForObject("select active from users where id=?",Boolean.class,student.getId())).isTrue();assertThat(jdbc.queryForObject("select count(*) from student_account_deactivation_audit",Long.class)).isZero();
     }
     @Test void authorizationProtectsStudentsMentorsOwnAdministratorAndTheLastAdministrator() throws Exception {
+        long activeAdminsBefore=jdbc.queryForObject("select count(*) from users where role='ADMIN' and active=true",Long.class);
         mvc.perform(delete("/api/v1/admin/students/{id}",student.getId()).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isUnauthorized());
         for(User denied:List.of(student,mentor,account(Role.HOD))) mvc.perform(delete("/api/v1/admin/students/{id}",student.getId()).with(user(UserPrincipal.from(denied))).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
         for(User protectedUser:List.of(admin,mentor)) mvc.perform(delete("/api/v1/admin/students/{id}",protectedUser.getId()).with(user(UserPrincipal.from(admin))).contentType(MediaType.APPLICATION_JSON).content("{\"confirmed\":true,\"reason\":\"Valid reason\"}")).andExpect(status().isBadRequest());
-        assertThat(jdbc.queryForObject("select count(*) from users where role='ADMIN' and active=true",Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from users where role='ADMIN' and active=true",Long.class)).isEqualTo(activeAdminsBefore);
         mvc.perform(get("/api/v1/admin/students/{id}/deletion-preview",student.getId()).with(user(UserPrincipal.from(student)))).andExpect(status().isForbidden());
     }
     @Test void staleOrForgedAdministratorPrincipalsAreRejectedByTheService() {

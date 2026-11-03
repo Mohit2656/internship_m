@@ -20,11 +20,11 @@ class ApiBoundaryIntegrationTest {
 
     @Test void permittedOriginCanPreflightExistingSkillPatch() throws Exception {
         mvc.perform(options("/api/v1/student/professional-profile/skills/1")
-                .header("Origin", "http://localhost:3000")
+                .header("Origin", "http://localhost:3010")
                 .header("Access-Control-Request-Method", "PATCH")
                 .header("Access-Control-Request-Headers", "Content-Type"))
             .andExpect(status().isOk())
-            .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:3000"))
+            .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:3010"))
             .andExpect(header().string("Access-Control-Allow-Methods", org.hamcrest.Matchers.containsString("PATCH")));
     }
 

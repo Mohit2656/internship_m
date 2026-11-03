@@ -66,7 +66,7 @@ export function StudentAttendanceHistory({ role, studentId, name, onBack, onChan
             {record.evidence?.dailyWorkSummary && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-600">{record.evidence.dailyWorkSummary}</p>}
           </td>
           {recordFilters && <>
-            <td className="min-w-56 p-3 text-slate-900">{isAutomaticAbsence(record) ? "Not applicable — automatic absence" : manualLateRequest(record) ? "Not assessed — approved manual request" : gpsVerificationStatus(record) === "NOT_ASSESSED" ? "Not assessed" : gpsVerificationStatus(record) === "NOT_APPLICABLE" ? "Not applicable" : <LocationVerificationResult evidence={record.evidence} />}</td>
+            <td className="min-w-56 p-3 text-slate-900">{isAutomaticAbsence(record) ? "Not applicable — automatic absence" : manualLateRequest(record) ? "Not applicable — approved manual request" : gpsVerificationStatus(record) === "NOT_ASSESSED" ? "Not assessed" : gpsVerificationStatus(record) === "NOT_APPLICABLE" ? "Not applicable" : <LocationVerificationResult evidence={record.evidence} />}</td>
             <td className="min-w-60 p-3 text-slate-900">{isAutomaticAbsence(record) ? "Not applicable — automatic absence" : manualLateRequest(record) ? "No student GPS capture — approved manual request" : <AttendanceLocations evidence={record.evidence} />}</td>
           </>}
           <td className="p-3 text-slate-900">

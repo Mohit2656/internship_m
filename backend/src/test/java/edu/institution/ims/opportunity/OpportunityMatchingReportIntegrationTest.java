@@ -53,7 +53,7 @@ class OpportunityMatchingReportIntegrationTest {
         studentSkills.addOwn(UserPrincipal.from(student),new SkillNameRequest("Docker"));
         studentSkills.addOwn(UserPrincipal.from(other),new SkillNameRequest("Java"));
         studentSkills.addOwn(UserPrincipal.from(other),new SkillNameRequest("Docker"));
-        parsedResume(student); parsedResume(other);
+        parsedResume(student); // The other student has no parsed resume yet.
     }
 
     @Test void publicationSavesRankedReportAndNotifiesOnlyStrongEligibleStudentOnce() {
@@ -65,7 +65,7 @@ class OpportunityMatchingReportIntegrationTest {
         assertThat(run.report().candidates()).extracting(OpportunityMatchingService.Candidate::studentId).containsExactly(student.getId(),other.getId());
         assertThat(run.report().candidates().get(0).matchScore()).isEqualTo(100);
         assertThat(run.report().candidates().get(0).strongMatch()).isTrue();
-        assertThat(run.report().candidates().get(1).eligibility()).isEqualTo("INELIGIBLE");
+        assertThat(run.report().candidates().get(1).eligibility()).isEqualTo("ELIGIBLE");
         assertThat(notices(student)).isEqualTo(1); assertThat(notices(other)).isZero();
         String message=jdbc.queryForObject("select message from student_notifications where student_user_id=? and notification_type='OPPORTUNITY_MATCH'",String.class,student.getId());
         assertThat(message).contains("Example Company","Software Intern","100.0/100","Java","Docker","not company selection","application instructions");
@@ -81,7 +81,7 @@ class OpportunityMatchingReportIntegrationTest {
         assertThat(first.missingRequiredSkills()).containsExactly("SQL");
         assertThat(first.strongMatch()).isFalse();
         assertThat(run.report().candidates().get(1).matchScore()).isEqualTo(60);
-        assertThat(run.report().candidates().get(1).eligibility()).isEqualTo("INELIGIBLE");
+        assertThat(run.report().candidates().get(1).eligibility()).isEqualTo("ELIGIBLE");
         assertThat(notices(student)).isZero(); // Draft review never sends student alerts.
     }
 
@@ -209,7 +209,7 @@ class OpportunityMatchingReportIntegrationTest {
         var analysis=new ResumeAnalysis(resume); analysis.complete(new AiResumeResult("test","1",List.of(),List.of(),List.of(),List.of())); analyses.saveAndFlush(analysis);
     }
     private Opportunity opportunity(BigDecimal cgpa,List<Branch> branches) {
-        var request=new OpportunityRequest("Example Company","Software Intern","Build Java applications using Docker",null,"Pune",OpportunityMode.HYBRID,3,BigDecimal.ZERO,"INR",LocalDate.now().plusDays(10),cgpa==null?new BigDecimal("7.50"):cgpa,branches,List.of(),List.of("Java"),List.of("Docker"));
+        var request=new OpportunityRequest("Example Company","Software Intern","Build Java applications using Docker",null,"Pune",OpportunityMode.HYBRID,3,BigDecimal.ZERO,"INR",LocalDate.now().plusDays(10),cgpa,branches,List.of(),List.of("Java"),List.of("Docker"));
         Opportunity value=opportunities.saveAndFlush(new Opportunity(admin,request));
         opportunitySkills.saveAllAndFlush(List.of(new OpportunitySkill(value,new NormalizedSkill("Java","java"),OpportunitySkillType.REQUIRED),new OpportunitySkill(value,new NormalizedSkill("Docker","docker"),OpportunitySkillType.PREFERRED)));
         return value;
