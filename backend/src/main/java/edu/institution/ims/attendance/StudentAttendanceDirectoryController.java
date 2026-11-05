@@ -15,7 +15,10 @@ public class StudentAttendanceDirectoryController {
         return service.students(principal);
     }
     @GetMapping("/{studentId}")
-    public StudentAttendanceDirectoryService.History history(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long studentId) {
-        return service.history(principal, studentId);
+    public StudentAttendanceDirectoryService.History history(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long studentId,
+            @RequestParam(required = false) Long internshipId) {
+        return service.history(principal, studentId, internshipId);
     }
 }

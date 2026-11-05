@@ -26,6 +26,8 @@ public class SecondInternshipRequestService {
             InternshipOnboardingRepository onboardings, UserRepository users, NotificationService notifications, Clock clock) {
         this.jdbc=jdbc; this.details=details; this.onboardings=onboardings; this.users=users; this.notifications=notifications; this.clock=clock;
     }
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private edu.institution.ims.mentor.MentorAssignmentService mentorAssignments;
 
     @Transactional public RequestView apply(UserPrincipal principal) {
         lock(principal.id());
@@ -56,6 +58,9 @@ public class SecondInternshipRequestService {
             User student=users.findById(studentId).orElseThrow();
             InternshipOnboarding second=new InternshipOnboarding(student,2);
             onboardings.saveAndFlush(second);
+            if (mentorAssignments != null) {
+                mentorAssignments.ensureInternship2InheritsMentor(studentId);
+            }
             jdbc.update("update second_internship_requests set status=\'APPROVED\',pending_student_id=null,approved_student_id=student_user_id,reviewed_by=?,reviewed_at=? where id=?",
                     principal.id(),Timestamp.from(now),id);
             notifications.create(studentId,"second-internship-approved:"+id,"SECOND_INTERNSHIP_APPROVED","Second internship approved",

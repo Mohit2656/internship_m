@@ -8,6 +8,8 @@ import { AttendanceLocations } from "@/components/AttendanceLocations";
 import { MonthlyProgressStatus, monthlyStatusLabel, formatDateTime } from "@/lib/monthly-progress";
 import { MentorRecordDelete } from "@/components/MentorRecordDelete";
 import { DashboardReportExport } from "@/components/DashboardReportExport";
+import { CustomReportBuilder } from "@/components/CustomReportBuilder";
+import { SavedReportsList, SavedReportDto } from "@/components/SavedReportsList";
 
 type Field = { id: string; label: string; category: string; kind?: string; defaultSelected?: boolean };
 type Filter = { id: string; label: string; type: string; choices: { value: string; label: string }[]; description: string };
@@ -71,6 +73,8 @@ export function ReportsCenter({ role, attendanceOnly = false }: { role: "ADMIN" 
   const [pickerPage, setPickerPage] = useState(0);
   const [picker, setPicker] = useState<Table | null>(null);
   const [pickerError, setPickerError] = useState("");
+  const [mainTab, setMainTab] = useState<"QUICK" | "CUSTOM">("QUICK");
+  const [loadedSavedReport, setLoadedSavedReport] = useState<SavedReportDto | null>(null);
   const config = JSON.stringify({ reportType: type, fields: role === "MENTOR" && type === "ATTENDANCE" ? [...new Set([...selected, "recordId", "studentName", "uid", "date"])] : selected, filters: Object.fromEntries(Object.entries(filters).filter(([, value]) => value.trim())), studentIds: ids.trim() ? ids.split(",").map(value => Number(value.trim())) : [], page, format: "XLSX" });
   useEffect(() => {
     const abort = new AbortController();
@@ -112,47 +116,103 @@ export function ReportsCenter({ role, attendanceOnly = false }: { role: "ADMIN" 
     <div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-bold">{attendanceOnly ? "Attendance Records" : "Reports Center"}</h1><p className="mt-2 text-slate-600">{options?.scope || "Loading authorized report options…"}</p></div>{!attendanceOnly && <DashboardReportExport role={role} />}</div>
     {notice && <p role="status" className="mt-5 text-sm text-emerald-700">{notice}</p>}
     {error && <div role="alert" className="mt-5 rounded-lg bg-red-50 p-4 text-red-700">{error} <button data-button-variant="text" type="button" onClick={() => { setReload(n => n + 1); setRequestKey(n => n + 1); }} className="underline">Retry</button></div>}
-    <div className="mt-6 grid gap-6 lg:grid-cols-[16.5rem_1fr] items-start">
-      <nav aria-label="Report types" className="space-y-1.5 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-xs">
-        <p className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-          Report Selection
-        </p>
-        {options?.types.filter(item => !attendanceOnly || item.id.startsWith("ATTENDANCE")).map(item => {
-          const isSelected = type === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              disabled={busy}
-              onClick={() => changeType(item.id)}
-              aria-current={isSelected ? "page" : undefined}
-              className={`report-nav-item w-full rounded-xl px-3.5 py-2.5 text-left transition-all ${
-                isSelected
-                  ? "border-blue-200 border-l-[3.5px] border-l-blue-600 bg-blue-50/80 text-blue-900 shadow-xs"
-                  : "border-slate-100 bg-white text-slate-700 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              <span className={`block text-xs sm:text-sm leading-tight ${isSelected ? "text-blue-950 font-bold" : "text-slate-800 font-semibold"}`}>
-                {item.title}
-              </span>
-              {item.description && (
-                <span className={`mt-0.5 block text-[11px] leading-snug line-clamp-1 ${isSelected ? "text-blue-700/90" : "text-slate-500"}`}>
-                  {item.available ? item.description : `Unavailable · ${item.description}`}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
-      <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5">
-        <h2 className="report-document text-xl font-bold">{report?.title}</h2><p className="mt-2 text-sm text-slate-600">{report?.description}</p>
-        {report?.available && <div className="mt-4"><button data-button-variant="text" type="button" disabled={busy} className="text-sm underline" onClick={() => setPickerOpen(value => !value)}>Choose {role === "MENTOR" ? "assigned " : ""}students</button>{pickerOpen && <div className="mt-3 rounded-lg border border-slate-200 p-4"><label className="text-sm">Search students<input className={control} value={pickerSearch} onChange={e => { setPickerSearch(e.target.value); setPickerPage(0); }} /></label><button data-button-variant="text" type="button" className="mt-2 text-sm" onClick={() => { setIds(""); setPage(0); }}>Use all authorized students</button>{pickerError && <p role="alert" className="text-red-700">{pickerError}</p>}<div className="mt-3 space-y-2">{picker?.rows.map(row => <label key={String(row.studentId)} className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={busy} checked={ids.split(",").map(id => id.trim()).includes(String(row.studentId))} onChange={e => { const next = new Set(ids.split(",").map(id => id.trim()).filter(Boolean)); if (e.target.checked) next.add(String(row.studentId)); else next.delete(String(row.studentId)); setIds([...next].join(", ")); setPage(0); }} />{display(row.studentName)} · {display(row.uid)} · {display(row.company)}</label>)}</div>{picker && <div className="mt-3 flex gap-4"><button data-button-variant="text" type="button" disabled={pickerPage === 0} onClick={() => setPickerPage(p => p - 1)} className="text-sm">Previous students</button><button data-button-variant="text" type="button" disabled={(pickerPage + 1) * 50 >= picker.totalRows} onClick={() => setPickerPage(p => p + 1)} className="text-sm">Next students</button></div>}</div>}</div>}
-        {report?.available && <><fieldset disabled={busy} className="mt-5"><legend className="font-semibold">Filters</legend><div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{availableFilters.map(filter => <label key={filter.id} className="text-sm">{filter.label}{filter.type === "select" ? <select className={control} value={filters[filter.id] || ""} onChange={e => { setFilters({ ...filters, [filter.id]: e.target.value }); setPage(0); }}><option value="">All</option>{filter.choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select> : <input className={control} type={filter.type} value={filters[filter.id] || ""} onChange={e => { setFilters({ ...filters, [filter.id]: e.target.value }); setPage(0); }} />}<span className="mt-1 block text-xs text-slate-500">{filter.description}</span></label>)}<label className="text-sm">Selected student account IDs<input className={control} value={ids} onChange={e => { setIds(e.target.value); setPage(0); }} placeholder="e.g. 12, 18, 24" /><span className="mt-1 block text-xs text-slate-500">Leave blank for all authorized students. Every selected ID is checked by the server.</span></label></div><button data-button-variant="text" type="button" className="mt-3 text-sm" onClick={() => { setFilters({}); setIds(""); setPage(0); }}>Clear filters</button></fieldset>
-        <details className="mt-5 rounded-lg border border-slate-200 p-3"><summary className="cursor-pointer font-semibold">Report columns ({selected.length}/{report.fields.length})</summary><div className="mt-3 flex gap-4"><button data-button-variant="text" type="button" disabled={busy} onClick={() => setSelected(report.fields.filter(field => report.id !== "MONTHLY_PROGRESS" || field.defaultSelected).map(field => field.id))} className="text-sm">Select All</button><button data-button-variant="text" type="button" disabled={busy} onClick={() => setSelected([])} className="text-sm">Deselect All</button></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{report.fields.map(field => <label key={field.id} className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={busy} checked={selected.includes(field.id)} onChange={e => setSelected(report.fields.filter(item => item.id === field.id ? e.target.checked : selected.includes(item.id)).map(item => item.id))} />{field.label}</label>)}</div></details>
-        <div className="mt-5 flex flex-wrap items-center gap-3"><button type="button" className={button} disabled={busy || previewBusy || !current || !selected.length} onClick={() => void download("XLSX")}>Export Excel</button><button type="button" className={button} disabled={busy || previewBusy || !current || !selected.length} onClick={() => void download("CSV")}>Export CSV</button><button type="button" className={button} disabled={busy || previewBusy || !current || !selected.length} onClick={() => void download("PDF")}>Export PDF</button><span aria-live="polite" className="text-sm text-slate-600">{busy ? "Generating report…" : previewBusy ? "Loading preview…" : current ? `${current.totalRows} records match. Export includes all matching records.` : "Select at least one column."}</span></div>
-        {current && <><div className="mt-5 flex flex-wrap gap-4">{Object.entries(current.summary).map(([key, value]) => <div key={key} className="rounded-lg bg-slate-50 p-3"><span className="block text-xs text-slate-600">{summaryLabel(key)}</span><strong>{typeof value === "number" ? Number(value.toFixed(1)) : display(value)}</strong></div>)}</div><div className="mt-5 overflow-x-auto"><table className="report-document w-full text-left text-sm"><thead className="bg-slate-100"><tr>{current.fields.map(field => <th key={field.id} className="whitespace-nowrap p-3">{field.label}</th>)}{role === "MENTOR" && type === "ATTENDANCE" && <th className="p-3">Actions</th>}</tr></thead><tbody>{current.rows.map((row, index) => <tr key={typeof row.recordId === "number" ? row.recordId : index} className="border-b border-slate-200">{current.fields.map(field => <td key={field.id} className="whitespace-pre-wrap p-3">{field.id === "attendanceLatitude" ? <AttendanceLocations evidence={{ latitude: row.attendanceLatitude as number | null, longitude: row.attendanceLongitude as number | null, gpsAccuracyMeters: row.gpsAccuracyMeters as number | null }} /> : displayCell(field, row[field.id])}{attendanceOnly && field.id === "studentId" && <button data-button-variant="text" type="button" className="ml-2 underline" onClick={() => { setIds(String(row[field.id])); setPage(0); }}>View student</button>}</td>)}{role === "MENTOR" && type === "ATTENDANCE" && typeof row.recordId === "number" && <td className="p-3"><MentorRecordDelete kind="attendance" id={row.recordId} description={`${display(row.studentName)} (${display(row.uid)}) - attendance date ${display(row.date)}`} onDeleted={() => { setNotice("Attendance record deleted."); setRequestKey(n => n + 1); }} /></td>}</tr>)}</tbody></table>{!current.rows.length && <p className="p-4 text-slate-600">No records match these filters.</p>}</div><div className="mt-4 flex items-center gap-4"><button type="button" className={button} disabled={busy || page === 0} onClick={() => setPage(n => n - 1)}>Previous</button><span>Page {page + 1}</span><button type="button" className={button} disabled={busy || (page + 1) * 50 >= current.totalRows} onClick={() => setPage(n => n + 1)}>Next</button></div></>}
-        </>}
-      </section>
-    </div>
+
+    {role === "ADMIN" && !attendanceOnly && (
+      <div className="mt-6 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-1" role="tablist" aria-label="Reporting Mode">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mainTab === "QUICK"}
+            onClick={() => setMainTab("QUICK")}
+            className={`px-4 py-2 text-xs transition font-medium ${
+              mainTab === "QUICK"
+                ? "bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 border-b-2 border-blue-600 font-bold"
+                : "bg-transparent text-slate-600 dark:text-slate-400 border-b-2 border-transparent hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+            }`}
+          >
+            Quick Reports
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mainTab === "CUSTOM"}
+            onClick={() => setMainTab("CUSTOM")}
+            className={`px-4 py-2 text-xs transition font-medium ${
+              mainTab === "CUSTOM"
+                ? "bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 border-b-2 border-blue-600 font-bold"
+                : "bg-transparent text-slate-600 dark:text-slate-400 border-b-2 border-transparent hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+            }`}
+          >
+            Custom Report Builder
+          </button>
+        </div>
+      </div>
+    )}
+
+    {role === "ADMIN" && !attendanceOnly && mainTab === "CUSTOM" ? (
+      <div className="mt-6">
+        <CustomReportBuilder
+          initialReport={loadedSavedReport}
+          onSaved={() => {}}
+        />
+      </div>
+    ) : (
+      <>
+        <div className="mt-6 grid gap-6 lg:grid-cols-[16.5rem_1fr] items-start">
+          <nav aria-label="Report types" className="space-y-1.5 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-xs">
+            <p className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              Report Selection
+            </p>
+            {options?.types.filter(item => !attendanceOnly || item.id.startsWith("ATTENDANCE")).map(item => {
+              const isSelected = type === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => changeType(item.id)}
+                  aria-current={isSelected ? "page" : undefined}
+                  className={`report-nav-item w-full rounded-xl px-3.5 py-2.5 text-left transition-all ${
+                    isSelected
+                      ? "border-blue-200 border-l-[3.5px] border-l-blue-600 bg-blue-50/80 text-blue-900 shadow-xs"
+                      : "border-slate-100 bg-white text-slate-700 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                  }`}
+                >
+                  <span className={`block text-xs sm:text-sm leading-tight ${isSelected ? "text-blue-950 font-bold" : "text-slate-800 font-semibold"}`}>
+                    {item.title}
+                  </span>
+                  {item.description && (
+                    <span className={`mt-0.5 block text-[11px] leading-snug line-clamp-1 ${isSelected ? "text-blue-700/90" : "text-slate-500"}`}>
+                      {item.available ? item.description : `Unavailable · ${item.description}`}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+          <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5">
+            <h2 className="report-document text-xl font-bold">{report?.title}</h2><p className="mt-2 text-sm text-slate-600">{report?.description}</p>
+            {report?.available && <div className="mt-4"><button data-button-variant="text" type="button" disabled={busy} className="text-sm underline" onClick={() => setPickerOpen(value => !value)}>Choose {role === "MENTOR" ? "assigned " : ""}students</button>{pickerOpen && <div className="mt-3 rounded-lg border border-slate-200 p-4"><label className="text-sm">Search students<input className={control} value={pickerSearch} onChange={e => { setPickerSearch(e.target.value); setPickerPage(0); }} /></label><button data-button-variant="text" type="button" className="mt-2 text-sm" onClick={() => { setIds(""); setPage(0); }}>Use all authorized students</button>{pickerError && <p role="alert" className="text-red-700">{pickerError}</p>}<div className="mt-3 space-y-2">{picker?.rows.map((row, index) => <label key={`picker-row-${row.studentId ?? "s"}-${row.uid ?? "u"}-${row.company ?? "c"}-${index}`} className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={busy} checked={ids.split(",").map(id => id.trim()).includes(String(row.studentId))} onChange={e => { const next = new Set(ids.split(",").map(id => id.trim()).filter(Boolean)); if (e.target.checked) next.add(String(row.studentId)); else next.delete(String(row.studentId)); setIds([...next].join(", ")); setPage(0); }} />{display(row.studentName)} · {display(row.uid)} · {display(row.company)}</label>)}</div>{picker && <div className="mt-3 flex gap-4"><button data-button-variant="text" type="button" disabled={pickerPage === 0} onClick={() => setPickerPage(p => p - 1)} className="text-sm">Previous students</button><button data-button-variant="text" type="button" disabled={(pickerPage + 1) * 50 >= picker.totalRows} onClick={() => setPickerPage(p => p + 1)} className="text-sm">Next students</button></div>}</div>}</div>}
+            {report?.available && <><fieldset disabled={busy} className="mt-5"><legend className="font-semibold">Filters</legend><div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{availableFilters.map(filter => <label key={filter.id} className="text-sm">{filter.label}{filter.type === "select" ? <select className={control} value={filters[filter.id] || ""} onChange={e => { setFilters({ ...filters, [filter.id]: e.target.value }); setPage(0); }}><option value="">All</option>{filter.choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select> : <input className={control} type={filter.type} value={filters[filter.id] || ""} onChange={e => { setFilters({ ...filters, [filter.id]: e.target.value }); setPage(0); }} />}<span className="mt-1 block text-xs text-slate-500">{filter.description}</span></label>)}<label className="text-sm">Selected student account IDs<input className={control} value={ids} onChange={e => { setIds(e.target.value); setPage(0); }} placeholder="e.g. 12, 18, 24" /><span className="mt-1 block text-xs text-slate-500">Leave blank for all authorized students. Every selected ID is checked by the server.</span></label></div><button data-button-variant="text" type="button" className="mt-3 text-sm" onClick={() => { setFilters({}); setIds(""); setPage(0); }}>Clear filters</button></fieldset>
+            <details className="mt-5 rounded-lg border border-slate-200 p-3"><summary className="cursor-pointer font-semibold">Report columns ({selected.length}/{report.fields.length})</summary><div className="mt-3 flex gap-4"><button data-button-variant="text" type="button" disabled={busy} onClick={() => setSelected(report.fields.filter(field => report.id !== "MONTHLY_PROGRESS" || field.defaultSelected).map(field => field.id))} className="text-sm">Select All</button><button data-button-variant="text" type="button" disabled={busy} onClick={() => setSelected([])} className="text-sm">Deselect All</button></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{report.fields.map(field => <label key={field.id} className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={busy} checked={selected.includes(field.id)} onChange={e => setSelected(report.fields.filter(item => item.id === field.id ? e.target.checked : selected.includes(item.id)).map(item => item.id))} />{field.label}</label>)}</div></details>
+            <div className="mt-5 flex flex-wrap items-center gap-3"><button type="button" className={button} disabled={busy || previewBusy || !current || !selected.length} onClick={() => void download("XLSX")}>Export Excel</button><button type="button" className={button} disabled={busy || previewBusy || !current || !selected.length} onClick={() => void download("CSV")}>Export CSV</button><button type="button" className={button} disabled={busy || previewBusy || !current || !selected.length} onClick={() => void download("PDF")}>Export PDF</button><span aria-live="polite" className="text-sm text-slate-600">{busy ? "Generating report…" : previewBusy ? "Loading preview…" : current ? `${current.totalRows} records match. Export includes all matching records.` : "Select at least one column."}</span></div>
+            {current && <><div className="mt-5 flex flex-wrap gap-4">{Object.entries(current.summary).map(([key, value]) => <div key={key} className="rounded-lg bg-slate-50 p-3"><span className="block text-xs text-slate-600">{summaryLabel(key)}</span><strong>{typeof value === "number" ? Number(value.toFixed(1)) : display(value)}</strong></div>)}</div><div className="mt-5 overflow-x-auto"><table className="report-document w-full text-left text-sm"><thead className="bg-slate-100"><tr>{current.fields.map(field => <th key={field.id} className="whitespace-nowrap p-3">{field.label}</th>)}{role === "MENTOR" && type === "ATTENDANCE" && <th className="p-3">Actions</th>}</tr></thead><tbody>{current.rows.map((row, index) => <tr key={`report-row-${row.recordId ?? row.studentId ?? "r"}-${row.internshipId ?? row.monthNumber ?? row.date ?? ""}-${index}`} className="border-b border-slate-200">{current.fields.map(field => <td key={field.id} className="whitespace-pre-wrap p-3">{field.id === "attendanceLatitude" ? <AttendanceLocations evidence={{ latitude: row.attendanceLatitude as number | null, longitude: row.attendanceLongitude as number | null, gpsAccuracyMeters: row.gpsAccuracyMeters as number | null }} /> : displayCell(field, row[field.id])}{attendanceOnly && field.id === "studentId" && <button data-button-variant="text" type="button" className="ml-2 underline" onClick={() => { setIds(String(row[field.id])); setPage(0); }}>View student</button>}</td>)}{role === "MENTOR" && type === "ATTENDANCE" && typeof row.recordId === "number" && <td className="p-3"><MentorRecordDelete kind="attendance" id={row.recordId} description={`${display(row.studentName)} (${display(row.uid)}) - attendance date ${display(row.date)}`} onDeleted={() => { setNotice("Attendance record deleted."); setRequestKey(n => n + 1); }} /></td>}</tr>)}</tbody></table>{!current.rows.length && <p className="p-4 text-slate-600">No records match these filters.</p>}</div><div className="mt-4 flex items-center gap-4"><button type="button" className={button} disabled={busy || page === 0} onClick={() => setPage(n => n - 1)}>Previous</button><span>Page {page + 1}</span><button type="button" className={button} disabled={busy || (page + 1) * 50 >= current.totalRows} onClick={() => setPage(n => n + 1)}>Next</button></div></>}
+            </>}
+          </section>
+        </div>
+
+        {role === "ADMIN" && !attendanceOnly && (
+          <div className="mt-10">
+            <SavedReportsList
+              onLoadReport={saved => {
+                setLoadedSavedReport(saved);
+                setMainTab("CUSTOM");
+              }}
+            />
+          </div>
+        )}
+      </>
+    )}
   </main>;
 }

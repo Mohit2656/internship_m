@@ -42,7 +42,7 @@ public class AttendanceSubmissionService {
         LateAttendancePermission permission = late ? permissions.activePermission(student.getId(), date)
                 .orElseThrow(() -> AttendanceService.error(HttpStatus.CONFLICT, "ATTENDANCE_WINDOW_CLOSED",
                         "Late attendance permission is no longer active")) : null;
-        AttendanceRecord record = attendance.findByStudentIdAndAttendanceDate(student.getId(), date).orElse(null);
+        AttendanceRecord record = attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), internship.getId(), date).orElse(null);
         if (record != null) {
             if (!late || permission == null || !record.isAutomaticAbsent() || record.getEvidence() != null
                     || !record.getInternship().getId().equals(internship.getId())) throw duplicate();

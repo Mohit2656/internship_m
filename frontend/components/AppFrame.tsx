@@ -11,7 +11,7 @@ import { AdminSidebar } from "@/components/AdminSidebar";
 import { MentorSidebar } from "@/components/MentorSidebar";
 import { SettingsDropdown } from "@/components/SettingsDropdown";
 
-export function AppFrame({ children }: { children: React.ReactNode }) {
+export function AppFrame({ children, activeSection }: { children: React.ReactNode; activeSection?: string }) {
   const { user, logout } = useAuth(); const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -75,13 +75,13 @@ export function AppFrame({ children }: { children: React.ReactNode }) {
         {(user?.role === "STUDENT" || user?.role === "MENTOR" || user?.role === "ADMIN") && <NotificationMenu key={`${user.role}-${user.id}`} role={user.role} />}
         {isStudent && <SettingsDropdown />}
         <button ref={menuButton} type="button" data-button-variant="outline" className="app-menu-toggle" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} aria-controls={isStudent ? "student-navigation" : isAdmin ? "admin-navigation" : isMentor ? "mentor-navigation" : "app-navigation"} onClick={() => setMenuOpen(open => !open)}>
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20"><path strokeLinecap="round" d={menuOpen ? "M6 6l12 12M6 18L18 6" : "M4 6h16M4 12h16M4 18h16"}/></svg><span className="app-menu-label">Menu</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="20" height="20"><path strokeLinecap="round" d={menuOpen ? "M6 6l12 12M6 18L18 6" : "M4 6h16M4 12h16M4 18h16"} /></svg><span className="app-menu-label">Menu</span>
         </button>
       </div>
       {!hasSidebar && <nav id="app-navigation" aria-label="Primary navigation" className="app-navigation" data-open={menuOpen}>
         {isAdmin ? <>{groups.map(group => <section key={group.title} className="app-nav-group" aria-label={group.title}><h2 className="app-nav-heading">{group.title}</h2>{group.links.map(renderLink)}</section>)}<section className="app-nav-group" aria-label="Account"><h2 className="app-nav-heading">Account</h2><p className="app-nav-hint">Notifications and theme controls are above.</p><button type="button" data-button-variant="outline" onClick={signOut} className="app-sign-out">Sign out</button></section></> : <>{links.map(renderLink)}<button type="button" data-button-variant="outline" onClick={signOut} className="app-sign-out">Sign out</button></>}
       </nav>}
     </div></header>
-    {hasSidebar ? <div className="student-app-layout"><div ref={studentSidebar}>{isStudent ? <StudentSidebar pathname={pathname} hash={hash} open={menuOpen} onNavigate={()=>closeMenu()} onSignOut={signOut}/> : isAdmin ? <AdminSidebar pathname={pathname} hash={hash} open={menuOpen} onNavigate={()=>closeMenu()} onSignOut={signOut}/> : <MentorSidebar pathname={pathname} hash={hash} open={menuOpen} onNavigate={()=>closeMenu()} onSignOut={signOut}/>}</div><div className="app-page-content">{children}</div></div>:<div className="app-page-content">{children}</div>}
+    {hasSidebar ? <div className="student-app-layout"><div ref={studentSidebar}>{isStudent ? <StudentSidebar pathname={pathname} hash={hash} open={menuOpen} onNavigate={() => closeMenu()} onSignOut={signOut} /> : isAdmin ? <AdminSidebar pathname={pathname} hash={hash} activeSection={activeSection} open={menuOpen} onNavigate={() => closeMenu()} onSignOut={signOut} /> : <MentorSidebar pathname={pathname} hash={hash} open={menuOpen} onNavigate={() => closeMenu()} onSignOut={signOut} />}</div><div className="app-page-content">{children}</div></div> : <div className="app-page-content">{children}</div>}
   </div>;
 }

@@ -63,6 +63,10 @@ app:
     max-metadata-location-difference-meters: ${ATTENDANCE_MAX_METADATA_LOCATION_DIFFERENCE_METERS:100}
     max-metadata-age-seconds: ${ATTENDANCE_MAX_METADATA_AGE_SECONDS:600}
     ai-session-duration-seconds: ${ATTENDANCE_AI_SESSION_DURATION_SECONDS:180}
+  institution:
+    name: ${INSTITUTION_NAME:St. Vincent Pallotti College of Engineering and Technology}
+    department: ${DEPARTMENT_NAME:Department of Computer Engineering}
+    header: ${REPORT_HEADER:INTERNSHIP MANAGEMENT REPORT}
   profile-encryption-key: ${PROFILE_ENCRYPTION_KEY}
   file-storage:
     root: ${DOCUMENT_STORAGE_ROOT:./data/internship-documents}

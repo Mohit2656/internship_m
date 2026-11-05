@@ -59,11 +59,17 @@ public class InternshipDetailsService {
         validate(request); InternshipDetails entity=new InternshipDetails(onboarding); apply(entity,request);
         try{details.saveAndFlush(entity);}catch(DataIntegrityViolationException e){throw conflict("SECOND_INTERNSHIP_ALREADY_EXISTS","Internship 2 already exists");}
         locations.registerSelectedPlace(entity,request.workplace()); onboarding.markInternshipDetailsComplete(); onboardings.saveAndFlush(onboarding); weekly.synchronize(entity);
+        if (mentorAssignments != null) {
+            mentorAssignments.ensureInternship2InheritsMentor(principal.id());
+        }
         if (changeNotifications != null) {
             changeNotifications.notifyInternshipSubmitted(principal.id(), entity, request.workplace());
         }
         return response(entity);
     }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private edu.institution.ims.mentor.MentorAssignmentService mentorAssignments;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private edu.institution.ims.notification.StudentChangeNotificationService changeNotifications;
@@ -87,6 +93,9 @@ public class InternshipDetailsService {
         InternshipOnboarding onboarding = onboardings.findByStudentIdAndInternshipNumber(principal.id(), (short) 2)
                 .orElseThrow(InternshipDetailsService::notFound);
         InternshipDetails entity = details.findByOnboardingId(onboarding.getId()).orElseThrow(InternshipDetailsService::notFound);
+        if (mentorAssignments != null) {
+            mentorAssignments.ensureInternship2InheritsMentor(principal.id());
+        }
         return updateEntity(principal, entity, request);
     }
 

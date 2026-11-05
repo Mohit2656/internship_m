@@ -136,7 +136,11 @@ public class DashboardReportRepository {
             Map<String, Object> row = new LinkedHashMap<>(); row.put("_id", rs.getLong("report_student_id"));
             for (var field : fields) {
                 Object value = field.expression() == null ? null : rs.getObject(field.id());
-                if (field.id().equals("aadhaarNumber") && value != null) value = encryption.decrypt(value.toString());
+                if (field.id().equals("aadhaarNumber") && value != null) {
+                    try {
+                        value = encryption.decrypt(value.toString());
+                    } catch (Exception ignored) {}
+                }
                 row.put(field.id(), value);
             }
             return row;

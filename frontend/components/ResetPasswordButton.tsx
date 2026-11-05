@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 import { resetErrorMessage, PasswordResetResponse } from "@/lib/password-reset";
 
-export function ResetPasswordButton({ userId, name, email, disabled = false }: { userId: number; name: string; email: string; disabled?: boolean }) {
+export function ResetPasswordButton({ userId, name, email, disabled = false, className = "mt-3 text-sm" }: { userId: number; name: string; email: string; disabled?: boolean; className?: string }) {
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
@@ -45,7 +45,7 @@ export function ResetPasswordButton({ userId, name, email, disabled = false }: {
     catch { if (requestGeneration === generation.current) setCopyStatus("Unable to copy. Select the password and copy it manually."); }
   }
   return <>
-    <button data-button-variant="outline" ref={trigger} type="button" disabled={disabled} onClick={() => setOpen(true)} className="mt-3 text-sm">Reset Password</button>
+    <button data-button-variant="outline" ref={trigger} type="button" disabled={disabled} onClick={() => setOpen(true)} className={className}>Reset Password</button>
     {open && <dialog ref={dialog} onCancel={event => { event.preventDefault(); close(); }} aria-labelledby={`reset-title-${userId}`} className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl backdrop:bg-slate-950/50">
       <h2 id={`reset-title-${userId}`} className="text-xl font-bold">Reset password</h2>
       <p className="mt-3 break-words font-semibold">{name}</p><p className="break-words text-sm text-slate-600">{email}</p>

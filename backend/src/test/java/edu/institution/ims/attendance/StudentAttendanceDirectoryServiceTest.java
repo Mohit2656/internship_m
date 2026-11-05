@@ -14,12 +14,13 @@ import static org.mockito.ArgumentMatchers.*;
 class StudentAttendanceDirectoryServiceTest {
     private final UserRepository users = mock(UserRepository.class);
     private final MentorStudentAssignmentRepository assignments = mock(MentorStudentAssignmentRepository.class);
+    private final MentorProfileRepository mentorProfiles = mock(MentorProfileRepository.class);
     private final InternshipDetailsRepository internships = mock(InternshipDetailsRepository.class);
     private final AttendanceRepository records = mock(AttendanceRepository.class);
     private final AttendancePolicyService policies = mock(AttendancePolicyService.class);
     private final AttendanceCalendarProperties calendar = new AttendanceCalendarProperties();
     private final Clock clock = Clock.fixed(Instant.parse("2026-10-22T07:00:00Z"), ZoneId.of("Asia/Kolkata"));
-    private final StudentAttendanceDirectoryService service = new StudentAttendanceDirectoryService(users, assignments, internships, records, policies, calendar, clock);
+    private final StudentAttendanceDirectoryService service = new StudentAttendanceDirectoryService(users, assignments, mentorProfiles, internships, records, policies, calendar, clock);
     private final User student = student();
     private final InternshipDetails internship = internship();
     private User student() { User user = mock(User.class); when(user.getId()).thenReturn(1L); when(user.getRole()).thenReturn(Role.STUDENT); when(user.isActive()).thenReturn(true); return user; }

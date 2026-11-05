@@ -37,11 +37,12 @@ public class MentorAttendanceService {
                 assignments.findAllByMentorIdAndActiveTrueOrderByStudentEmailAsc(principal.id());
         if (current.isEmpty()) return List.of();
         List<Long> studentIds = current.stream().map(a -> a.getStudent().getId()).toList();
-        Map<Long, InternshipDetails> internshipByStudent = internships.findAllByOnboardingStudentIdIn(studentIds)
-                .stream().collect(Collectors.toMap(d -> d.getOnboarding().getStudent().getId(), Function.identity()));
-        Map<Long, AttendanceRecord> attendanceByStudent = attendance
-                .findAllByStudentIdInAndAttendanceDate(studentIds, LocalDate.now(clock))
-                .stream().collect(Collectors.toMap(a -> a.getStudent().getId(), Function.identity()));
+        Map<Long, InternshipDetails> internshipByStudent = new HashMap<>();
+        internships.findAllByOnboardingStudentIdIn(studentIds)
+                .forEach(d -> internshipByStudent.putIfAbsent(d.getOnboarding().getStudent().getId(), d));
+        Map<Long, AttendanceRecord> attendanceByStudent = new HashMap<>();
+        attendance.findAllByStudentIdInAndAttendanceDate(studentIds, LocalDate.now(clock))
+                .forEach(a -> attendanceByStudent.putIfAbsent(a.getStudent().getId(), a));
 
         LocalDate today = LocalDate.now(clock);
         return current.stream().map(assignment -> response(assignment.getStudent(),

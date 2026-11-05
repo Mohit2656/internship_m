@@ -249,6 +249,8 @@ class OnlineHybridAttendanceIntegrationTest {
         assertThat(attendance.findAll()).isEmpty(); assertThat(evidence.findAll()).isEmpty();
     }
 
+
+
     private void saveSchedule(User student, String mode) throws Exception {
         mvc.perform(put("/api/v1/admin/students/{id}/internship/hybrid-schedule", student.getId())
                         .cookie(adminSession).contentType(MediaType.APPLICATION_JSON).content(scheduleJson(mode)))
@@ -314,6 +316,8 @@ class OnlineHybridAttendanceIntegrationTest {
     }
 
     private void clearData() {
+        jdbc.update("delete from late_attendance_permissions");
+        jdbc.update("delete from attendance_submission_audit");
         jdbc.update("delete from workplace_review_audit");
         evidence.deleteAll(); attendance.deleteAll(); verificationSessions.deleteAll(); locations.deleteAll(); schedules.deleteAll(); assignments.deleteAll();
         internships.deleteAll(); onboardings.deleteAll(); studentProfiles.deleteAll(); mentorProfiles.deleteAll();

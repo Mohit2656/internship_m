@@ -38,7 +38,7 @@ function renderStudent(item) {
   const hooks = { useEffect() {}, useRef() { return { current: null }; }, useState(initial) {
     const index = cursor++;
     return [index === 0 ? { attendance: item } : index === 3 ? false : initial, () => {}];
-  }};
+  }, useCallback(fn) { return fn; }};
   const { TodayAttendanceCard } = load("components/TodayAttendanceCard.tsx", {
     react: hooks, "@/lib/api": {}, "@/components/AttendanceLocations": submissionLocations, "@/components/LocationVerificationResult": locationVerification, "@/lib/attendance": attendance, "@/lib/edge-ai": {}
   });
@@ -96,7 +96,8 @@ function cameraHarness({ liveness = true, method = "PHYSICAL", today = {}, locat
   const hooks = {
     useState(initial) { const i = stateIndex++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === "function" ? value(states[i]) : value; }]; },
     useRef(initial) { const i = refIndex++; if (!(i in refs)) refs[i] = { current: i === 0 ? video : i === 1 ? canvas : initial }; return refs[i]; },
-    useEffect(effect, dependencies) { const i = effectIndex++; if (!effects[i] || dependencies.some((value, n) => value !== effects[i][n])) { effects[i] = dependencies; pendingEffects.push(effect); } }
+    useEffect(effect, dependencies) { const i = effectIndex++; if (!effects[i] || dependencies.some((value, n) => value !== effects[i][n])) { effects[i] = dependencies; pendingEffects.push(effect); } },
+    useCallback(fn) { return fn; }
   };
   const api = {
     async get(url) { return { data: url.endsWith("/policy") ? { internshipMode: "OFFICE_REPORTING", verificationMethod: method, configurationReady: true, maxGpsAccuracyMeters } : { attendanceDate: "2026-10-11", attendance: null, ...today } }; },

@@ -71,7 +71,7 @@ public class AttendanceService {
         AttendanceRecord record = submissions.record(student, internship, today,
                 VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC);
         locationVerification.save(new AttendanceEvidence(record, location, clock.instant()), internship,
-                location, locationCapturedAt, true, accuracy);
+                location, locationCapturedAt, false, accuracy);
         record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
         attendance.saveAndFlush(record);
         return response(record);

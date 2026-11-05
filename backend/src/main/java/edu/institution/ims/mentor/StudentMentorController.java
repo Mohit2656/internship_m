@@ -72,7 +72,8 @@ public class StudentMentorController {
             }
         }
 
-        String int2Mentor = generalMentor;
+        // Automatic Mentor Assignment: Internship 2 automatically inherits the same mentor as Internship 1
+        String int2Mentor = int1Mentor;
         if (int2 != null) {
             InternshipLocation loc2 = locations.findByInternshipId(int2.getId()).orElse(null);
             if (loc2 != null && loc2.getMentorReviewer() != null) {

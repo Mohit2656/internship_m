@@ -145,6 +145,66 @@ public class MentorAssignmentService {
                 mentorId, mentorId == null ? null : mentorNames.get(mentorId));
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    @Transactional
+    public void ensureInternship2InheritsMentor(Long studentId) {
+        if (studentId == null) return;
+        if (assignments.findByStudentIdAndActiveTrue(studentId).isPresent()) {
+            return;
+        }
+        User student = users.findById(studentId).filter(u -> u.getRole() == Role.STUDENT && u.isActive()).orElse(null);
+        if (student == null || jdbc == null) return;
+
+        try {
+            Long reviewerId = jdbc.query(
+                    "select l.mentor_approved_by from internship_details d "
+                    + "join internship_onboarding o on o.id=d.onboarding_id and o.internship_number=1 "
+                    + "join internship_locations l on l.internship_id=d.id "
+                    + "where o.student_user_id=? and l.mentor_approved_by is not null",
+                    (rs, n) -> rs.getLong(1), studentId).stream().findFirst().orElse(null);
+            if (reviewerId != null) {
+                User mentor = users.findById(reviewerId).filter(u -> u.isActive() && u.getRole() == Role.MENTOR).orElse(null);
+                if (mentor != null) {
+                    assignments.saveAndFlush(new MentorStudentAssignment(mentor, student, mentor, Instant.now()));
+                    return;
+                }
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            String mentorName = jdbc.query("select faculty_mentor_name from student_profiles where user_id=?",
+                    (rs, n) -> rs.getString(1), studentId).stream().findFirst().orElse(null);
+            if (mentorName != null && !mentorName.isBlank()) {
+                var mentorProfile = mentors.findAllByOrderByNameAsc().stream()
+                        .filter(p -> p.getName() != null && p.getName().trim().equalsIgnoreCase(mentorName.trim()))
+                        .findFirst().orElse(null);
+                if (mentorProfile != null && mentorProfile.getUser() != null && mentorProfile.getUser().isActive()
+                        && mentorProfile.getUser().getRole() == Role.MENTOR) {
+                    assignments.saveAndFlush(new MentorStudentAssignment(mentorProfile.getUser(), student, mentorProfile.getUser(), Instant.now()));
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    @jakarta.annotation.PostConstruct
+    @Transactional
+    public void backfillMissingInternship2Mentors() {
+        if (jdbc == null) return;
+        try {
+            List<Long> studentIds = jdbc.query(
+                    "select distinct o.student_user_id from internship_onboarding o "
+                    + "where o.internship_number = 2 and not exists ("
+                    + "  select 1 from mentor_student_assignments a where a.student_user_id = o.student_user_id and a.active = true"
+                    + ")",
+                    (rs, n) -> rs.getLong(1));
+            for (Long sid : studentIds) {
+                ensureInternship2InheritsMentor(sid);
+            }
+        } catch (Exception ignored) {}
+    }
+
     private static MentorAssignmentException error(HttpStatus status, String code, String message) {
         return new MentorAssignmentException(status, code, message);
     }

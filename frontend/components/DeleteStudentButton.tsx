@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { publishStudentAccountsChanged, StudentDeletionPreview, StudentDeletionResult } from "@/lib/student-deletion";
 
-export function DeleteStudentButton({ student, onDeleted }: { student: { id: number; studentName: string | null; uid: string | null; loginEmail: string }; onDeleted: (result: StudentDeletionResult) => void | Promise<void> }) {
+export function DeleteStudentButton({ student, onDeleted, className = "mt-3 ml-2 text-sm text-red-700" }: { student: { id: number; studentName: string | null; uid: string | null; loginEmail: string }; onDeleted: (result: StudentDeletionResult) => void | Promise<void>; className?: string }) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<StudentDeletionPreview | null>(null);
@@ -35,7 +35,7 @@ export function DeleteStudentButton({ student, onDeleted }: { student: { id: num
     finally { busy.current = false; setPending(false); }
   }
   if (user?.role !== "ADMIN" || user.id === student.id) return null;
-  return <><button ref={trigger} type="button" data-button-variant="outline" className="mt-3 ml-2 text-sm text-red-700" onClick={() => void start()}>Delete Student</button>
+  return <><button ref={trigger} type="button" data-button-variant="outline" className={className} onClick={() => void start()}>Delete Student</button>
     {open && <dialog ref={dialog} onCancel={e => { e.preventDefault(); close(); }} aria-labelledby={`delete-student-${student.id}`} className="m-auto max-h-[90dvh] w-[min(95vw,38rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-xl backdrop:bg-slate-950/50">
       <form onSubmit={e => { e.preventDefault(); void remove(); }}><h2 id={`delete-student-${student.id}`} className="text-xl font-bold">Delete Student</h2>
         <dl className="mt-4 space-y-2 break-words text-sm"><div><dt className="text-xs text-slate-500">Student</dt><dd className="font-semibold">{preview?.name ?? student.studentName ?? "Name not recorded"}</dd></div><div><dt className="text-xs text-slate-500">UID</dt><dd>{preview?.uid ?? student.uid ?? "UID not recorded"}</dd></div><div><dt className="text-xs text-slate-500">Email</dt><dd>{preview?.email ?? student.loginEmail}</dd></div></dl>

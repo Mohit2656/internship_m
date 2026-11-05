@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AxiosError } from "axios";
 import { api, ApiError } from "@/lib/api";
 import { AiVerificationEvidence, AiVerificationSession, Attendance, AttendancePolicy, HybridSchedule, TodayAttendance, attendanceLabel, attendanceSubmissionOpen, isAutomaticAbsence, livenessLabel } from "@/lib/attendance";
@@ -10,13 +10,102 @@ import { LocationVerificationResult } from "@/components/LocationVerificationRes
 import { captureAttendanceLocation, accuracyDescription, usableAccuracy, type AttendanceLocationSample } from "@/lib/attendance-location";
 import type { InternshipDetails } from "@/lib/internship-details";
 
+function getCameraErrorMessage(cause: unknown): { status: string; message: string } {
+  if (cause instanceof DOMException) {
+    if (cause.name === "NotAllowedError" || cause.name === "PermissionDeniedError") {
+      return {
+        status: "Camera permission denied",
+        message: "Camera permission was denied. Please allow camera access in your browser settings to verify attendance."
+      };
+    }
+    if (cause.name === "NotReadableError" || cause.name === "TrackStartError") {
+      return {
+        status: "Camera in use by another application",
+        message: "Camera is in use by another application. Please close other applications or browser tabs using your camera and retry."
+      };
+    }
+    if (cause.name === "NotFoundError" || cause.name === "DevicesNotFoundError") {
+      return {
+        status: "No camera detected",
+        message: "No camera detected. Please connect a working camera device to verify attendance."
+      };
+    }
+    if (cause.name === "OverconstrainedError") {
+      return {
+        status: "Camera initialization failed",
+        message: "The requested camera resolution or settings are not supported by your device."
+      };
+    }
+  }
+  const apiMessage = (cause as AxiosError<ApiError>)?.response?.data?.message;
+  if (apiMessage) {
+    return {
+      status: "Camera initialization failed",
+      message: apiMessage
+    };
+  }
+  return {
+    status: "Camera initialization failed",
+    message: "Camera or Edge AI could not initialize. Check camera access and retry."
+  };
+}
+
+function parseAttendanceError(cause: unknown): string {
+  const axiosError = cause as AxiosError<ApiError>;
+  const data = axiosError.response?.data;
+  const status = axiosError.response?.status;
+  const code = data?.code;
+  const message = data?.message;
+
+  if (code === "ATTENDANCE_ALREADY_SUBMITTED" || status === 409) {
+    return "Attendance has already been submitted for this internship today.";
+  }
+  if (code === "ATTENDANCE_WINDOW_CLOSED") {
+    return "Attendance submission is not permitted at this time (submission window has closed).";
+  }
+  if (code === "SUBMISSION_LOCATION_REQUIRED" || code === "LOCATION_REQUIRED") {
+    return "Location verification failed: a valid GPS location is required. Allow location access and retry.";
+  }
+  if (code === "GPS_ACCURACY_TOO_POOR") {
+    return "Location verification failed: GPS accuracy is insufficient. Please move outdoors or near a window and retry.";
+  }
+  if (code === "LOCATION_OUT_OF_BOUNDS" || code === "OUTSIDE_RADIUS" || code === "WORKPLACE_NOT_APPROVED") {
+    return "Location verification failed: your current location could not be verified against the workplace zone.";
+  }
+  if (code === "INVALID_CAMERA_IMAGE" || code === "CAMERA_IMAGE_REQUIRED") {
+    return "Attendance photograph could not be verified. Please capture a clear photo.";
+  }
+  if (code === "INVALID_DAILY_WORK_SUMMARY") {
+    return "Please enter a valid work/activity description (20 to 1000 characters).";
+  }
+  if (code === "ATTENDANCE_NOT_ELIGIBLE") {
+    return message || "Selected internship is not currently eligible for attendance submission.";
+  }
+  if (code === "STUDENT_REQUIRED") {
+    return "Student authorization could not be verified. Please log in again.";
+  }
+  if (code === "MENTOR_NOT_ASSIGNED") {
+    return "Your mentor assignment is pending. Please contact your coordinator.";
+  }
+  if (code === "AI_CHALLENGE_FAILED" || code === "LIVENESS_FAILED") {
+    return "Liveness verification failed. Please follow the instructions and retry.";
+  }
+  if (!axiosError.response) {
+    return "Network connection issue. Please check your internet connection and try again.";
+  }
+  if (message && message !== "An unexpected error occurred" && !message.toLowerCase().includes("exception") && !message.toLowerCase().includes("sql")) {
+    return message;
+  }
+  return "Unable to submit attendance. Please try again.";
+}
+
 export function TodayAttendanceCard() {
-  const [internships,setInternships]=useState<InternshipDetails[]>([]);
-  const [internshipId,setInternshipId]=useState<number|null>(null);
   const [today, setToday] = useState<TodayAttendance | null>(null);
   const [policy, setPolicy] = useState<AttendancePolicy | null>(null);
   const [schedule, setSchedule] = useState<HybridSchedule | null>(null);
   const [loading, setLoading] = useState(true);
+  const [internships, setInternships] = useState<InternshipDetails[]>([]);
+  const [internshipId, setInternshipId] = useState<number|null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [flowOpen, setFlowOpen] = useState(false);
   const [cameraStatus, setCameraStatus] = useState("");
@@ -40,6 +129,7 @@ export function TodayAttendanceCard() {
   const statusVersionRef = useRef(0);
   const locationCaptureRef = useRef<{ cancel: () => void } | null>(null);
   const [windowClosed, setWindowClosed] = useState(false);
+  const [isFrontCamera, setIsFrontCamera] = useState(true);
   useEffect(()=>{api.get<InternshipDetails[]>("/student/internship/all").then(r=>{setInternships(r.data);setInternshipId(current=>current??r.data[0]?.id??null)}).catch(()=>{})},[]);
 
   useEffect(() => {
@@ -57,26 +147,27 @@ export function TodayAttendanceCard() {
     return () => clearTimeout(timer);
   }, [today]);
 
+  const refreshStatus = useCallback((initial = false) => {
+    const version = statusVersionRef.current;
+    return Promise.all([
+      api.get<TodayAttendance>("/student/attendance/today", { params: { internshipId: internshipId ?? undefined } }),
+      api.get<AttendancePolicy>("/student/attendance/today/policy", { params: { internshipId: internshipId ?? undefined } })
+    ]).then(([attendanceResponse, policyResponse]) => {
+      if (version !== statusVersionRef.current) return;
+      setToday(attendanceResponse.data); setPolicy(policyResponse.data);
+      if (initial && policyResponse.data.internshipMode === "HYBRID") {
+        void api.get<HybridSchedule>("/student/internship/hybrid-schedule")
+          .then(response => { setSchedule(response.data); }).catch(() => { setSchedule(null); });
+      }
+    })
+      .catch(() => { if (initial) setError("Today's attendance status could not be loaded."); })
+      .finally(() => { if (initial) setLoading(false); });
+  }, [internshipId]);
+
   useEffect(() => {
     let cancelled = false;
-    function refreshStatus(initial = false) {
-      const version = statusVersionRef.current;
-      return Promise.all([
-        api.get<TodayAttendance>("/student/attendance/today",{params:{internshipId:internshipId??undefined}}),
-        api.get<AttendancePolicy>("/student/attendance/today/policy",{params:{internshipId:internshipId??undefined}})
-      ]).then(([attendanceResponse, policyResponse]) => {
-        if (cancelled || version !== statusVersionRef.current) return;
-        setToday(attendanceResponse.data); setPolicy(policyResponse.data);
-        if (initial && policyResponse.data.internshipMode === "HYBRID") {
-          void api.get<HybridSchedule>("/student/internship/hybrid-schedule")
-            .then(response => { if (!cancelled) setSchedule(response.data); }).catch(() => { if (!cancelled) setSchedule(null); });
-        }
-      })
-        .catch(() => { if (initial && !cancelled) setError("Today's attendance status could not be loaded."); })
-        .finally(() => { if (initial && !cancelled) setLoading(false); });
-    }
     void refreshStatus(true);
-    const refresh = () => { void refreshStatus(); };
+    const refresh = () => { if (!cancelled) void refreshStatus(false); };
     const timer = typeof window !== "undefined" ? window.setInterval(refresh, 30_000) : null;
     if (typeof window !== "undefined") window.addEventListener("focus", refresh);
     return () => {
@@ -86,9 +177,7 @@ export function TodayAttendanceCard() {
         if (timer !== null) window.clearInterval(timer);
       }
     };
-    // The cleanup intentionally owns camera, animation-frame, model and timer lifecycle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [internshipId]);
+  }, [refreshStatus]);
 
   useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
 
@@ -96,13 +185,36 @@ export function TodayAttendanceCard() {
     const video = videoRef.current;
     const stream = streamRef.current;
     if (!flowOpen || photo || !video || !stream) return;
-    video.srcObject = stream;
-    void video.play().catch(() => setError("The camera preview could not be started."));
-  }, [flowOpen, photo, cameraStatus]);
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
+    }
+    if (video.paused) {
+      void video.play().catch(err => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setError("The camera preview could not be started.");
+      });
+    }
+  }, [flowOpen, photo]);
+
+  useEffect(() => {
+    const isSubmitted = Boolean(today?.attendance && !isAutomaticAbsence(today.attendance));
+    if (isSubmitted && flowOpen) {
+      stopCamera();
+      setFlowOpen(false);
+    }
+  }, [today, flowOpen]);
 
   function stopCamera() {
     locationCaptureRef.current?.cancel(); locationCaptureRef.current = null;
     locationRequestRef.current += 1;
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      } catch {
+        // Safe reset
+      }
+    }
     streamRef.current?.getTracks().forEach(track => track.stop());
     streamRef.current = null;
     analyzerRef.current?.close(); analyzerRef.current = null;
@@ -113,29 +225,66 @@ export function TodayAttendanceCard() {
   async function videoElement() {
     for (let attempt = 0; attempt < 30; attempt += 1) {
       if (videoRef.current) return videoRef.current;
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      await new Promise<void>(resolve => {
+        if (typeof requestAnimationFrame !== "undefined") {
+          requestAnimationFrame(() => resolve());
+        } else {
+          setTimeout(resolve, 16);
+        }
+      });
     }
     throw new Error("Camera preview did not initialize");
   }
 
   async function startCamera() {
-    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
+    const isSubmitted = Boolean(today?.attendance && !isAutomaticAbsence(today.attendance));
+    if (isSubmitted) {
+      stopCamera();
+      setFlowOpen(false);
+      setError("Today's attendance has already been submitted for this internship.");
+      return;
+    }
+    if (!attendanceSubmissionOpen(today)) {
+      setWindowClosed(true);
+      setError("Today's attendance submission window has closed.");
+      return;
+    }
     locationRequestRef.current += 1; setSubmissionLocation(null); setLocationNotice(""); setLocating(false);
     stopCamera(); setError(""); setAiError(""); setFlowOpen(true); setPhoto(null);
     setAiSession(null); setAiState(null); aiPassedRef.current = false;
     setCameraStatus("Preparing server challenge…");
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraStatus(""); setError("Camera access is unavailable. Open the application at http://localhost:3000 in a supported browser.");
+      setCameraStatus("No camera detected");
+      setError("Camera access is unavailable. Open the application at http://localhost:3000 in a supported browser.");
       return;
     }
     try {
       const sessionResponse = await api.post<AiVerificationSession>("/student/attendance/verification-session",null,{params:{internshipId:internshipId??undefined}});
       setAiSession(sessionResponse.data);
       setCameraStatus("Requesting camera permission…");
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
       streamRef.current = stream;
+      const videoTrack = stream.getVideoTracks?.()[0] ?? stream.getTracks?.()[0];
+      const settings = videoTrack?.getSettings ? videoTrack.getSettings() : undefined;
+      const isFront = settings?.facingMode ? settings.facingMode !== "environment" : true;
+      setIsFrontCamera(isFront);
+      setCameraStatus("Loading camera preview…");
       const video = await videoElement();
-      video.srcObject = stream; await video.play();
+      if (video.srcObject !== stream) {
+        video.srcObject = stream;
+      }
+      try {
+        await video.play();
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          throw err;
+        }
+      }
       setCameraStatus("Loading private on-device face analysis…");
       const analyzer = new EdgeAiAnalyzer(); analyzerRef.current = analyzer;
       await analyzer.initialize();
@@ -146,14 +295,19 @@ export function TodayAttendanceCard() {
       challengeTimeoutRef.current = setTimeout(() => {
         if (!aiPassedRef.current) setAiError("Could not confirm liveness in time. Please retry edge verification.");
       }, 30_000);
-      setCameraStatus("Camera and Edge AI ready");
+      setCameraStatus("Camera ready");
     } catch (cause) {
-      setCameraStatus("");
-      const name = cause instanceof DOMException ? cause.name : "";
-      const apiMessage = (cause as AxiosError<ApiError>).response?.data?.message;
-      setError(apiMessage ?? (name === "NotAllowedError"
-        ? "Camera access is required to verify attendance. Please allow camera access in your browser settings."
-        : "Camera or Edge AI could not initialize. Check camera access and retry."));
+      const apiMessage = (cause as AxiosError<ApiError>)?.response?.data?.message;
+      if (apiMessage && apiMessage.toLowerCase().includes("already been submitted")) {
+        stopCamera();
+        setFlowOpen(false);
+        setError("Today's attendance has already been submitted.");
+        void refreshStatus();
+        return;
+      }
+      const { status, message } = getCameraErrorMessage(cause);
+      setCameraStatus(status);
+      setError(message);
       stopCamera();
     }
   }
@@ -164,7 +318,16 @@ export function TodayAttendanceCard() {
       setError("Complete face positioning and the liveness challenge before capturing attendance."); return;
     }
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext("2d");
+    if (isFrontCamera && ctx && typeof ctx.save === "function") {
+      ctx.save();
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    } else {
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
     const captured = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.85));
     if (!captured) { setError("The camera image could not be captured."); return; }
     stopCamera();
@@ -234,12 +397,20 @@ export function TodayAttendanceCard() {
     }
     setSubmitting(true); setError("");
     try {
-      const { data } = await api.post<Attendance>("/student/attendance/today", null, { params: { internshipId:internshipId??undefined, latitude: submissionLocation.latitude, longitude: submissionLocation.longitude, accuracy: Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? submissionLocation.accuracy : undefined, ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {}) } });
+      const { data } = await api.post<Attendance>("/student/attendance/today", null, {
+        params: {
+          ...(internshipId ? { internshipId } : {}),
+          latitude: submissionLocation.latitude,
+          longitude: submissionLocation.longitude,
+          ...(Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? { accuracy: submissionLocation.accuracy } : {}),
+          ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {})
+        }
+      });
       statusVersionRef.current += 1;
       setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
       stopCamera(); setFlowOpen(false);
     } catch (cause) {
-      setError((cause as AxiosError<ApiError>).response?.data?.message ?? "Attendance could not be submitted.");
+      setError(parseAttendanceError(cause));
     } finally { setSubmitting(false); }
   }
 
@@ -256,12 +427,24 @@ export function TodayAttendanceCard() {
     appendSubmissionLocation(form);
     if(internshipId) form.append("internshipId",String(internshipId));
     try {
-      const { data } = await api.post<Attendance>("/student/attendance/today/physical", form,
-        { headers: { "Content-Type": "multipart/form-data" } });
+      const { data } = await api.post<Attendance>("/student/attendance/today/physical", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        params: {
+          ...(internshipId ? { internshipId } : {}),
+          ...(submissionLocation ? {
+            latitude: submissionLocation.latitude,
+            longitude: submissionLocation.longitude,
+            ...(Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? { accuracy: submissionLocation.accuracy } : {}),
+            ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {})
+          } : {})
+        },
+      });
       statusVersionRef.current += 1;
-      setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false })); setFlowOpen(false);
+      setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
+      stopCamera();
+      setFlowOpen(false);
     } catch (cause) {
-      setError((cause as AxiosError<ApiError>).response?.data?.message ?? "Attendance could not be submitted.");
+      setError(parseAttendanceError(cause));
     } finally { setSubmitting(false); }
   }
 
@@ -283,12 +466,25 @@ export function TodayAttendanceCard() {
     form.append("dailyWorkSummary", summary);
     if(internshipId) form.append("internshipId",String(internshipId));
     try {
-      const { data } = await api.post<Attendance>("/student/attendance/today/remote", form,
-        { headers: { "Content-Type": "multipart/form-data" } });
+      const { data } = await api.post<Attendance>("/student/attendance/today/remote", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        params: {
+          ...(internshipId ? { internshipId } : {}),
+          dailyWorkSummary: summary,
+          ...(submissionLocation ? {
+            latitude: submissionLocation.latitude,
+            longitude: submissionLocation.longitude,
+            ...(Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? { accuracy: submissionLocation.accuracy } : {}),
+            ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {})
+          } : {})
+        },
+      });
       statusVersionRef.current += 1;
-      setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false })); setFlowOpen(false);
+      setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
+      stopCamera();
+      setFlowOpen(false);
     } catch (cause) {
-      setError((cause as AxiosError<ApiError>).response?.data?.message ?? "Attendance could not be submitted.");
+      setError(parseAttendanceError(cause));
     } finally { setSubmitting(false); }
   }
 
@@ -303,7 +499,7 @@ export function TodayAttendanceCard() {
   const locationCaptureControl = <div className="mt-4 text-sm text-slate-600"><button data-button-variant="text" type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="hover:underline">{locating ? "Capturing submission location..." : poorAccuracy ? "Retry GPS capture" : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance.{!remote && typeof policy?.maxGpsAccuracyMeters === "number" && ` Required GPS accuracy: ${policy.maxGpsAccuracyMeters} m or better.`}</p>{locationNotice && <p role={poorAccuracy ? "alert" : "status"} className={`mt-2 ${poorAccuracy ? "text-amber-800" : ""}`}>{locationNotice}</p>}</div>;
   return (
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-7 lg:col-span-2">
-      {internships.length>1&&<label className="mb-5 block text-sm font-semibold">Attendance internship<select className="input mt-2" value={internshipId??""} onChange={e=>{setInternshipId(Number(e.target.value));setToday(null);setPolicy(null);setLoading(true)}}>{internships.map(i=><option key={i.id} value={i.id}>Internship {i.internshipNumber} — {i.companyName}</option>)}</select></label>}
+      {internships.length>1&&<label className="mb-5 block text-sm font-semibold">Attendance internship<select className="input mt-2" value={internshipId??""} onChange={e=>{stopCamera();setFlowOpen(false);setError("");setAiError("");setInternshipId(Number(e.target.value));setToday(null);setPolicy(null);setLoading(true)}}>{internships.map(i=><option key={i.id} value={i.id}>Internship {i.internshipNumber} — {i.companyName}</option>)}</select></label>}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Today&apos;s Attendance</p><h2 className="mt-3 text-xl font-bold">{loading ? "Checking attendance…" : attendance ? attendanceLabel(attendance) : "Not submitted"}</h2></div>
         {attendance && attendance.attendanceResult === "PRESENT" && <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${attendance.livenessStatus === "VERIFIED" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{livenessLabel(attendance.livenessStatus)}</span>}
@@ -324,18 +520,105 @@ export function TodayAttendanceCard() {
       {!loading && !submitted && policy && !physical && !remote && locationCaptureControl}
       {!loading && !submitted && !windowClosed && flowOpen && <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div className="mb-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-950"><p className="font-bold">Edge Verification</p><p className="mt-1">Camera analysis verifies a live attendance capture on this device. Face recognition and identity matching are not performed.</p></div>
-        {!photo ? <video ref={videoRef} playsInline muted className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" /> : <img src={photoUrl} alt="Fresh attendance camera capture" className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" />}
+        {!photo ? <video ref={videoRef} playsInline muted style={{ transform: isFrontCamera ? "scaleX(-1)" : "none" }} className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" /> : <img src={photoUrl} alt="Fresh attendance camera capture" className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" />}
         <canvas ref={canvasRef} className="hidden" />
-        <div className="mt-4 flex flex-wrap gap-3 text-sm"><span className={cameraStatus ? "font-semibold text-emerald-700" : "text-slate-500"}>{cameraStatus || "Camera unavailable"}</span></div>
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+          <span className={cameraStatus === "Camera ready" ? "font-semibold text-emerald-700" : cameraStatus.includes("denied") || cameraStatus.includes("in use") || cameraStatus.includes("No camera") || cameraStatus.includes("failed") ? "font-semibold text-red-700" : "font-medium text-slate-600"}>{cameraStatus || "Camera loading…"}</span>
+        </div>
         {!photo && aiSession && <div className="mt-4 max-w-xl rounded-xl border border-slate-200 bg-white p-4 text-sm"><p className="font-semibold">Liveness challenge: {challengeLabel(aiSession.challenge)}</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><span>{aiState?.faceDetected ? "✓" : "○"} Face detected</span><span>{aiState?.singleFace && aiState.qualityPassed ? "✓" : "○"} Face positioned</span><span>{aiState?.livenessPassed ? "✓" : "○"} Liveness confirmed</span></div><p className="mt-3 text-slate-600">{aiState?.guidance ?? "Loading face analysis…"}</p></div>}
         {aiError && <p role="alert" className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">{aiError}</p>}
         {!loading && !submitted && policy && photo && locationCaptureControl}
-        <div className="mt-4 flex flex-wrap gap-3">
-          {!photo && streamRef.current && <button type="button" disabled={!aiState?.livenessPassed || !aiState.qualityPassed} onClick={() => void capture()} className="text-sm">Capture Attendance</button>}
-          {!photo && aiError && <button data-button-variant="outline" type="button" onClick={() => void startCamera()} className="text-sm">Retry Edge Verification</button>}
-          {photo && remote && <label className="w-full max-w-xl text-sm font-semibold text-slate-700">Today&apos;s work/activity<textarea value={dailyWorkSummary} onChange={event => setDailyWorkSummary(event.target.value)} minLength={20} maxLength={1000} rows={4} placeholder="Describe the work you completed today (20–1000 characters)." className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 font-normal"/><span className="mt-1 block text-xs font-normal text-slate-500">{dailyWorkSummary.trim().length} / 1000 characters</span></label>}
-          {photo && <><button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || locating || !submissionLocation || (remote && dailyWorkSummary.trim().length < 20)} onClick={() => void (remote ? submitRemote() : submitPhysical())} className="text-sm">{submitting ? "Submitting…" : "Submit Attendance"}</button><button data-button-variant="outline" type="button" disabled={submitting} onClick={() => void startCamera()} className="text-sm">Retake</button></>}
-          <button data-button-variant="text" type="button" onClick={() => { stopCamera(); setLocating(false); setFlowOpen(false); setError(""); }} className="text-sm">Cancel</button>
+        {photo && remote && (
+          <div className="mt-4 w-full max-w-xl">
+            <label htmlFor="daily-work-summary" className="block text-sm font-semibold text-slate-700">
+              Today&apos;s work/activity
+            </label>
+            <textarea
+              id="daily-work-summary"
+              value={dailyWorkSummary}
+              onChange={event => setDailyWorkSummary(event.target.value)}
+              minLength={20}
+              maxLength={1000}
+              rows={4}
+              placeholder="Describe the work you completed today (20–1000 characters)."
+              className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            />
+            <div className="mt-1 flex justify-between text-xs text-slate-500">
+              <span>{dailyWorkSummary.trim().length < 20 ? `Minimum 20 characters required (${20 - dailyWorkSummary.trim().length} more needed)` : "Minimum character requirement met"}</span>
+              <span>{dailyWorkSummary.trim().length} / 1000 characters</span>
+            </div>
+          </div>
+        )}
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {photo ? (
+            <>
+              <button
+                type="button"
+                disabled={
+                  windowClosed ||
+                  !attendanceSubmissionOpen(today) ||
+                  submitting ||
+                  locating ||
+                  !submissionLocation ||
+                  (remote && dailyWorkSummary.trim().length < 20)
+                }
+                onClick={() => void (remote ? submitRemote() : submitPhysical())}
+                className="text-sm"
+              >
+                {submitting ? "Submitting…" : "Submit Attendance"}
+              </button>
+              <button
+                data-button-variant="outline"
+                type="button"
+                disabled={submitting}
+                onClick={() => void startCamera()}
+                className="text-sm"
+              >
+                Retake
+              </button>
+            </>
+          ) : (
+            <>
+              {streamRef.current && (
+                <button
+                  type="button"
+                  disabled={!aiState?.livenessPassed || !aiState.qualityPassed}
+                  onClick={() => void capture()}
+                  className="text-sm"
+                >
+                  Capture Attendance
+                </button>
+              )}
+              {(cameraStatus.includes("denied") ||
+                cameraStatus.includes("in use") ||
+                cameraStatus.includes("No camera") ||
+                cameraStatus.includes("failed") ||
+                Boolean(aiError)) && (
+                <button
+                  data-button-variant="outline"
+                  type="button"
+                  onClick={() => void startCamera()}
+                  className="text-sm"
+                >
+                  Retry Camera
+                </button>
+              )}
+            </>
+          )}
+          <button
+            data-button-variant="text"
+            type="button"
+            disabled={submitting}
+            onClick={() => {
+              stopCamera();
+              setLocating(false);
+              setFlowOpen(false);
+              setError("");
+            }}
+            className="text-sm"
+          >
+            Cancel
+          </button>
         </div>
       </div>}
       {error && <p role="alert" className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}

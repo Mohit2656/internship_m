@@ -273,6 +273,45 @@ class LateAttendancePermissionIntegrationTest {
                 .isEqualTo(VerificationReason.EDGE_AI_LIVENESS_FAILED);
     }
 
+    @Test
+    void dualInternshipLateSubmissionForInternship2() throws Exception {
+        InternshipDetails int2 = internship(student, (short) 2, InternshipMode.ONLINE, "Company Two");
+        assertThat(absenceWriter.createIfMissing(internship.getId(), TODAY)).isTrue();
+        assertThat(absenceWriter.createIfMissing(int2.getId(), TODAY)).isTrue();
+
+        AttendanceRecord original2 = attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), int2.getId(), TODAY).orElseThrow();
+        clock.setInstant(AFTER_NOON.plusSeconds(600));
+        change(mentorSession, student, true).andExpect(status().isOk());
+
+        String sessionRes = mvc.perform(post("/api/v1/student/attendance/verification-session")
+                .queryParam("internshipId", String.valueOf(int2.getId()))
+                .cookie(studentSession))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        var issued = json.readTree(sessionRes);
+        String payload = json.writeValueAsString(Map.of(
+                "sessionId", issued.get("sessionId").asText(),
+                "challenge", issued.get("challenge").asText(),
+                "faceCount", 1, "qualityPassed", true, "livenessPassed", true,
+                "modelVersion", "mediapipe-face-landmarker@1.0.1/test"));
+        MockMultipartFile ai = new MockMultipartFile("aiEvidence", "ai-evidence.json", "application/json", payload.getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile latPart = new MockMultipartFile("latitude", "", "text/plain", "18.5204".getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile lonPart = new MockMultipartFile("longitude", "", "text/plain", "73.8567".getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile accPart = new MockMultipartFile("accuracy", "", "text/plain", "40".getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile locTimePart = new MockMultipartFile("locationCapturedAt", "", "text/plain", "2026-09-18T07:05:00Z".getBytes(StandardCharsets.UTF_8));
+
+        var imgBytes = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB), "png", imgBytes);
+        var req = multipart("/api/v1/student/attendance/today/remote")
+                .file(new MockMultipartFile("photo", "capture.png", "image/png", imgBytes.toByteArray()))
+                .file(ai).file(latPart).file(lonPart).file(accPart).file(locTimePart)
+                .queryParam("internshipId", String.valueOf(int2.getId()))
+                .queryParam("dailyWorkSummary", SUMMARY)
+                .cookie(studentSession);
+
+        var result = mvc.perform(req).andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(201);
+    }
+
     private ResultActions change(Cookie session, User target, boolean enabled) throws Exception {
         return mvc.perform(put(PERMISSIONS + "/{id}", target.getId()).cookie(session)
                 .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("enabled", enabled))));
@@ -322,13 +361,17 @@ class LateAttendancePermissionIntegrationTest {
     }
 
     private InternshipDetails internship(User student) {
-        InternshipOnboarding onboarding = onboardings.saveAndFlush(new InternshipOnboarding(student));
+        return internship(student, (short) 1, InternshipMode.ONLINE, "Late Test Ltd");
+    }
+
+    private InternshipDetails internship(User student, short number, InternshipMode mode, String company) {
+        InternshipOnboarding onboarding = onboardings.saveAndFlush(new InternshipOnboarding(student, number));
         onboarding.markDocumentsComplete();
         onboarding.confirmDiary();
         InternshipDetails details = new InternshipDetails(onboarding);
-        details.apply("Late Test Ltd", CompanyType.IT, null, "Company address", "+91 9876543210",
+        details.apply(company, CompanyType.IT, null, "Company address", "+91 9876543210",
                 "Supervisor", "Manager", "+91 9876543211", 2, TODAY.minusDays(5), TODAY.plusDays(5),
-                8, InternshipMode.ONLINE, BigDecimal.ZERO, false);
+                8, mode, BigDecimal.ZERO, false);
         internships.saveAndFlush(details);
         onboarding.markInternshipDetailsComplete();
         onboardings.saveAndFlush(onboarding);

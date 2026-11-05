@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 :root { --ink: #17202e; --muted: #64748b; --navy: #123052; --blue: #2563eb; }
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--ink); background: #f4f7fb; font-family: Arial, Helvetica, sans-serif; }
@@ -55,7 +57,7 @@ button, input { font: inherit; }
   --button-disabled: #bfdbfe;
   --button-radius: .75rem;
 }
-:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item) {
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):not(.overview-summary-card):not(.dashboard-interactive-btn):not(.student-sidebar-backdrop):not(.compact-btn):not(.dropdown-item-btn):not(.attendance-pct-btn):not(.chevron-btn):not(.plain-link-btn):not(.table-action-btn) {
   min-height: 2.75rem;
   padding: .625rem 1rem;
   border: 1px solid var(--button-blue);
@@ -94,8 +96,8 @@ button.text-left { text-align: left; }
   justify-content: center;
 }
 button[data-button-variant="icon"].absolute { top: 50%; right: .25rem; bottom: auto; transform: translateY(-50%); }
-:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):enabled:hover,
-.ui-button:not([aria-disabled="true"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):hover {
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):not(.overview-summary-card):not(.dashboard-interactive-btn):not(.student-sidebar-backdrop):not(.compact-btn):not(.dropdown-item-btn):not(.attendance-pct-btn):not(.chevron-btn):not(.plain-link-btn):not(.table-action-btn):enabled:hover,
+.ui-button:not([aria-disabled="true"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):not(.overview-summary-card):not(.dashboard-interactive-btn):not(.student-sidebar-backdrop):not(.compact-btn):not(.dropdown-item-btn):not(.attendance-pct-btn):not(.chevron-btn):not(.plain-link-btn):not(.table-action-btn):hover {
   background: var(--button-hover);
   border-color: var(--button-hover);
   color: white;
@@ -105,13 +107,139 @@ button[data-button-variant="icon"].absolute { top: 50%; right: .25rem; bottom: a
   border-color: var(--button-blue);
   color: var(--button-active);
 }
-:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not(:disabled):not([aria-disabled="true"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):active,
-button[aria-pressed="true"]:not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item) {
+:is(button, .ui-button, input[type="submit"], input[type="button"], input[type="reset"]):not(:disabled):not([aria-disabled="true"]):not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):not(.overview-summary-card):not(.dashboard-interactive-btn):not(.student-sidebar-backdrop):not(.compact-btn):not(.dropdown-item-btn):not(.attendance-pct-btn):not(.chevron-btn):not(.plain-link-btn):not(.table-action-btn):active,
+button[aria-pressed="true"]:not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):not(.overview-summary-card):not(.dashboard-interactive-btn):not(.student-sidebar-backdrop):not(.compact-btn):not(.dropdown-item-btn):not(.attendance-pct-btn):not(.chevron-btn):not(.plain-link-btn):not(.table-action-btn) {
   background: var(--button-active);
   border-color: var(--button-active);
   color: white;
 }
-button[aria-pressed="true"]:not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item) > span { color: inherit; }
+button[aria-pressed="true"]:not([role="tab"]):not([role="option"]):not(.segmented-tab):not(.report-nav-item):not(.student-select-btn):not(.selection-item):not(.overview-summary-card):not(.dashboard-interactive-btn):not(.student-sidebar-backdrop):not(.compact-btn):not(.dropdown-item-btn):not(.attendance-pct-btn):not(.chevron-btn):not(.plain-link-btn):not(.table-action-btn) > span { color: inherit; }
+
+/* Compact table actions, dropdown items, attendance percentages, and chevrons */
+.compact-btn,
+.table-action-btn {
+  min-height: 2rem !important;
+  height: 2rem !important;
+  padding: 0.25rem 0.625rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  border-radius: 0.5rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.25rem !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  text-decoration: none !important;
+  box-shadow: none !important;
+  transition: all 0.15s ease !important;
+}
+
+.dropdown-item-btn {
+  min-height: unset !important;
+  height: auto !important;
+  padding: 0.5rem 0.75rem !important;
+  border: none !important;
+  border-radius: 0.375rem !important;
+  background: transparent !important;
+  color: #334155 !important;
+  font-size: 0.75rem !important;
+  font-weight: 500 !important;
+  line-height: 1.25 !important;
+  width: 100% !important;
+  text-align: left !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+.dropdown-item-btn:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+html[data-theme="dark"] .dropdown-item-btn {
+  color: #cbd5e1 !important;
+}
+html[data-theme="dark"] .dropdown-item-btn:hover {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+.attendance-pct-btn,
+.plain-link-btn {
+  min-height: unset !important;
+  height: auto !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  line-height: inherit !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.375rem !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  text-decoration: none !important;
+}
+.attendance-pct-btn:hover {
+  text-decoration: underline !important;
+  background: transparent !important;
+}
+
+.chevron-btn {
+  min-height: unset !important;
+  width: 1.75rem !important;
+  height: 1.75rem !important;
+  padding: 0 !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 0.375rem !important;
+  background: #ffffff !important;
+  color: #64748b !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  transition: all 0.15s ease !important;
+}
+.chevron-btn:hover {
+  background: #f8fafc !important;
+  color: #1e293b !important;
+  border-color: #cbd5e1 !important;
+}
+html[data-theme="dark"] .chevron-btn {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #94a3b8 !important;
+}
+html[data-theme="dark"] .chevron-btn:hover {
+  background: #334155 !important;
+  color: #f1f5f9 !important;
+}
+
+/* Student Overview & Dashboard Interactive Cards inside III Cell Dashboard */
+.overview-summary-card,
+.dashboard-interactive-btn {
+  min-height: unset !important;
+  border-radius: 1rem !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  display: block !important;
+  width: 100% !important;
+  font-weight: normal !important;
+  line-height: normal !important;
+  transition: all 0.15s ease !important;
+}
+.overview-summary-card {
+  padding: 1.25rem !important;
+}
 
 /* Student Selection Rows inside Mentor Documents */
 .student-select-btn {
@@ -333,8 +461,36 @@ html { scroll-padding-top: 6rem; }
 .student-sidebar-link:hover { background: #eff6ff; color: #1d4ed8; }
 .student-sidebar-link[aria-current="page"] { background: #eaf1ff; color: #1d4ed8; box-shadow: inset 3px 0 #2563eb; }
 .student-sidebar-signout { width: 100%; margin-top: 1rem; }
-.student-sidebar-backdrop { position: fixed; inset: 0; z-index: 50; display: none; width: 100%; height: 100%; border: 0; border-radius: 0; background: rgb(15 23 42 / .48); }
-.student-sidebar-backdrop[data-open="true"] { display: block; }
+.student-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  width: 100%;
+  height: 100%;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  min-height: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  cursor: pointer;
+  background: transparent;
+  transition: opacity .2s ease, background-color .2s ease;
+}
+.student-sidebar-backdrop[data-open="true"] {
+  display: block;
+  background: rgb(15 23 42 / 0.8) !important;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.student-sidebar-backdrop:is(:hover, :active, :focus) {
+  background: rgb(15 23 42 / 0.8) !important;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
 .app-page-content h1 { color: #123052; font-size: clamp(1.625rem, 4vw, 2rem); letter-spacing: -.035em; line-height: 1.25; text-wrap: balance; }
 .app-page-content h2 { line-height: 1.4; }
 .app-page-content :is(section, form).rounded-2xl.bg-white { border-color: #dce5ef; box-shadow: 0 3px 16px rgb(18 48 82 / .035); }
@@ -443,7 +599,7 @@ html[data-theme="dark"] :is(.app-nav-heading, .app-nav-hint) { color: #a2b1c7; }
 html[data-theme="dark"] .app-nav-link { color: #b9cee9; }
 html[data-theme="dark"] .app-nav-link:hover,
 html[data-theme="dark"] .app-nav-link[aria-current="page"] { background: #1b3356; color: #bddbff; }
-html[data-theme="dark"] .app-page-content h1:not(.report-document, .report-document *) { color: #edf4ff; }
+html[data-theme="dark"] .app-page-content :is(h1, h2, h3):not(.report-document, .report-document *) { color: #edf4ff; }
 html[data-theme="dark"] .app-page-content :is(section, form).rounded-2xl.bg-white:not(.report-document, .report-document *) { border-color: #2b3d56; box-shadow: 0 3px 16px rgb(0 0 0 / .12); }
 html[data-theme="dark"] .app-page-content section.border-dashed:not(.report-document, .report-document *) { background: #101e32; }
 
@@ -465,22 +621,22 @@ html[data-theme="dark"] .app-page-content section.border-dashed:not(.report-docu
 
 /* Existing utility colors share a dark palette without changing page layouts. */
 html[data-theme="dark"] :is(.bg-white, [class~="bg-white/85"], [class~="bg-white/80"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #142136; }
-html[data-theme="dark"] :is(.bg-slate-50, .bg-slate-100):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #1b2a40; }
-html[data-theme="dark"] :is(.bg-slate-200, .bg-slate-300):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #33465f; }
-html[data-theme="dark"] :is(.border-slate-100, .border-slate-200, .border-slate-300, [class~="border-slate-300/90"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #34465f; }
+html[data-theme="dark"] :is(.bg-slate-50, .bg-slate-100, [class~="bg-slate-50/50"], [class~="bg-slate-50/60"], [class~="bg-slate-50/70"], [class~="bg-slate-100/90"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #1b2a40; }
+html[data-theme="dark"] :is(.bg-slate-200, .bg-slate-300, [class~="bg-slate-200/70"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #33465f; }
+html[data-theme="dark"] :is(.border-slate-100, .border-slate-200, .border-slate-300, [class~="border-slate-200/60"], [class~="border-slate-200/80"], [class~="border-slate-300/90"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #34465f; }
 html[data-theme="dark"] .divide-slate-100 > :not(:last-child):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #2b3d56; }
 html[data-theme="dark"] :is(.text-slate-950, .text-slate-900, .text-slate-800):not(.login-page, .login-page *, .report-document, .report-document *) { color: #edf4ff; }
 html[data-theme="dark"] :is(.text-slate-700, .text-slate-600):not(.login-page, .login-page *, .report-document, .report-document *) { color: #bac9dd; }
 html[data-theme="dark"] :is(.text-slate-500, .text-slate-400):not(.login-page, .login-page *, .report-document, .report-document *) { color: #9cacc2; }
 html[data-theme="dark"] :is(.bg-blue-50, .bg-blue-100, [class~="bg-blue-50/40"], [class~="bg-blue-50/45"], [class~="bg-blue-50/60"], [class~="bg-blue-100/55"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #182f50; }
 html[data-theme="dark"] .bg-blue-200:not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #36577f; }
-html[data-theme="dark"] :is(.border-blue-100, .border-blue-200):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #345782; }
-html[data-theme="dark"] :is(.text-blue-700, .text-blue-800, .text-blue-900, .text-blue-950):not(.login-page, .login-page *, .report-document, .report-document *) { color: #99c7ff; }
-html[data-theme="dark"] :is(.bg-emerald-50, .bg-emerald-100, [class~="bg-emerald-50/50"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #113a34; }
-html[data-theme="dark"] .border-emerald-200:not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #286452; }
+html[data-theme="dark"] :is(.border-blue-100, .border-blue-200, [class~="border-blue-200/80"], [class~="border-blue-200/90"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #345782; }
+html[data-theme="dark"] :is(.text-blue-700, .text-blue-800, .text-blue-900, .text-blue-950, [class~="text-blue-700/80"], [class~="text-blue-700/90"]):not(.login-page, .login-page *, .report-document, .report-document *) { color: #99c7ff; }
+html[data-theme="dark"] :is(.bg-emerald-50, .bg-emerald-100, [class~="bg-emerald-50/50"], [class~="bg-emerald-50/70"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #113a34; }
+html[data-theme="dark"] :is(.border-emerald-200, [class~="border-emerald-200/80"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #286452; }
 html[data-theme="dark"] :is(.text-emerald-600, .text-emerald-700, .text-emerald-800, .text-emerald-950):not(.login-page, .login-page *, .report-document, .report-document *) { color: #8ce0bc; }
-html[data-theme="dark"] :is(.bg-amber-50, .bg-amber-100, [class~="bg-amber-50/50"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #3b2d1b; }
-html[data-theme="dark"] .border-amber-200:not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #765a30; }
+html[data-theme="dark"] :is(.bg-amber-50, .bg-amber-100, [class~="bg-amber-50/50"], [class~="bg-amber-50/60"], [class~="bg-amber-50/70"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #3b2d1b; }
+html[data-theme="dark"] :is(.border-amber-200, [class~="border-amber-200/80"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #765a30; }
 html[data-theme="dark"] :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950):not(.login-page, .login-page *, .report-document, .report-document *) { color: #f2cd83; }
 html[data-theme="dark"] :is(.bg-red-50, .bg-rose-50):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #41262e; }
 html[data-theme="dark"] :is(.border-red-100, .border-red-200):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #79414e; }
@@ -544,6 +700,53 @@ html[data-theme="dark"] .student-select-btn[aria-selected="true"] {
   border-color: #3b82f6 !important;
   border-left-color: #60a5fa !important;
   color: #ffffff !important;
+}
+
+/* Segmented tab controls and track in dark mode */
+html[data-theme="dark"] [role="tablist"]:not(.report-document, .report-document *) {
+  background-color: #0d1726;
+  border-color: #22344c;
+}
+
+html[data-theme="dark"] :is(button, .ui-button)[role="tab"]:not([aria-selected="true"]),
+html[data-theme="dark"] .segmented-tab:not([aria-selected="true"]) {
+  background-color: transparent;
+  border-color: transparent;
+  color: #9cacc2;
+}
+
+html[data-theme="dark"] :is(button, .ui-button)[role="tab"]:hover:not([aria-selected="true"]),
+html[data-theme="dark"] .segmented-tab:hover:not([aria-selected="true"]) {
+  background-color: #17273d;
+  color: #edf4ff;
+}
+
+html[data-theme="dark"] :is(button, .ui-button)[role="tab"][aria-selected="true"],
+html[data-theme="dark"] .segmented-tab[aria-selected="true"] {
+  background-color: #173256;
+  border-color: #3b82f6;
+  color: #edf4ff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / .3);
+}
+
+html[data-theme="dark"] .segmented-tab[aria-selected="true"] :is(.text-blue-700, [class~="text-blue-700/80"], [class~="text-blue-700/90"]) {
+  color: #bfdbfe;
+}
+
+html[data-theme="dark"] .segmented-tab:not([aria-selected="true"]) :is(.text-slate-500, .text-slate-600) {
+  color: #9cacc2;
+}
+
+html[data-theme="dark"] .segmented-tab[aria-selected="true"] :is(.bg-blue-100, .border-blue-200) {
+  background-color: #20406d;
+  border-color: #3b82f6;
+  color: #bfdbfe;
+}
+
+html[data-theme="dark"] .segmented-tab:not([aria-selected="true"]) :is(.bg-white, .border-slate-200) {
+  background-color: #142136;
+  border-color: #2b3d56;
+  color: #9cacc2;
 }
 
 @media (max-width: 420px) {

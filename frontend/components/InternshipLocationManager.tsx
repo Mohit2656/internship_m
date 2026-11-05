@@ -45,7 +45,6 @@ export function InternshipLocationManager({
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
   const [correctionPending, setCorrectionPending] = useState(false);
-  const [refreshVersion, setRefreshVersion] = useState(0);
   const [selectedInternshipId, setSelectedInternshipId] = useState<number | undefined>(
     internshipId ?? initialInternshipId ?? (internships && internships.length > 0 ? internships[0].id : undefined)
   );
@@ -104,7 +103,7 @@ export function InternshipLocationManager({
       })
       .finally(() => { if (!abort.signal.aborted && version === requestVersion.current) setLoading(false); });
     return () => { abort.abort(); requestVersion.current++; };
-  }, [studentId, scope, activeInternshipId, refreshVersion]);
+  }, [studentId, scope, activeInternshipId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || loading || saving || confirming || correction || radiusChanged || reason.trim()) return;
@@ -122,7 +121,7 @@ export function InternshipLocationManager({
             setLocation(null);
             setError("");
           } else {
-            setError("Workplace status could not be refreshed. Showing the last loaded status; retry Refresh status.");
+            setError("Workplace status could not be refreshed. Showing the last loaded status.");
           }
         })
         .finally(() => { if (pending === abort) pending = null; });
@@ -136,7 +135,7 @@ export function InternshipLocationManager({
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", refresh);
       window.clearInterval(timer);
     };
-  }, [studentId, scope, activeInternshipId, refreshVersion, loading, saving, confirming, correction, radiusChanged, reason]);
+  }, [studentId, scope, activeInternshipId, loading, saving, confirming, correction, radiusChanged, reason]);
 
   async function save() {
     if (mutationPending.current || (correction && (correctionPending || !selection?.address || reason.trim().length < 5))) return;
@@ -179,7 +178,7 @@ export function InternshipLocationManager({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Physical Attendance Location</p>
-          <h2 className="mt-2 text-xl font-bold">Registered workplace</h2>
+          <h2 className="mt-2 text-xl font-bold text-slate-900">Registered workplace</h2>
           {scope === "student" ? (
             <p className="mt-2 text-sm text-slate-600">
               Workplace coordinates saved during internship details submission are used for attendance geofence verification.
@@ -192,12 +191,12 @@ export function InternshipLocationManager({
         </div>
         {!loading && (
           <span
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold border ${
               location?.status === "APPROVED"
-                ? "bg-emerald-50 text-emerald-800"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                 : location?.status === "REJECTED"
-                ? "bg-rose-50 text-rose-800"
-                : "bg-amber-50 text-amber-800"
+                ? "border-rose-200 bg-rose-50 text-rose-800"
+                : "border-amber-200 bg-amber-50 text-amber-800"
             }`}
           >
             {statusLabel}
@@ -219,7 +218,7 @@ export function InternshipLocationManager({
                 onClick={() => setSelectedInternshipId(item.id)}
                 className={`segmented-tab flex items-center gap-2 rounded-md px-3.5 py-1.5 text-xs font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
                   isSelected
-                    ? "bg-blue-50 text-blue-700 border border-blue-200/90 shadow-xs font-semibold"
+                    ? "bg-blue-50 text-blue-700 border border-blue-200 shadow-xs font-semibold"
                     : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
                 }`}
               >
@@ -269,13 +268,13 @@ export function InternshipLocationManager({
         ) : (
           <div className="mt-5 space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Company Name</p>
                 <p className="mt-1 text-sm font-bold text-slate-900">
                   {location.companyName || selectedInternship?.companyName || "—"}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Registered Workplace</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">
                   {location.workplaceName || location.companyName || "Registered workplace"}
@@ -287,19 +286,19 @@ export function InternshipLocationManager({
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Latitude</p>
                 <p className="mt-1 text-sm font-bold text-slate-900 font-mono">
                   {location.latitude != null ? Number(location.latitude).toFixed(6) : "—"}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Longitude</p>
                 <p className="mt-1 text-sm font-bold text-slate-900 font-mono">
                   {location.longitude != null ? Number(location.longitude).toFixed(6) : "—"}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
                 <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Attendance Geofence Radius</p>
                 <p className="mt-1 text-sm font-bold text-slate-900">
                   {location.geofenceRadiusMeters ?? 200} meters
@@ -312,13 +311,13 @@ export function InternshipLocationManager({
             </div>
 
             {approvalMessage && (
-              <p role="status" className="mt-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+              <p role="status" className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                 {approvalMessage}
               </p>
             )}
 
             {location.coordinatesLocked && (
-              <p role="status" className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">
+              <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">
                 Location approved by mentor — student coordinates are locked for this workplace revision.
               </p>
             )}
@@ -334,7 +333,7 @@ export function InternshipLocationManager({
             </p>
             <LocationMapLink latitude={location?.latitude} longitude={location?.longitude} label="Open in Google Maps" />
           </div>
-          {approvalMessage && <p role="status" className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{approvalMessage}</p>}
+          {approvalMessage && <p role="status" className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{approvalMessage}</p>}
 
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <label className="text-sm font-semibold text-slate-700">Latitude<input type="number" step="0.000001" min="-90" max="90" value={latitude} readOnly className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" /></label>
@@ -387,23 +386,11 @@ export function InternshipLocationManager({
           )}
 
           {location?.coordinatesLocked && (
-            <p role="status" className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">
+            <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">
               Location approved by mentor — student coordinates are locked for this workplace revision.
             </p>
           )}
         </>
-      )}
-
-      {!loading && (
-        <button
-          data-button-variant="outline"
-          type="button"
-          disabled={saving || confirming || correction || radiusChanged}
-          onClick={() => setRefreshVersion(value => value + 1)}
-          className="mt-4 text-sm"
-        >
-          Refresh status
-        </button>
       )}
       {location?.status === "APPROVED" && location.confirmedAt && (
         <p className="mt-4 text-xs text-slate-500">Confirmed {new Date(location.confirmedAt).toLocaleString()}.</p>

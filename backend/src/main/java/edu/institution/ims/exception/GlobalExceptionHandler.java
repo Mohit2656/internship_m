@@ -42,7 +42,31 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AttendanceException.class) ResponseEntity<ApiError> attendance(AttendanceException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
     @ExceptionHandler(ResumeException.class) ResponseEntity<ApiError> resume(ResumeException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
     @ExceptionHandler(OpportunityException.class) ResponseEntity<ApiError> opportunity(OpportunityException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
-    @ExceptionHandler(DataIntegrityViolationException.class) ResponseEntity<ApiError> duplicateConstraint() { return error(HttpStatus.CONFLICT, "DUPLICATE_EMAIL", "An account with this email already exists"); }
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ResponseEntity<ApiError> dataIntegrity(DataIntegrityViolationException e) {
+        log.error("DataIntegrityViolationException caught: ", e);
+        String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+        if (msg.contains("attendance") || msg.contains("uk_attendance")) {
+            return error(HttpStatus.CONFLICT, "ATTENDANCE_ALREADY_SUBMITTED", "Today's attendance has already been submitted");
+        }
+        if (msg.contains("email") || msg.contains("users_email")) {
+            return error(HttpStatus.CONFLICT, "DUPLICATE_EMAIL", "An account with this email already exists");
+        }
+        return error(HttpStatus.CONFLICT, "DATA_CONFLICT", "A conflicting record already exists");
+    }
+    @ExceptionHandler(IllegalStateException.class)
+    ResponseEntity<ApiError> illegalState(IllegalStateException e) {
+        log.error("IllegalStateException caught: ", e);
+        return error(HttpStatus.CONFLICT, "INVALID_STATE", e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : "Operation could not be completed in current state");
+    }
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    ResponseEntity<ApiError> missingParam(org.springframework.web.bind.MissingServletRequestParameterException e) {
+        return error(HttpStatus.BAD_REQUEST, "MISSING_PARAMETER", "Required parameter is missing: " + e.getParameterName());
+    }
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ApiError> unsupportedMedia(org.springframework.web.HttpMediaTypeNotSupportedException e) {
+        return error(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE", "Content type is not supported");
+    }
     @ExceptionHandler(ProfileConflictException.class) ResponseEntity<ApiError> profileConflict(ProfileConflictException e) { return error(HttpStatus.CONFLICT, e.getCode(), e.getMessage()); }
     @ExceptionHandler(ProfileNotFoundException.class) ResponseEntity<ApiError> profileNotFound(ProfileNotFoundException e) { return error(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", e.getMessage()); }
     @ExceptionHandler(OnboardingException.class) ResponseEntity<ApiError> onboarding(OnboardingException e) { return error(e.getStatus(), e.getCode(), e.getMessage()); }
@@ -60,7 +84,12 @@ public class GlobalExceptionHandler {
         var fields = e.getBindingResult().getFieldErrors().stream().collect(Collectors.toMap(x -> x.getField(), x -> x.getDefaultMessage() == null ? "Invalid value" : x.getDefaultMessage(), (a,b) -> a));
         return ResponseEntity.badRequest().body(new ApiError(Instant.now(), 400, "VALIDATION_FAILED", "Request validation failed", fields));
     }
-    @ExceptionHandler(org.springframework.dao.OptimisticLockingFailureException.class) ResponseEntity<ApiError> changedWorkplace() { return error(HttpStatus.CONFLICT,"RECORD_CHANGED","The record changed during review. Refresh and retry."); }
-    @ExceptionHandler(Exception.class) ResponseEntity<ApiError> unexpected(Exception e) { return error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "An unexpected error occurred"); }
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(Exception.class)
+    ResponseEntity<ApiError> unexpected(Exception e) {
+        log.error("Unhandled exception caught by GlobalExceptionHandler: ", e);
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "An unexpected error occurred while processing your request. Please try again.");
+    }
     private ResponseEntity<ApiError> error(HttpStatus status, String code, String message) { return ResponseEntity.status(status).body(new ApiError(Instant.now(), status.value(), code, message, null)); }
 }

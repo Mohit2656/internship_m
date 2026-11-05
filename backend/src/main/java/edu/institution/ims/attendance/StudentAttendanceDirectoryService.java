@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 public class StudentAttendanceDirectoryService {
     private final UserRepository users;
     private final MentorStudentAssignmentRepository assignments;
+    private final MentorProfileRepository mentorProfiles;
     private final InternshipDetailsRepository internships;
     private final AttendanceRepository attendance;
     private final AttendancePolicyService policies;
@@ -24,17 +25,21 @@ public class StudentAttendanceDirectoryService {
     private final Clock clock;
 
     public StudentAttendanceDirectoryService(UserRepository users, MentorStudentAssignmentRepository assignments,
+            MentorProfileRepository mentorProfiles,
             InternshipDetailsRepository internships, AttendanceRepository attendance, AttendancePolicyService policies,
             AttendanceCalendarProperties calendar, Clock clock) {
-        this.users = users; this.assignments = assignments; this.internships = internships;
-        this.attendance = attendance; this.policies = policies; this.calendar = calendar; this.clock = clock;
+        this.users = users; this.assignments = assignments; this.mentorProfiles = mentorProfiles;
+        this.internships = internships; this.attendance = attendance; this.policies = policies;
+        this.calendar = calendar; this.clock = clock;
     }
 
     public record Totals(long presentDays, long absentDays, long totalDays, BigDecimal percentage) {}
     public record ReviewTotals(long submitted, long gpsVerified, long pending, long approved, long rejected, long manualReview) {}
     public record StudentRow(Long studentUserId, String uid, String studentName, String branch,
             String facultyMentor, String company, String workflowStatus, Totals attendance, ReviewTotals reviewSummary) {}
-    public record History(Long studentUserId, String attendanceZone, Totals totals, List<AttendanceResponse> records) {}
+    public record InternshipSummary(Long id, int internshipNumber, String companyName, String internshipMode) {}
+    public record History(Long studentUserId, String attendanceZone, Totals totals, List<AttendanceResponse> records,
+            List<InternshipSummary> internships, Long selectedInternshipId) {}
 
     public List<StudentRow> students(UserPrincipal principal) {
         requireRole(principal);
@@ -46,8 +51,14 @@ public class StudentAttendanceDirectoryService {
                 .stream().filter(User::isActive).forEach(student -> unique.put(student.getId(), student));
         else current.stream().filter(a -> a.getStudent().isActive()).forEach(assignment -> unique.put(assignment.getStudent().getId(), assignment.getStudent()));
         if (unique.isEmpty()) return List.of();
+        Map<Long, String> mentorNames = mentorProfiles.findAllByOrderByNameAsc().stream()
+                .filter(p -> p.getUser() != null && p.getName() != null && !p.getName().isBlank())
+                .collect(Collectors.toMap(p -> p.getUser().getId(), p -> p.getName().trim(), (a, b) -> a));
         Map<Long, String> mentors = new HashMap<>();
-        current.forEach(a -> mentors.put(a.getStudent().getId(), a.getMentor().getEmail()));
+        current.forEach(a -> {
+            String name = mentorNames.get(a.getMentor().getId());
+            mentors.put(a.getStudent().getId(), name != null && !name.isBlank() ? name : null);
+        });
         Map<Long, InternshipDetails> details = new HashMap<>();
         internships.findAllByOnboardingStudentIdIn(unique.keySet()).forEach(i -> details.putIfAbsent(i.getOnboarding().getStudent().getId(), i));
         Map<Long, List<AttendanceRecord>> records = attendance.findAllByStudentIdInOrderByAttendanceDateAscIdAsc(unique.keySet())
@@ -55,7 +66,11 @@ public class StudentAttendanceDirectoryService {
         return unique.values().stream().map(student -> {
             var profile = student.getStudentProfile(); var account = student.getStudentAccount();
             var internship = details.get(student.getId()); var onboarding = student.getInternshipOnboarding();
-            return new StudentRow(student.getId(), profile != null ? profile.getUid() : account == null ? null : account.getUid(),
+            String authoritativeUid = profile != null && profile.getUid() != null && !profile.getUid().isBlank()
+                    ? profile.getUid().trim()
+                    : (account != null && account.getUid() != null && !account.getUid().isBlank() && !account.getUid().contains("@")
+                        ? account.getUid().trim() : null);
+            return new StudentRow(student.getId(), authoritativeUid,
                     profile != null ? profile.getStudentName() : account == null ? null : account.getStudentName(),
                     profile == null ? null : profile.getBranch().getLabel(), mentors.get(student.getId()),
                     internship == null ? null : internship.getCompanyName(),
@@ -65,20 +80,55 @@ public class StudentAttendanceDirectoryService {
     }
 
     public History history(UserPrincipal principal, Long studentId) {
+        return history(principal, studentId, null);
+    }
+
+    public History history(UserPrincipal principal, Long studentId, Long requestedInternshipId) {
         requireRole(principal);
         if (principal.role().equals("MENTOR") && assignments.findByStudentIdAndActiveTrue(studentId)
                 .filter(a -> a.getMentor().getId().equals(principal.id())).isEmpty())
             throw new AttendanceException(HttpStatus.FORBIDDEN, "STUDENT_NOT_ASSIGNED", "This student is not assigned to you");
         users.findById(studentId).filter(u -> u.getRole() == Role.STUDENT).orElseThrow(() ->
                 new AttendanceException(HttpStatus.NOT_FOUND, "STUDENT_NOT_FOUND", "Student not found"));
-        List<AttendanceRecord> records = attendance.findAllByStudentIdInOrderByAttendanceDateAscIdAsc(List.of(studentId));
-        return new History(studentId, clock.getZone().getId(), totals(records), records.stream().map(AttendanceService::response).toList());
+
+        List<InternshipDetails> studentInternships = internships.findAllByOnboardingStudentIdOrderByOnboardingInternshipNumber(studentId);
+        List<InternshipSummary> internshipSummaries = studentInternships.stream()
+                .map(i -> new InternshipSummary(i.getId(), i.getOnboarding().getInternshipNumber(), i.getCompanyName(),
+                        i.getInternshipMode() == null ? null : i.getInternshipMode().name()))
+                .toList();
+
+        InternshipDetails selectedInternship = null;
+        if (requestedInternshipId != null) {
+            selectedInternship = studentInternships.stream()
+                    .filter(i -> i.getId().equals(requestedInternshipId))
+                    .findFirst()
+                    .orElseThrow(() -> new AttendanceException(HttpStatus.NOT_FOUND, "INTERNSHIP_NOT_FOUND", "Internship was not found for this student"));
+        } else if (!studentInternships.isEmpty()) {
+            selectedInternship = studentInternships.get(0);
+        }
+
+        List<AttendanceRecord> records;
+        if (selectedInternship != null) {
+            records = attendance.findAllByStudentIdAndInternshipIdOrderByAttendanceDateAscIdAsc(studentId, selectedInternship.getId());
+        } else {
+            records = attendance.findAllByStudentIdInOrderByAttendanceDateAscIdAsc(List.of(studentId));
+        }
+
+        Long selectedId = selectedInternship != null ? selectedInternship.getId() : null;
+        return new History(studentId, clock.getZone().getId(), totals(records, selectedInternship),
+                records.stream().map(AttendanceService::response).toList(), internshipSummaries, selectedId);
     }
 
     Totals totals(List<AttendanceRecord> records) {
+        return totals(records, null);
+    }
+
+    Totals totals(List<AttendanceRecord> records, InternshipDetails fallbackInternship) {
         Map<LocalDate, AttendanceResult> days = new HashMap<>();
         for (AttendanceRecord record : records) {
-            LocalDate date = record.getAttendanceDate(); var internship = record.getInternship();
+            LocalDate date = record.getAttendanceDate();
+            var internship = record.getInternship() != null ? record.getInternship() : fallbackInternship;
+            if (internship == null) continue;
             if (date.isAfter(LocalDate.now(clock)) || date.isBefore(internship.getStartDate()) || date.isAfter(internship.getEndDate())
                     || date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY
                     || calendar.isExcluded(record.getStudent().getId(), date) || !policies.resolve(internship, date).configurationReady()) continue;

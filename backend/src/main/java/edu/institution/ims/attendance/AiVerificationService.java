@@ -53,7 +53,7 @@ public class AiVerificationService {
             throw error(HttpStatus.CONFLICT, "EDGE_AI_NOT_APPLICABLE",
                     "Edge verification is not available for today's attendance policy");
         }
-        if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today)
+        if (attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), internship.getId(), today)
                 .filter(record -> !policies.canReplaceAutomaticAbsence(record, student.getId(), today)).isPresent()) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_ALREADY_SUBMITTED",
                     "Today's attendance has already been submitted");
