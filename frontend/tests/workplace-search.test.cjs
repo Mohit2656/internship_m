@@ -14,6 +14,7 @@ function load(relative, imports = {}) {
 }
 
 const location = load("lib/workplace-location.ts");
+const internship = load("lib/internship-details.ts");
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const nodes = tree => !tree || typeof tree !== "object" ? [] : [tree, ...[tree.props?.children].flat(Infinity).flatMap(nodes)];
 const text = tree => tree == null || typeof tree === "boolean" ? "" : typeof tree !== "object" ? String(tree) : [tree.props?.children].flat(Infinity).map(text).join("");
@@ -102,12 +103,32 @@ test("workplace search is explicitly triggered, trims its query and never submit
   tree = h.render();
   assert.match(text(tree), /Example workplace/);
   assert.match(text(tree), /10 Example Road/);
+  assert.match(text(tree), /Approximate address/);
   assert.deepEqual(h.selections, []);
   const resultButton = nodes(tree).find(node => node.type === "button" && text(node).includes(branch.address));
   assert.ok(resultButton);
   assert.equal(resultButton.props.type, "button");
   resultButton.props.onClick();
   assert.deepEqual(h.selections, [branch]);
+  h.close();
+});
+
+test("search sends optional map bias and labels every additive Photon match quality", async () => {
+  const focus = { latitude: 21.1498, longitude: 79.082 };
+  const h = searchHarness({ focus });
+  search(h, "Virtual Galaxy Nagpur");
+  assert.deepEqual(h.requests[0].options.params, { q: "Virtual Galaxy Nagpur", lat: focus.latitude, lon: focus.longitude });
+  h.requests[0].resolve({ data: [
+    { ...branch, matchQuality: "EXACT_BUSINESS" },
+    { ...branch, name: "Plot 26", matchQuality: "APPROXIMATE_ADDRESS" },
+    { ...branch, name: "Ring Road", matchQuality: "STREET_OR_POSTCODE" },
+    { ...branch, name: "Nagpur", matchQuality: "LOCALITY_OR_CITY" },
+  ] });
+  await tick();
+  const content = text(h.render());
+  for (const label of ["Provider-listed business", "Approximate address", "Street or postcode match", "City or locality match"]) assert.match(content, new RegExp(label));
+  assert.match(content, /not IMS verified/i);
+  assert.match(content, /low precision/i);
   h.close();
 });
 
@@ -145,6 +166,7 @@ test("search failures and empty results give a useful retry path", async () => {
   h.requests[1].resolve({ data: [] }); await tick();
   tree = h.render();
   assert.match(text(tree), /no .*found|no results/i);
+  assert.match(text(tree), /locate the real office manually/i);
   assert.deepEqual(h.selections, []);
   h.close();
 });
@@ -154,6 +176,7 @@ test("rate limits and malformed API responses show recoverable search errors", a
   h.requests[0].reject({ response: { status: 429 } }); await tick();
   let tree = h.render();
   assert.ok(nodes(tree).some(node => node.props?.role === "alert" && /wait|busy/i.test(text(node))));
+  assert.match(text(tree), /manually on the map/i);
   button(tree, "Search").props.onClick();
   h.requests[1].resolve({ data: { address: "Not an array of workplaces" } }); await tick();
   tree = h.render();
@@ -226,7 +249,7 @@ test("address-only places and zero coordinates remain selectable and results are
   const tree = h.render();
   const choices = nodes(tree).filter(node => node.type === "li");
   assert.equal(choices.length, 5);
-  button(tree, origin.address).props.onClick();
+  nodes(tree).find(node => node.type === "button" && text(node).includes(origin.address)).props.onClick();
   assert.deepEqual(h.selections, [origin]);
   h.close();
 });
@@ -234,56 +257,80 @@ test("address-only places and zero coordinates remain selectable and results are
 const saved = { name: "Saved Google branch", placeId: "legacy-place-id", address: "Saved branch address", latitude: 21, longitude: 79 };
 function pickerHarness(initial = {}) {
   const h = hooksHarness(), selections = [], pending = [], addresses = [];
-  function Search() { return null; }
   const props = { value: saved, name: "Company", onSelect(value) { selections.push(value); props.value = value; }, onPendingChange(value) { pending.push(value); }, ...initial };
   const { OpenStreetMapWorkplacePicker } = load("components/OpenStreetMapWorkplacePicker.tsx", {
     react: h.hooks,
     "next/dynamic": () => "WorkplaceMap",
     "@/lib/workplace-location": location,
-    "./WorkplaceLocationSearch": { WorkplaceLocationSearch: Search },
-    "@/components/WorkplaceLocationSearch": { WorkplaceLocationSearch: Search },
   });
-  return { props, selections, pending, addresses, render: () => h.render(OpenStreetMapWorkplacePicker, props), searchNode: tree => nodes(tree).find(node => node.type === Search), close: h.close };
+  return { props, selections, pending, addresses, render: () => h.render(OpenStreetMapWorkplacePicker, props), coordinateInputs: tree => nodes(tree).filter(node => node.type === "input" && node.props.inputMode === "decimal"), close: h.close };
 }
 
-test("an OSM search selection updates an uncontrolled address and pin but still requires confirmation", () => {
+test("manual coordinates create an unconfirmed map draft before explicit confirmation", () => {
   const h = pickerHarness(); let tree = h.render();
-  h.searchNode(tree).props.onSelect(branch);
-  assert.deepEqual(h.selections, [null]);
+  let coordinates = h.coordinateInputs(tree); coordinates[0].props.onChange({ target: { value: String(branch.latitude) } }); coordinates[1].props.onChange({ target: { value: String(branch.longitude) } });
+  tree = h.render(); button(tree, "Preview coordinates").props.onClick();
+  assert.equal(h.selections.at(-1), null);
   tree = h.render();
-  assert.deepEqual(nodes(tree).find(node => node.type === "WorkplaceMap").props.position, { latitude: branch.latitude, longitude: branch.longitude });
-  assert.equal(input(tree).props.value, branch.address);
+  let map = nodes(tree).find(node => node.type === "WorkplaceMap");
+  assert.equal(map.props.focus, null);
+  assert.deepEqual(map.props.position, { latitude: branch.latitude, longitude: branch.longitude });
+  assert.equal(nodes(tree).find(node => node.type === "input" && !node.props.inputMode).props.value, saved.address);
+  assert.match(text(tree), /Manually entered coordinates/);
   assert.equal(h.pending.at(-1), true);
   button(tree, "Confirm workplace location").props.onClick();
   assert.equal(h.selections.at(-1).latitude, branch.latitude);
   assert.equal(h.selections.at(-1).longitude, branch.longitude);
-  assert.equal(h.selections.at(-1).address, branch.address);
+  assert.equal(h.selections.at(-1).address, saved.address);
   assert.equal(h.selections.at(-1).placeId, null);
   h.close();
 });
 
-test("controlled company addresses receive the searched address before explicit confirmation", () => {
+test("controlled company addresses are never overwritten by manual coordinate preview", () => {
   const h = pickerHarness({ address: saved.address });
   h.props.onAddressChange = address => { h.addresses.push(address); h.props.address = address; };
-  let tree = h.render(); h.searchNode(tree).props.onSelect(branch);
-  assert.deepEqual(h.addresses, [branch.address]);
-  assert.deepEqual(h.selections, [null]);
+  let tree = h.render(); let coordinates = h.coordinateInputs(tree); coordinates[0].props.onChange({ target: { value: String(branch.latitude) } }); coordinates[1].props.onChange({ target: { value: String(branch.longitude) } });
+  tree = h.render(); button(tree, "Preview coordinates").props.onClick();
+  assert.deepEqual(h.addresses, []);
+  assert.equal(h.selections.at(-1), null);
   tree = h.render();
-  assert.equal(nodes(tree).filter(node => node.type === "input").length, 0);
+  assert.equal(h.coordinateInputs(tree).length, 2);
+  const map = nodes(tree).find(node => node.type === "WorkplaceMap");
+  assert.deepEqual(map.props.position, { latitude: branch.latitude, longitude: branch.longitude });
   button(tree, "Confirm workplace location").props.onClick();
-  assert.equal(h.selections.at(-1).address, branch.address);
+  assert.equal(h.selections.at(-1).address, saved.address);
   assert.equal(h.selections.at(-1).latitude, branch.latitude);
   h.close();
 });
 
-test("search wiring respects disabled pickers and preserves unchanged saved Google metadata", () => {
+test("manual input respects disabled pickers and preserves unchanged saved metadata", () => {
   const h = pickerHarness(); let tree = h.render();
   button(tree, "Confirm workplace location").props.onClick();
   assert.strictEqual(h.selections.at(-1), saved);
   h.props.disabled = true; tree = h.render();
-  assert.equal(h.searchNode(tree).props.disabled, true);
-  h.searchNode(tree).props.onSelect(branch);
+  assert.ok(h.coordinateInputs(tree).every(field => field.props.disabled === undefined));
+  button(tree, "Preview coordinates").props.onClick();
   assert.equal(h.selections.length, 1);
+  h.close();
+});
+
+test("editing manual coordinates after confirmation invalidates the saved workplace and requires reconfirmation", () => {
+  const h = pickerHarness(); let tree = h.render();
+  button(tree, "Confirm workplace location").props.onClick();
+  assert.strictEqual(h.selections.at(-1), saved);
+  h.coordinateInputs(tree)[0].props.onChange({ target: { value: "20" } });
+  assert.equal(h.selections.at(-1), null);
+  tree = h.render();
+  assert.equal(h.pending.at(-1), true);
+  assert.match(text(tree), /not confirmed/i);
+  h.close();
+});
+
+test("picker displays the applicable server-returned geofence radius, not GPS accuracy", () => {
+  const h = pickerHarness({ geofenceRadiusMeters: 175 });
+  const tree = h.render();
+  assert.match(text(tree), /Geofence radius:\s*175 metres/);
+  assert.doesNotMatch(text(tree), /200 metres/);
   h.close();
 });
 
@@ -292,6 +339,7 @@ test("internship form keeps the searched company address and confirmed location 
   function Picker() { return null; }
   const { InternshipDetailsForm } = load("components/InternshipDetailsForm.tsx", {
     react: h.hooks,
+    "@/lib/internship-details": internship,
     "@/components/OpenStreetMapWorkplacePicker": { OpenStreetMapWorkplacePicker: Picker },
   });
   const props = { initial: { companyName: "Company", companyAddress: saved.address, startDate: "2026-11-01", endDate: "2026-12-30", internshipMode: "OFFICE_REPORTING", workplace: saved }, saving: false, fieldErrors: {}, onSubmit: data => submissions.push(data) };
@@ -312,5 +360,29 @@ test("internship form keeps the searched company address and confirmed location 
   assert.equal(submissions[0].totalWeeks, "9");
   assert.equal(submissions[0].workplace.latitude, branch.latitude);
   assert.equal(submissions[0].workplace.longitude, branch.longitude);
+  h.close();
+});
+
+test("mentor-approved coordinates disable only the workplace picker and explain the permanent student lock", () => {
+  const h = hooksHarness(), submissions = [];
+  function Picker() { return null; }
+  const { InternshipDetailsForm } = load("components/InternshipDetailsForm.tsx", {
+    react: h.hooks,
+    "@/lib/internship-details": internship,
+    "@/components/OpenStreetMapWorkplacePicker": { OpenStreetMapWorkplacePicker: Picker },
+  });
+  const props = { initial: { companyName: "Company", companyAddress: saved.address, startDate: "2026-11-01", endDate: "2026-12-30", internshipMode: "OFFICE_REPORTING", workplace: saved }, saving: false, fieldErrors: {}, workplaceCoordinatesLocked: true, onSubmit: data => submissions.push(data) };
+  let tree = h.render(InternshipDetailsForm, props);
+  const picker = nodes(tree).find(node => node.type === Picker);
+  assert.equal(picker.props.disabled, true);
+  assert.match(text(tree), /Location approved by mentor — coordinates locked/);
+  const companyName = nodes(tree).find(node => node.type === "input" && node.props.value === "Company");
+  assert.equal(companyName.props.disabled, undefined);
+  companyName.props.onChange({ target: { value: "Renamed Company" } });
+  tree = h.render(InternshipDetailsForm, props);
+  tree.props.onSubmit({ preventDefault() {} });
+  assert.equal(submissions.length, 1);
+  assert.equal(submissions[0].companyName, "Renamed Company");
+  assert.strictEqual(submissions[0].workplace, saved);
   h.close();
 });

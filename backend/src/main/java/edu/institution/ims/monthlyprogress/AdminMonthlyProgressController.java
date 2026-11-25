@@ -14,4 +14,6 @@ public class AdminMonthlyProgressController {
     @GetMapping("/{reportId}") public MonthlyProgressReportResponse report(@PathVariable Long reportId) { return service.adminReport(reportId); }
     @GetMapping("/{reportId}/photo") public ResponseEntity<?> photo(@PathVariable Long reportId) { return MonthlyProgressDownloads.response(service.adminPhoto(reportId), true); }
     @GetMapping("/{reportId}/pdf") public ResponseEntity<?> pdf(@PathVariable Long reportId) { return MonthlyProgressDownloads.response(service.adminPdf(reportId), false); }
+    @GetMapping("/{reportId}/attachment") public ResponseEntity<?> attachment(@PathVariable Long reportId,
+            @RequestParam(defaultValue="false") boolean download) { return MonthlyProgressDownloads.response(service.adminAttachment(reportId), !download); }
 }

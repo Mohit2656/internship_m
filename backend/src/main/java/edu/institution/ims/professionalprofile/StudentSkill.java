@@ -32,5 +32,6 @@ public class StudentSkill {
     public String getDisplayName() { return displayName; }
     public String getNormalizedName() { return normalizedName; }
     public StudentSkillSource getSource() { return source; }
+    public ResumeAnalysis getSourceResumeAnalysis() { return sourceResumeAnalysis; }
     public boolean isActive() { return active; }
 }

@@ -14,15 +14,16 @@ import static org.mockito.ArgumentMatchers.*;
 class StudentAttendanceDirectoryServiceTest {
     private final UserRepository users = mock(UserRepository.class);
     private final MentorStudentAssignmentRepository assignments = mock(MentorStudentAssignmentRepository.class);
+    private final MentorProfileRepository mentorProfiles = mock(MentorProfileRepository.class);
     private final InternshipDetailsRepository internships = mock(InternshipDetailsRepository.class);
     private final AttendanceRepository records = mock(AttendanceRepository.class);
     private final AttendancePolicyService policies = mock(AttendancePolicyService.class);
     private final AttendanceCalendarProperties calendar = new AttendanceCalendarProperties();
     private final Clock clock = Clock.fixed(Instant.parse("2026-10-22T07:00:00Z"), ZoneId.of("Asia/Kolkata"));
-    private final StudentAttendanceDirectoryService service = new StudentAttendanceDirectoryService(users, assignments, internships, records, policies, calendar, clock);
+    private final StudentAttendanceDirectoryService service = new StudentAttendanceDirectoryService(users, assignments, mentorProfiles, internships, records, policies, calendar, clock);
     private final User student = student();
     private final InternshipDetails internship = internship();
-    private User student() { User user = mock(User.class); when(user.getId()).thenReturn(1L); when(user.getRole()).thenReturn(Role.STUDENT); return user; }
+    private User student() { User user = mock(User.class); when(user.getId()).thenReturn(1L); when(user.getRole()).thenReturn(Role.STUDENT); when(user.isActive()).thenReturn(true); return user; }
     private InternshipDetails internship() {
         InternshipDetails i = mock(InternshipDetails.class);
         when(i.getStartDate()).thenReturn(LocalDate.of(2026, 10, 1)); when(i.getEndDate()).thenReturn(LocalDate.of(2026, 11, 1));
@@ -43,14 +44,15 @@ class StudentAttendanceDirectoryServiceTest {
         assertThat(totals.totalDays()).isEqualTo(2); assertThat(totals.percentage()).isEqualByComparingTo("50.0");
         assertThat(service.totals(List.of()).percentage()).isNull();
     }
-    @Test void directoryHasOneRowPerAccountDespiteManyAttendanceRecords() {
+    @Test void directoryHasOneUnscopedRowPerAccountWhenNoInternshipExists() {
         when(users.findAllByRoleOrderByEmailAsc(Role.STUDENT)).thenReturn(List.of(student, student));
         when(assignments.findAllByActiveTrue()).thenReturn(List.of());
         when(internships.findAllByOnboardingStudentIdIn(any())).thenReturn(List.of());
         when(records.findAllByStudentIdInOrderByAttendanceDateAscIdAsc(any())).thenReturn(List.of(row("2026-10-19", AttendanceResult.PRESENT), row("2026-10-22", AttendanceResult.ABSENT)));
         var rows = service.students(principal("ADMIN"));
         assertThat(rows).hasSize(1); assertThat(rows.get(0).studentUserId()).isEqualTo(1L);
-        assertThat(rows.get(0).attendance().percentage()).isEqualByComparingTo("50.0");
+        assertThat(rows.get(0).internshipId()).isNull();
+        assertThat(rows.get(0).attendance().percentage()).isNull();
     }
     @Test void mentorCannotReadAnUnassignedStudentsHistory() {
         when(assignments.findByStudentIdAndActiveTrue(1L)).thenReturn(Optional.empty());
@@ -64,5 +66,66 @@ class StudentAttendanceDirectoryServiceTest {
         var history = service.history(principal("ADMIN"), 1L);
         assertThat(history.studentUserId()).isEqualTo(1L);
         assertThat(history.records()).extracting(AttendanceResponse::attendanceDate).containsExactly(LocalDate.parse("2026-10-19"), LocalDate.parse("2026-10-22"));
+    }
+    @Test void doesNotCountPendingMentorReviewAsAbsent() {
+        var totals = service.totals(List.of(
+                row("2026-10-19", AttendanceResult.PRESENT),
+                row("2026-10-22", AttendanceResult.PENDING_MENTOR_REVIEW)));
+        assertThat(totals.presentDays()).isEqualTo(1);
+        assertThat(totals.absentDays()).isEqualTo(0);
+        assertThat(totals.totalDays()).isEqualTo(1);
+        assertThat(totals.percentage()).isEqualByComparingTo("100.0");
+    }
+
+    @Test void bismeetScenarioCountsVerifiedPresentWhileMentorReviewIsPending() {
+        User bismeet = mock(User.class);
+        StudentAccount account = mock(StudentAccount.class);
+        InternshipOnboarding onboarding = mock(InternshipOnboarding.class);
+        InternshipDetails selectedInternship = mock(InternshipDetails.class);
+        AttendanceEvidence verifiedEvidence = mock(AttendanceEvidence.class);
+        AttendanceRecord verifiedPresent = mock(AttendanceRecord.class);
+
+        when(bismeet.getId()).thenReturn(77L);
+        when(bismeet.getRole()).thenReturn(Role.STUDENT);
+        when(bismeet.isActive()).thenReturn(true);
+        when(bismeet.getStudentAccount()).thenReturn(account);
+        when(account.getStudentName()).thenReturn("Bismeet Kukreja");
+        when(account.getUid()).thenReturn("BISMEET-77");
+        when(selectedInternship.getId()).thenReturn(701L);
+        when(selectedInternship.getOnboarding()).thenReturn(onboarding);
+        when(selectedInternship.getStartDate()).thenReturn(LocalDate.of(2026, 10, 1));
+        when(selectedInternship.getEndDate()).thenReturn(LocalDate.of(2026, 10, 31));
+        when(selectedInternship.getCompanyName()).thenReturn("Company A");
+        when(onboarding.getStudent()).thenReturn(bismeet);
+        when(onboarding.getInternshipNumber()).thenReturn(1);
+        when(onboarding.getWorkflowStatus()).thenReturn(WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE);
+        when(policies.resolve(eq(selectedInternship), any())).thenReturn(
+                new ResolvedAttendancePolicy(null, AttendanceVerificationMethod.BASIC, true));
+
+        when(verifiedPresent.getStudent()).thenReturn(bismeet);
+        when(verifiedPresent.getInternship()).thenReturn(selectedInternship);
+        when(verifiedPresent.getAttendanceDate()).thenReturn(LocalDate.of(2026, 10, 19));
+        when(verifiedPresent.getAttendanceResult()).thenReturn(AttendanceResult.PRESENT);
+        when(verifiedPresent.getEvidence()).thenReturn(verifiedEvidence);
+        when(verifiedPresent.getSubmissionType()).thenReturn(AttendanceSubmissionType.BASIC);
+        when(verifiedEvidence.getLocationVerificationStatus()).thenReturn(LocationVerificationStatus.VERIFIED);
+
+        when(users.findAllByRoleOrderByEmailAsc(Role.STUDENT)).thenReturn(List.of(bismeet));
+        when(assignments.findAllByActiveTrue()).thenReturn(List.of());
+        when(mentorProfiles.findAllByOrderByNameAsc()).thenReturn(List.of());
+        when(internships.findAllByOnboardingStudentIdIn(any())).thenReturn(List.of(selectedInternship));
+        when(records.findAllByStudentIdInOrderByAttendanceDateAscIdAsc(any())).thenReturn(List.of(verifiedPresent));
+
+        var result = service.students(principal("ADMIN"));
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).internshipId()).isEqualTo(701L);
+        assertThat(result.get(0).attendance().presentDays()).isEqualTo(1);
+        assertThat(result.get(0).attendance().absentDays()).isZero();
+        assertThat(result.get(0).attendance().totalDays()).isEqualTo(1);
+        assertThat(result.get(0).attendance().percentage()).isEqualByComparingTo("100.0");
+        assertThat(result.get(0).reviewSummary().submitted()).isEqualTo(1);
+        assertThat(result.get(0).reviewSummary().gpsVerified()).isEqualTo(1);
+        assertThat(result.get(0).reviewSummary().pending()).isEqualTo(1);
     }
 }

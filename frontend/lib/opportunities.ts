@@ -166,18 +166,38 @@ export type ScoredCandidate = {
   studentId: number; studentName: string | null; uid: string | null; branch: Branch | null; semester: number;
   matchScore: number; eligibility: "ELIGIBLE" | "UNKNOWN" | "INELIGIBLE"; eligibilityReasons: string[];
   matchedSkills: string[]; missingRequiredSkills: string[]; matchedPreferredSkills: string[];
-  contextEvidence: string[]; resumeAvailable: boolean; strongMatch: boolean;
+  contextEvidence: string[]; resumeAvailable: boolean; skillsAvailable: boolean; strongMatch: boolean;
 };
 export type MatchingRunSummary = { id: number; triggerType: string; algorithmVersion: string; createdAt: string };
 export type MatchingRun = MatchingRunSummary & {
   opportunityId: number;
   report: { title: string; companyName: string; scoringExplanation: string; strongMatchThreshold: number; candidates: ScoredCandidate[] };
 };
+export type SystemMatchedStudents = {
+  available: boolean;
+  message: string | null;
+  students: Array<{
+    studentId: number;
+    studentName: string;
+    uid: string;
+    matchedSkills: string[];
+    missingRequiredSkills: string[];
+    matchPercentage: number;
+  }>;
+};
+export type InterestedStudents = {
+  students: Array<{
+    studentId: number;
+    studentName: string;
+    uid: string | null;
+    matchPercentage: number | null;
+  }>;
+};
 
 /** CSV cells are quoted and spreadsheet formulas neutralized before download. */
 export function matchingCsv(candidates: ScoredCandidate[]) {
   const cell = (value: string | number | null) => `"${String(value ?? "").replaceAll("\u0000", "").replace(/^[\s\u0001-\u001f]*[=+@-]|^[\t\r\n]/, value => `'${value}`).replaceAll('"', '""')}"`;
-  const rows = candidates.map(c => [c.studentName, c.uid, c.branch, c.matchScore, c.eligibility, c.matchedSkills.join("; "), c.missingRequiredSkills.join("; "), c.matchedPreferredSkills.join("; ")]);
+  const rows = candidates.map(c => [c.studentName, c.uid, c.branch, c.skillsAvailable ? c.matchScore : "Skills unavailable", c.eligibility, c.matchedSkills.join("; "), c.missingRequiredSkills.join("; "), c.matchedPreferredSkills.join("; ")]);
   return [["Student", "UID", "Branch", "Match score", "Eligibility", "Matched required", "Missing required", "Matched preferred"], ...rows].map(row => row.map(cell).join(",")).join("\r\n");
 }
 export type TalentCandidate = {
@@ -216,8 +236,15 @@ export type AdminSkillGapAnalysis = {
   preferredGaps: { skill: string; studentsMissing: number }[];
 };
 
-export function formatOpportunityDate(value: string | null) {
-  return value ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`)) : "No deadline";
+export function formatOpportunityDate(value: string | null | undefined) {
+  if (!value) return "No deadline";
+  try {
+    const d = new Date(value.includes("T") ? value : `${value}T00:00:00`);
+    if (isNaN(d.getTime())) return value;
+    return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(d);
+  } catch {
+    return value;
+  }
 }
 
 export function formatOpportunityStipend(amount: number, currency: string) {

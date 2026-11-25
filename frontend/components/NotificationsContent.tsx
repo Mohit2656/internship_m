@@ -9,10 +9,12 @@ import { AppNotification, NotificationInbox, NotificationRole, syncNotificationC
 const eventLabels: Record<string, string> = {
   RESUME_UPLOADED: "Resume uploaded", RESUME_UPDATED: "Resume updated", RESUME_CORRECTED: "Resume corrected", RESUME_PARSED: "Resume analysis complete",
   INTERNSHIP_COMPLETED: "Internship completed", INTERNSHIP_REOPENED: "Internship reopened",
+  INTERNSHIP_DETAILS_SUBMITTED: "Internship details submitted", INTERNSHIP_DETAILS_UPDATED: "Internship details updated",
   OPPORTUNITY_MATCH: "Opportunity recommendation", ATTENDANCE_APPROVED: "Attendance approved", ATTENDANCE_REJECTED: "Attendance rejected", ATTENDANCE_MANUAL_REVIEW: "Attendance review requested",
   WEEKLY_REPORT_SUBMITTED: "Weekly report submitted", WEEKLY_REPORT_APPROVED: "Weekly report approved", WEEKLY_REPORT_REJECTED: "Weekly report rejected", WEEKLY_REPORT_REVIEWED: "Weekly report reviewed", WORKPLACE_REJECTED: "Workplace feedback", REPORT_APPROVED: "Report approved", REPORT_SUBMITTED: "Report submitted",
 };
 const internshipApprovalTypes = new Set(["INTERNSHIP_MENTOR_APPROVED", "INTERNSHIP_IIIC_APPROVED"]);
+const internshipSubmissionTypes = new Set(["INTERNSHIP_DETAILS_SUBMITTED", "INTERNSHIP_DETAILS_UPDATED"]);
 
 export function RecentNotifications({ role = "ADMIN" }: { role?: NotificationRole }) {
   const path = `/${role.toLowerCase()}/notifications`;
@@ -78,7 +80,7 @@ export function NotificationsContent({ role = "STUDENT" }: { role?: Notification
         <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{item.message}</p>
         {item.rejectionReason && <div className="mt-4 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800"><p className="font-bold">Rejection reason</p><p className="mt-2 whitespace-pre-wrap break-words">{item.rejectionReason}</p></div>}
         <p className="mt-4 text-xs leading-5 text-slate-500">{internshipApprovalTypes.has(item.type) ? "Approved: " : item.type === "ATTENDANCE_SUBMITTED" ? "Submitted: " : item.type === "OPPORTUNITY_PUBLISHED" ? "Published: " : item.type === "REPORT_REJECTED" ? "Rejected: " : "Notified: "}<time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time>{item.mentorName && <> · Faculty mentor: {item.mentorName}</>}</p>
-        <div className="mt-5 flex flex-wrap gap-3"><button type="button" disabled={busy} onClick={() => void markRead(item, true)} className="text-sm">{internshipApprovalTypes.has(item.type) ? "View internship" : item.type === "ATTENDANCE_SUBMITTED" ? "View attendance" : item.type === "OPPORTUNITY_PUBLISHED" ? "View opportunity" : item.type === "REPORT_REJECTED" ? "Open report" : "Open task"}</button>{!item.readAt && <button type="button" data-button-variant="outline" disabled={busy} onClick={() => void markRead(item)} className="text-sm">Mark as read</button>}</div>
+        <div className="mt-5 flex flex-wrap gap-3"><button type="button" disabled={busy} onClick={() => void markRead(item, true)} className="text-sm">{internshipApprovalTypes.has(item.type) ? "View internship" : internshipSubmissionTypes.has(item.type) ? "Review internship" : item.type === "ATTENDANCE_SUBMITTED" ? "View attendance" : item.type === "OPPORTUNITY_PUBLISHED" ? "View opportunity" : item.type === "REPORT_REJECTED" ? "Open report" : "Open task"}</button>{!item.readAt && <button type="button" data-button-variant="outline" disabled={busy} onClick={() => void markRead(item)} className="text-sm">Mark as read</button>}</div>
       </article>)}</div>}
       {inbox.totalPages > 1 && <div className="mt-6 flex items-center justify-between gap-3 text-sm"><button type="button" data-button-variant="outline" disabled={page === 0 || busy} onClick={() => setPage(value => value - 1)}>Previous</button><span>Page {page + 1} of {inbox.totalPages}</span><button type="button" data-button-variant="outline" disabled={page + 1 >= inbox.totalPages || busy} onClick={() => setPage(value => value + 1)}>Next</button></div>}
     </>}

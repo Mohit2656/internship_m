@@ -50,6 +50,7 @@ class MentorNotificationIntegrationTest {
     @Autowired StudentAccountRepository accounts;
     @Autowired InternshipOnboardingRepository onboardings;
     @Autowired InternshipDetailsRepository internships;
+    @Autowired InternshipLocationRepository locations;
     @Autowired MentorStudentAssignmentRepository assignments;
     @Autowired AttendanceRepository attendance;
     @Autowired AttendanceService basic;
@@ -100,10 +101,15 @@ class MentorNotificationIntegrationTest {
     @Test void physicalAndRemoteFlowsNotifyTheirOwnAssignedMentorsOnly() throws Exception {
         User office = student("office", "Office Student");
         User online = student("online", "Online Student");
-        internship(office, InternshipMode.OFFICE_REPORTING);
+        InternshipDetails officeInternship = internship(office, InternshipMode.OFFICE_REPORTING);
         internship(online, InternshipMode.ONLINE);
         assignments.saveAndFlush(new MentorStudentAssignment(mentor, office, admin, NOW));
         assignments.saveAndFlush(new MentorStudentAssignment(otherMentor, online, admin, NOW));
+        InternshipLocation officeLocation = new InternshipLocation(officeInternship, new BigDecimal("18.52"),
+                new BigDecimal("73.85"), new BigDecimal("200"), NOW);
+        officeLocation.selectedPlace("office-notification-place", "Office workplace");
+        officeLocation.review(mentor, "APPROVE", null, NOW);
+        locations.saveAndFlush(officeLocation);
         physical.submitToday(principal(office), photo(), null, new BigDecimal("18.52"), new BigDecimal("73.85"), BigDecimal.TEN);
         remote.submitToday(principal(online), photo(), null, "Completed the assigned project work and tested the results.",
                 new BigDecimal("19.07"), new BigDecimal("72.87"), BigDecimal.TEN);
@@ -218,7 +224,7 @@ class MentorNotificationIntegrationTest {
     @Test void laterEvidenceFailureRollsBackNotificationAndAttendanceTogether() {
         doAnswer(invocation -> {
             invocation.callRealMethod();
-            assertThat(jdbc.queryForObject("select count(*) from mentor_notifications", Long.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("select count(*) from mentor_notifications", Long.class)).isZero();
             throw new IllegalStateException("Simulated evidence write failure");
         }).when(locationVerification).save(any(), any(), any(), any(), anyBoolean(), any());
         try { assertRolledBackSubmission("evidence-rollback"); }

@@ -7,6 +7,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.List;
 
 @Service
 public class InternshipDetailsService {
@@ -16,12 +17,16 @@ public class InternshipDetailsService {
     private final StudentProfileRepository profiles;
     private final edu.institution.ims.attendance.InternshipLocationService locations;
     private final edu.institution.ims.weeklyprogress.WeeklyProgressService weekly;
-    public InternshipDetailsService(InternshipDetailsRepository details, InternshipOnboardingRepository onboardings, StudentProfileRepository profiles, edu.institution.ims.attendance.InternshipLocationService locations, edu.institution.ims.weeklyprogress.WeeklyProgressService weekly) {
-        this.details = details; this.onboardings = onboardings; this.profiles = profiles; this.locations = locations; this.weekly = weekly;
+    private final edu.institution.ims.editing.StudentEditPermissionService editPermissions;
+    public InternshipDetailsService(InternshipDetailsRepository details, InternshipOnboardingRepository onboardings, StudentProfileRepository profiles, edu.institution.ims.attendance.InternshipLocationService locations, edu.institution.ims.weeklyprogress.WeeklyProgressService weekly, edu.institution.ims.editing.StudentEditPermissionService editPermissions) {
+        this.details = details; this.onboardings = onboardings; this.profiles = profiles; this.locations = locations; this.weekly = weekly; this.editPermissions = editPermissions;
     }
 
     @Transactional(readOnly = true) public InternshipDetailsResponse getOwn(UserPrincipal principal) {
         return response(details.findByOnboardingStudentId(principal.id()).orElseThrow(InternshipDetailsService::notFound));
+    }
+    @Transactional(readOnly = true) public List<InternshipDetailsResponse> getAllOwn(UserPrincipal principal) {
+        return details.findAllByOnboardingStudentIdOrderByOnboardingInternshipNumber(principal.id()).stream().map(InternshipDetailsService::response).toList();
     }
 
     @Transactional public InternshipDetailsResponse createOwn(UserPrincipal principal, InternshipDetailsRequest request) {
@@ -34,28 +39,105 @@ public class InternshipDetailsService {
         InternshipDetails entity = new InternshipDetails(onboarding); apply(entity, request);
         try { details.saveAndFlush(entity); }
         catch (DataIntegrityViolationException e) { throw conflict("INTERNSHIP_DETAILS_ALREADY_EXIST", "Internship details already exist for this onboarding record"); }
-        locations.registerSelectedPlace(entity, request.workplace());
-        onboarding.markInternshipDetailsComplete(); onboardings.saveAndFlush(onboarding);
-        weekly.synchronize(entity);
+        if (request.workplace() != null) {
+            locations.registerSelectedPlace(entity, request.workplace());
+        }
+        if (isComplete(entity)) {
+            onboarding.markInternshipDetailsComplete(); onboardings.saveAndFlush(onboarding);
+            weekly.synchronize(entity);
+            if (changeNotifications != null) {
+                changeNotifications.notifyInternshipSubmitted(principal.id(), entity, request.workplace());
+            }
+        }
+        return response(entity);
+    }
+    @Transactional public InternshipDetailsResponse createSecond(UserPrincipal principal, InternshipDetailsRequest request) {
+        if (!edu.institution.ims.user.WorkflowUserLocks.student(jdbc, principal.id(), true)) throw conflict("STUDENT_ACCOUNT_INACTIVE", "Deactivated students cannot create Internship 2");
+        InternshipOnboarding onboarding=onboardings.findByStudentIdAndInternshipNumber(principal.id(),(short)2)
+                .orElseThrow(() -> conflict("SECOND_INTERNSHIP_NOT_APPROVED", "III Cell approval is required before creating Internship 2"));
+        if (details.existsByOnboardingId(onboarding.getId())) throw conflict("SECOND_INTERNSHIP_ALREADY_EXISTS", "Internship 2 already exists");
+        Integer permission=jdbc.queryForObject("select count(*) from second_internship_requests where student_user_id=? and status='APPROVED'",Integer.class,principal.id());
+        if(permission==null || permission!=1) throw conflict("SECOND_INTERNSHIP_NOT_APPROVED", "III Cell approval is required before creating Internship 2");
+        if (onboarding.getWorkflowStatus() != WorkflowStatus.DIARY_ISSUED)
+            throw conflict("DIARY_REQUIRED", "Internship details can be entered only after the internship diary is issued");
+        validate(request); InternshipDetails entity=new InternshipDetails(onboarding); apply(entity,request);
+        try{details.saveAndFlush(entity);}catch(DataIntegrityViolationException e){throw conflict("SECOND_INTERNSHIP_ALREADY_EXISTS","Internship 2 already exists");}
+        if (request.workplace() != null) {
+            locations.registerSelectedPlace(entity,request.workplace());
+        }
+        if (isComplete(entity)) {
+            onboarding.markInternshipDetailsComplete(); onboardings.saveAndFlush(onboarding); weekly.synchronize(entity);
+            if (changeNotifications != null) {
+                changeNotifications.notifyInternshipSubmitted(principal.id(), entity, request.workplace());
+            }
+        }
         return response(entity);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private edu.institution.ims.notification.StudentChangeNotificationService changeNotifications;
+
     @Transactional public InternshipDetailsResponse updateOwn(UserPrincipal principal, InternshipDetailsRequest request) {
-        InternshipDetails entity = details.findForUpdateByStudentId(principal.id()).orElseThrow(InternshipDetailsService::notFound);
-        if ("COMPLETED".equals(jdbc.queryForObject("select completion_status from internship_details where id=?",String.class,entity.getId())))
+        return updateOwn(principal, (Long) null, request);
+    }
+
+    @Transactional public InternshipDetailsResponse updateOwn(UserPrincipal principal, Long internshipId, InternshipDetailsRequest request) {
+        if (!edu.institution.ims.user.WorkflowUserLocks.student(jdbc, principal.id(), true))
+            throw conflict("STUDENT_ACCOUNT_INACTIVE", "Deactivated students cannot change internship details");
+        InternshipDetails entity = internshipId != null
+                ? details.findForUpdateByIdAndStudentId(internshipId, principal.id()).orElseThrow(InternshipDetailsService::notFound)
+                : details.findForUpdateByStudentId(principal.id()).orElseThrow(InternshipDetailsService::notFound);
+        return updateEntity(principal, entity, request);
+    }
+
+    @Transactional public InternshipDetailsResponse updateSecond(UserPrincipal principal, InternshipDetailsRequest request) {
+        if (!edu.institution.ims.user.WorkflowUserLocks.student(jdbc, principal.id(), true))
+            throw conflict("STUDENT_ACCOUNT_INACTIVE", "Deactivated students cannot change internship details");
+        InternshipOnboarding onboarding = onboardings.findByStudentIdAndInternshipNumber(principal.id(), (short) 2)
+                .orElseThrow(InternshipDetailsService::notFound);
+        InternshipDetails entity = details.findByOnboardingId(onboarding.getId()).orElseThrow(InternshipDetailsService::notFound);
+        return updateEntity(principal, entity, request);
+    }
+
+    private InternshipDetailsResponse updateEntity(UserPrincipal principal, InternshipDetails entity, InternshipDetailsRequest request) {
+        if ("COMPLETED".equals(jdbc.queryForObject("select completion_status from internship_details where id=?", String.class, entity.getId())))
             throw conflict("INTERNSHIP_COMPLETED", "IIIC must reopen the completed internship before its details can be changed");
         WorkflowStatus status = entity.getOnboarding().getWorkflowStatus();
         if (status != WorkflowStatus.DIARY_ISSUED && status != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE)
             throw conflict("INVALID_WORKFLOW_STATE", "Internship details cannot be updated in the current workflow state");
         validate(request);
-        String nextAddress = request.workplace() == null ? clean(request.companyAddress()) : request.workplace().address();
+
+        InternshipDetails before = new InternshipDetails(entity.getOnboarding());
+        before.apply(entity.getCompanyName(), entity.getCompanyType(), entity.getOtherCompanyType(),
+                entity.getCompanyAddress(), entity.getCompanyPhone(), entity.getIndustrySupervisorName(),
+                entity.getIndustrySupervisorDesignation(), entity.getIndustrySupervisorContact(),
+                entity.getDurationMonths(), entity.getStartDate(), entity.getEndDate(), entity.getTotalWeeks(),
+                entity.getInternshipMode(), entity.getStipendPerMonth(), entity.isFullTimeEmploymentOffered(),
+                entity.getWorkingDaysPerWeek(), entity.getWorkingDays());
+        RegisteredWorkplaceRequest oldWorkplace = entity.getWorkplace() == null || entity.getWorkplace().getWorkplaceAddress() == null ? null
+                : new RegisteredWorkplaceRequest(entity.getWorkplace().getPlaceId(), entity.getWorkplace().getWorkplaceAddress(),
+                        entity.getWorkplace().getLatitude(), entity.getWorkplace().getLongitude(), entity.getWorkplace().getWorkplaceName());
+
+        boolean coordinatesLocked = locations.validateStudentWorkplaceUpdate(entity, request.workplace());
+        String nextAddress = coordinatesLocked || request.workplace() == null ? clean(request.companyAddress()) : request.workplace().address();
         boolean addressChanged = !java.util.Objects.equals(entity.getCompanyAddress(), nextAddress);
-        if (addressChanged || !java.util.Objects.equals(entity.getCompanyName(), clean(request.companyName())))
+        if (!coordinatesLocked && (addressChanged || !java.util.Objects.equals(entity.getCompanyName(), clean(request.companyName()))))
             locations.invalidateForCompanyChange(entity, addressChanged, request.workplace() != null);
-        apply(entity, request); entity.getOnboarding().markInternshipDetailsComplete();
-        details.saveAndFlush(entity); locations.registerSelectedPlace(entity, request.workplace());
-        weekly.synchronize(entity);
-        return response(entity);
+        apply(entity, request, coordinatesLocked);
+        if (isComplete(entity)) {
+            entity.getOnboarding().markInternshipDetailsComplete();
+        }
+        details.saveAndFlush(entity);
+        if (!coordinatesLocked && request.workplace() != null) locations.registerSelectedPlace(entity, request.workplace());
+        if (entity.getStartDate() != null && entity.getEndDate() != null && entity.getEndDate().isAfter(entity.getStartDate())) {
+            weekly.synchronize(entity);
+        }
+
+        InternshipDetailsResponse result = response(entity);
+        if (changeNotifications != null) {
+            changeNotifications.notifyInternshipChanged(principal.id(), before, entity, oldWorkplace, request.workplace());
+        }
+        return result;
     }
 
     @Transactional(readOnly = true) public InternshipDetailsResponse getForAdmin(Long studentId) {
@@ -69,30 +151,79 @@ public class InternshipDetailsService {
     private InternshipOnboarding onboarding(Long studentId) {
         return onboardings.findByStudentId(studentId).orElseThrow(() -> conflict("ONBOARDING_NOT_STARTED", "Complete internship onboarding before entering internship details"));
     }
+    public static boolean isComplete(InternshipDetails entity) {
+        if (clean(entity.getCompanyName()) == null) return false;
+        if (entity.getCompanyType() == null) return false;
+        if (entity.getCompanyType() == CompanyType.OTHER && clean(entity.getOtherCompanyType()) == null) return false;
+        if (clean(entity.getCompanyAddress()) == null) return false;
+        if (clean(entity.getCompanyPhone()) == null) return false;
+        if (clean(entity.getIndustrySupervisorName()) == null) return false;
+        if (clean(entity.getIndustrySupervisorDesignation()) == null) return false;
+        if (clean(entity.getIndustrySupervisorContact()) == null) return false;
+        if (entity.getDurationMonths() == null || entity.getDurationMonths() <= 0) return false;
+        if (entity.getStartDate() == null || entity.getEndDate() == null) return false;
+        if (!entity.getEndDate().isAfter(entity.getStartDate())) return false;
+        if (entity.getInternshipMode() == null) return false;
+        if (entity.getStipendPerMonth() == null) return false;
+        if (entity.isFullTimeEmploymentOffered() == null) return false;
+        return true;
+    }
     private static void validate(InternshipDetailsRequest request) {
-        InternshipDuration.generatedWeeks(request.startDate(), request.endDate());
+        if (request.startDate() != null && request.endDate() != null) {
+            InternshipDuration.generatedWeeks(request.startDate(), request.endDate());
+        }
         String other = clean(request.otherCompanyType());
         if (request.companyType() == CompanyType.OTHER && other == null)
             throw bad("OTHER_COMPANY_TYPE_REQUIRED", "Describe the company type when Other is selected");
+        if (request.workingDays() != null && !request.workingDays().isEmpty()) {
+            for (String day : request.workingDays()) {
+                try {
+                    java.time.DayOfWeek.valueOf(day.trim().toUpperCase());
+                } catch (Exception e) {
+                    throw bad("INVALID_WORKING_DAY", "Invalid working weekday: " + day);
+                }
+            }
+            if (request.workingDaysPerWeek() != null && request.workingDaysPerWeek() != request.workingDays().size()) {
+                throw bad("WORKING_DAYS_MISMATCH", "Selected working weekdays count does not match working days per week");
+            }
+        }
     }
-    private static void apply(InternshipDetails entity, InternshipDetailsRequest request) {
+    private static void apply(InternshipDetails entity, InternshipDetailsRequest request) { apply(entity, request, false); }
+    private static void apply(InternshipDetails entity, InternshipDetailsRequest request, boolean preserveApprovedLocation) {
+        Integer weeks = (request.startDate() != null && request.endDate() != null && request.endDate().isAfter(request.startDate()))
+                ? InternshipDuration.weeks(request.startDate(), request.endDate())
+                : null;
+        String workingDaysStr = request.workingDays() != null && !request.workingDays().isEmpty()
+                ? String.join(",", request.workingDays().stream().map(String::trim).map(String::toUpperCase).distinct().toList())
+                : (entity.getWorkingDays() != null ? entity.getWorkingDays() : "MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY");
+        Integer workingDaysCount = request.workingDaysPerWeek() != null
+                ? request.workingDaysPerWeek()
+                : (request.workingDays() != null && !request.workingDays().isEmpty() ? request.workingDays().size() : (entity.getWorkingDaysPerWeek() != null ? entity.getWorkingDaysPerWeek() : 5));
         entity.apply(clean(request.companyName()), request.companyType(), request.companyType() == CompanyType.OTHER ? clean(request.otherCompanyType()) : null,
-                request.workplace() == null ? clean(request.companyAddress()) : request.workplace().address(), clean(request.companyPhone()), clean(request.industrySupervisorName()), clean(request.industrySupervisorDesignation()),
-                clean(request.industrySupervisorContact()), request.durationMonths(), request.startDate(), request.endDate(), InternshipDuration.weeks(request.startDate(), request.endDate()),
-                request.internshipMode(), request.stipendPerMonth(), request.fullTimeEmploymentOffered());
+                preserveApprovedLocation || request.workplace() == null ? clean(request.companyAddress()) : request.workplace().address(), clean(request.companyPhone()), clean(request.industrySupervisorName()), clean(request.industrySupervisorDesignation()),
+                clean(request.industrySupervisorContact()), request.durationMonths(), request.startDate(), request.endDate(), weeks,
+                request.internshipMode(), request.stipendPerMonth(), request.fullTimeEmploymentOffered(),
+                workingDaysCount, workingDaysStr);
     }
     public static InternshipDetailsResponse response(InternshipDetails entity) {
         var location = entity.getWorkplace();
         RegisteredWorkplaceRequest workplace = location == null || location.getWorkplaceAddress() == null ? null
                 : new RegisteredWorkplaceRequest(location.getPlaceId(), location.getWorkplaceAddress(),
                         location.getLatitude(), location.getLongitude(), location.getWorkplaceName());
-        return new InternshipDetailsResponse(entity.getId(), entity.getOnboarding().getId(), entity.getCompanyName(), entity.getCompanyType().name(),
-                entity.getCompanyType().getLabel(), entity.getOtherCompanyType(), entity.getCompanyAddress(), entity.getCompanyPhone(),
+        String companyTypeName = entity.getCompanyType() != null ? entity.getCompanyType().name() : null;
+        String companyTypeLabel = entity.getCompanyType() != null ? entity.getCompanyType().getLabel() : null;
+        String modeName = entity.getInternshipMode() != null ? entity.getInternshipMode().name() : null;
+        String modeLabel = entity.getInternshipMode() != null ? entity.getInternshipMode().getLabel() : null;
+        return new InternshipDetailsResponse(entity.getId(), entity.getOnboarding().getId(), entity.getOnboarding().getInternshipNumber(), entity.getCompanyName(), companyTypeName,
+                companyTypeLabel, entity.getOtherCompanyType(), entity.getCompanyAddress(), entity.getCompanyPhone(),
                 entity.getIndustrySupervisorName(), entity.getIndustrySupervisorDesignation(), entity.getIndustrySupervisorContact(),
-                entity.getDurationMonths(), entity.getStartDate(), entity.getEndDate(), displayWeeks(entity), entity.getInternshipMode().name(),
-                entity.getInternshipMode().getLabel(), entity.getStipendPerMonth(), entity.isFullTimeEmploymentOffered(), entity.getCreatedAt(), entity.getUpdatedAt(), workplace);
+                entity.getDurationMonths(), entity.getStartDate(), entity.getEndDate(), displayWeeks(entity), modeName,
+                modeLabel, entity.getStipendPerMonth(), entity.isFullTimeEmploymentOffered(), entity.getCreatedAt(), entity.getUpdatedAt(), workplace,
+                entity.getEffectiveWorkingDaysPerWeek(), entity.getWorkingDaysList(),
+                entity.getLifecycleStatus(), entity.getTerminatedAt(), entity.getTerminationReason(),
+                entity.getDeletedAt(), entity.getDeletionReason());
     }
-    private static int displayWeeks(InternshipDetails entity) {
+    private static Integer displayWeeks(InternshipDetails entity) {
         // Existing records remain readable even if their dates predate current validation.
         if (entity.getStartDate() == null || entity.getEndDate() == null || !entity.getEndDate().isAfter(entity.getStartDate())) return entity.getTotalWeeks();
         try { return InternshipDuration.weeks(entity.getStartDate(), entity.getEndDate()); }

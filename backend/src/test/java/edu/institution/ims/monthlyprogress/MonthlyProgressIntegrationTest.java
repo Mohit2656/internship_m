@@ -86,8 +86,49 @@ class MonthlyProgressIntegrationTest {
             .andExpect(header().string("Content-Type","image/png")).andReturn();
         assertThat(downloaded.getResponse().getContentAsByteArray()).isEqualTo(source.getBytes());
         assertThat(pdfText(student,id)).contains("PENDING_MENTOR_REVIEW","not yet approved").doesNotContain("GPS","EXIF","Geo-tag","Latitude","Longitude","workplace");
+        var studentPdf=mvc.perform(get("/api/v1/student/monthly-progress/{id}/pdf",id).cookie(student))
+                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF)).andReturn().getResponse();
+        var mentorPdf=mvc.perform(get("/api/v1/mentor/monthly-progress/{id}/pdf",id).cookie(loginCookie(mentorA.getEmail(),"MentorPassword!23")))
+                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF)).andReturn().getResponse();
+        assertThat(studentPdf.getHeader("Content-Disposition")).contains("attachment","Monthly_Progress_",".pdf");
+        assertThat(studentPdf.getContentAsByteArray()).startsWith("%PDF".getBytes());
+        try(var studentDocument=org.apache.pdfbox.pdmodel.PDDocument.load(studentPdf.getContentAsByteArray());
+                var mentorDocument=org.apache.pdfbox.pdmodel.PDDocument.load(mentorPdf.getContentAsByteArray())) {
+            assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(studentDocument))
+                    .isEqualTo(new org.apache.pdfbox.text.PDFTextStripper().getText(mentorDocument));
+        }
         mvc.perform(put("/api/v1/student/monthly-progress/{id}",id).cookie(student).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isMethodNotAllowed());
         assertThat(reviewJdbc.queryForObject("select count(*) from monthly_progress_review_events where report_id=? and event_type='SUBMITTED'",Integer.class,id)).isEqualTo(1);
+    }
+    @Test void optionalReportPdfIsVisibleToOwnerAndAssignedMentorAndSurvivesNormalReviewRules() throws Exception {
+        Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23");
+        mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(png("progress.png"))
+                .file(new MockMultipartFile("workDescription","","text/plain","Work".getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("reportPdf","not-a-pdf.pdf","application/pdf","plain text".getBytes())).cookie(student))
+                .andExpect(status().isBadRequest());
+        assertThat(reports.count()).isZero();
+        byte[] pdf="%PDF-1.4\nmonthly attachment".getBytes(StandardCharsets.US_ASCII);
+        var created=mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(png("progress.png"))
+                .file(new MockMultipartFile("workDescription","","text/plain","Work".getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("reportPdf","monthly-report.pdf","application/pdf",pdf)).cookie(student))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.reportPdfOriginalName").value("monthly-report.pdf")).andReturn();
+        long id=json.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+        mvc.perform(get("/api/v1/student/monthly-progress/{id}/attachment",id).cookie(student))
+                .andExpect(status().isOk()).andExpect(content().bytes(pdf));
+        mvc.perform(get("/api/v1/mentor/monthly-progress/{id}/attachment",id).cookie(loginCookie(mentorA.getEmail(),"MentorPassword!23")))
+                .andExpect(status().isOk()).andExpect(content().bytes(pdf));
+        mvc.perform(get("/api/v1/mentor/monthly-progress/{id}/attachment",id).cookie(loginCookie(mentorB.getEmail(),"MentorPassword!24")))
+                .andExpect(status().isNotFound());
+        Cookie mentor=loginCookie(mentorA.getEmail(),"MentorPassword!23");
+        decision(mentor,id,false,1,"Replace the attachment").andExpect(status().isOk());
+        byte[] replacement="%PDF-1.4\nmonthly replacement".getBytes(StandardCharsets.US_ASCII);
+        mvc.perform(multipart("/api/v1/student/monthly-progress/{id}/resubmit",id)
+                .file(png("corrected.png"))
+                .file(new MockMultipartFile("workDescription","","text/plain","Corrected work".getBytes(StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile("reportPdf","replacement.pdf","application/pdf",replacement)).param("revision","1").cookie(student))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.reportPdfOriginalName").value("replacement.pdf"));
+        mvc.perform(get("/api/v1/student/monthly-progress/{id}/attachment",id).cookie(student))
+                .andExpect(status().isOk()).andExpect(content().bytes(replacement));
     }
     @Test void onlyAssignedMentorCanReviewAndEveryReportAccessRemainsScoped() throws Exception {
         Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23"); long id=create(student,png("photo.png"));
@@ -112,7 +153,8 @@ class MonthlyProgressIntegrationTest {
     }
     @Test void rejectionRequiresReasonAndResubmissionRetainsAllRevisionsAndEvidence() throws Exception {
         Cookie student=loginCookie(studentA.getEmail(),"StudentPassword!23"),mentor=loginCookie(mentorA.getEmail(),"MentorPassword!23");
-        long id=create(student,png("original.png")); String originalKey=reports.findById(id).orElseThrow().getPhotoStorageKey();
+        long id=create(student,png("original.png")); var submitted=reports.findById(id).orElseThrow();
+        long internshipId=submitted.getStudentInternship().getId(); String originalKey=submitted.getPhotoStorageKey();
         byte[] original=reviewStorage.load(originalKey).resource().getInputStream().readAllBytes();
         for(String reason:List.of(""," ","x".repeat(1001))) decision(mentor,id,false,1,reason).andExpect(status().isBadRequest());
         decision(mentor,id,false,1,null).andExpect(status().isBadRequest());
@@ -121,7 +163,7 @@ class MonthlyProgressIntegrationTest {
         mvc.perform(get("/api/v1/student/notifications").cookie(student)).andExpect(status().isOk())
             .andExpect(jsonPath("$.unreadCount").value(1)).andExpect(jsonPath("$.content[0].rejectionReason").value("Explain your contribution"))
             .andExpect(jsonPath("$.content[0].mentorName").value("Mentor A"))
-            .andExpect(jsonPath("$.content[0].actionUrl").value("/student/monthly-progress#report-"+id));
+            .andExpect(jsonPath("$.content[0].actionUrl").value("/student/progress-reports?tab=monthly&internshipId="+internshipId+"#report-"+id));
         mvc.perform(get("/api/v1/student/notifications/unread-count").cookie(loginCookie(studentB.getEmail(),"StudentPassword!24")))
             .andExpect(status().isOk()).andExpect(jsonPath("$.unreadCount").value(0));
         mvc.perform(get("/api/v1/student/notifications").cookie(mentor)).andExpect(status().isForbidden());

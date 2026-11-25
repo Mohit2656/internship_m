@@ -21,9 +21,9 @@ const week = (status = 'AVAILABLE') => ({ id: 12, internshipId: 2, studentUserId
   rejectionReason: status === 'REJECTED' ? 'Explain outcome' : null, attendanceSubmitted: 4, attendancePresent: 4, attendanceGpsVerified: 3, history: [] });
 function harness(scope, rows, post) {
   const slots = { 0: rows, 2: false }; let cursor = 0;
-  const hooks = { useEffect() {}, useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = value; return [slots[i], next => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; }]; } };
+  const hooks = { useEffect() {}, useRef(value) { return { current: value }; }, useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = value; return [slots[i], next => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; }]; } };
   const { WeeklyProgress } = load('components/WeeklyProgress.tsx', { react: hooks, '@/lib/api': { api: { post } },
-    '@/lib/monthly-progress': dates, '@/lib/weekly-progress': weekly,
+    '@/lib/monthly-progress': dates, '@/lib/weekly-progress': weekly, '@/components/LoadingSpinner': { LoadingSpinner: ({ label }) => label },
     'next/link': { default: ({ children, ...props }) => React.createElement('a', props, children) } });
   const render = () => { cursor = 0; return WeeklyProgress({ scope }); };
   return { slots, render, nodes: type => elements(render()).filter(n => n.type === type),
@@ -52,12 +52,12 @@ test('form immediately recalculates readonly duration after either date changes 
   assert.match(renderToStaticMarkup(tree), /End date must be after start date/);
 });
 test('student sees periods, truthful attendance summaries, and submits a report for review', async () => {
-  let request; const h = harness('student', [week()], async (url, body) => { request = { url, body }; return { data: { ...week('PENDING_MENTOR_REVIEW'), workDescription: body.workDescription } }; });
+  let request; const h = harness('student', [week()], async (url, body) => { request = { url, body }; return { data: { ...week('PENDING_MENTOR_REVIEW'), workDescription: body.get('workDescription') } }; });
   assert.match(h.html(), /4 submitted · 4 present · 3 GPS verified/);
   h.button('Submit Weekly Report').props.onClick();
   h.nodes('textarea')[0].props.onChange({ target: { value: '  Built reporting endpoints  ' } });
   h.nodes('form')[0].props.onSubmit({ preventDefault() {} }); await flush();
-  assert.deepEqual(request, { url: '/student/weekly-progress/12', body: { workDescription: 'Built reporting endpoints' } });
+  assert.equal(request.url, '/student/weekly-progress/12'); assert.equal(request.body.get('workDescription'), 'Built reporting endpoints'); assert.equal(request.body.get('revision'), null);
   assert.equal(h.slots[0][0].status, 'PENDING_MENTOR_REVIEW'); assert.match(h.html(), /submitted to your faculty mentor for review/);
 });
 test('rejected weekly corrections send the server revision and preserve editable work on errors', async () => {
@@ -65,7 +65,7 @@ test('rejected weekly corrections send the server revision and preserve editable
   h.button('Correct and Resubmit').props.onClick();
   assert.equal(h.nodes('textarea')[0].props.value, 'Original work');
   h.nodes('form')[0].props.onSubmit({ preventDefault() {} }); await flush();
-  assert.deepEqual(request.body, { workDescription: 'Original work', revision: 1 });
+  assert.equal(request.body.get('workDescription'), 'Original work'); assert.equal(request.body.get('revision'), '1');
   assert.equal(h.slots[0][0].status, 'REJECTED'); assert.match(h.html(), /Revision changed/); assert.ok(h.nodes('form').length);
 });
 test('mentor review requires rejection reason, submits revision, and handles approval', async () => {
@@ -86,7 +86,7 @@ test('admin monitors without review actions; upcoming and archived weeks cannot 
 });
 test('legacy date-review warnings identify the student while other weekly records remain available', () => {
   const h = harness('admin', [week()]);
-  h.slots[11] = [{ internshipId: 99, studentUserId: 9, studentName: 'Legacy Student', message: 'Weekly records need an internship date review: duration exceeds 520 weeks. Existing internship records are preserved.' }];
+  h.slots[12] = [{ internshipId: 99, studentUserId: 9, studentName: 'Legacy Student', message: 'Weekly records need an internship date review: duration exceeds 520 weeks. Existing internship records are preserved.' }];
   assert.match(h.html(), /Legacy Student/); assert.match(h.html(), /520 weeks/); assert.match(h.html(), /Existing Company/);
   assert.match(h.html(), /href="\/admin\/students\/9"/);
 });

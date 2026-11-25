@@ -7,6 +7,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/v1/workplace-locations/search")
@@ -17,8 +18,9 @@ public class WorkplaceLocationSearchController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('STUDENT', 'ADMIN')")
-    public List<WorkplaceLocationSearchResult> search(@RequestParam(defaultValue = "") String q) {
-        return service.search(q);
+    public CompletableFuture<List<WorkplaceLocationSearchResult>> search(@RequestParam(defaultValue = "") String q,
+            @RequestParam(required = false) Double lat, @RequestParam(required = false) Double lon) {
+        return service.searchAsync(q, lat, lon);
     }
 
     @ExceptionHandler(WorkplaceLocationSearchException.class)

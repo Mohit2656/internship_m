@@ -41,6 +41,7 @@ class AttendanceReviewIntegrationTest {
     @Autowired AttendanceReviewService service; @Autowired PlatformTransactionManager transactionManager; @Autowired Clock clock;
     @Autowired StudentProfessionalProfileRepository professionalProfiles; @Autowired StudentResumeRepository resumes;
     @Autowired ResumeAnalysisRepository analyses; @Autowired ResumeCorrectionService corrections;
+    @Autowired edu.institution.ims.internship.storage.FileStorageService storage;
     @MockitoSpyBean NotificationService notifications;
     User admin, mentor, otherMentor, student, otherStudent;
     MentorStudentAssignment assignment; InternshipDetails internship;
@@ -54,13 +55,14 @@ class AttendanceReviewIntegrationTest {
 
     @Test void approvalPersistsReviewerAuditAndOneNotificationWithoutChangingSubmittedGpsOrLiveness() throws Exception {
         var record=record(student,internship,LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.BASIC);
-        var original=jdbc.queryForMap("select attendance_result,verification_status,submission_type,server_submitted_at from attendance_records where id=?",record.getId());
+        var original=jdbc.queryForMap("select verification_status,submission_type,server_submitted_at from attendance_records where id=?",record.getId());
         var location=jdbc.queryForMap("select latitude,longitude,gps_accuracy_meters,distance_meters,location_verification_status from attendance_evidence where attendance_id=?",record.getId());
         decide(record,mentor,"APPROVED",0,null).andExpect(status().isOk())
                 .andExpect(jsonPath("$.review.status").value("APPROVED")).andExpect(jsonPath("$.review.reviewerId").value(mentor.getId()))
                 .andExpect(jsonPath("$.review.reviewedAt").isNotEmpty()).andExpect(jsonPath("$.review.revision").value(1));
         decide(record,mentor,"APPROVED",1,null).andExpect(status().isConflict());
-        assertThat(jdbc.queryForMap("select attendance_result,verification_status,submission_type,server_submitted_at from attendance_records where id=?",record.getId())).isEqualTo(original);
+        assertThat(jdbc.queryForMap("select verification_status,submission_type,server_submitted_at from attendance_records where id=?",record.getId())).isEqualTo(original);
+        assertThat(attendance.findById(record.getId()).orElseThrow().getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
         assertThat(jdbc.queryForMap("select latitude,longitude,gps_accuracy_meters,distance_meters,location_verification_status from attendance_evidence where attendance_id=?",record.getId())).isEqualTo(location);
         assertThat(jdbc.queryForObject("select count(*) from attendance_review_audit where attendance_id=?",Long.class,record.getId())).isEqualTo(1);
         assertThat(jdbc.queryForObject("select count(*) from student_notifications where student_user_id=? and notification_type='ATTENDANCE_APPROVED'",Long.class,student.getId())).isEqualTo(1);
@@ -94,25 +96,27 @@ class AttendanceReviewIntegrationTest {
         decide(record,otherMentor,"APPROVED",0,null).andExpect(status().isOk());
     }
 
-    @Test void gpsFailuresAndMissingWorkplaceApprovalCannotBeOverriddenByMentorApproval() throws Exception {
+    @Test void gpsFailuresRemainVisibleAndAssignedMentorCanResolvePendingSubmissionAsPresent() throws Exception {
         for (LocationVerificationStatus status : List.of(LocationVerificationStatus.WORKPLACE_NOT_APPROVED,
                 LocationVerificationStatus.OUTSIDE_RADIUS,LocationVerificationStatus.INSUFFICIENT_ACCURACY,
                 LocationVerificationStatus.STALE_LOCATION,LocationVerificationStatus.LOCATION_UNAVAILABLE)) {
             var owner=account(Role.STUDENT); var details=internship(owner);
             assignments.saveAndFlush(new MentorStudentAssignment(mentor,owner,admin,clock.instant()));
             var record=record(owner,details,status,AttendanceSubmissionType.BASIC);
-            decide(record,mentor,"APPROVED",0,null).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_VERIFICATION_REQUIRED"));
+            assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
+            decide(record,mentor,"APPROVED",0,null).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.attendanceResult").value("PRESENT"));
             assertThat(attendance.findById(record.getId()).orElseThrow().getEvidence().getLocationVerificationStatus()).isEqualTo(status);
         }
-        assertThat(jdbc.queryForObject("select count(*) from attendance_reviews",Long.class)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from attendance_reviews",Long.class)).isEqualTo(5);
     }
 
-    @Test void captureAttendanceRequiresExistingLivenessVerificationEvenWhenGpsPassed() throws Exception {
+    @Test void failedCaptureVerificationRequiresMentorDecisionAndEvidenceRemainsVisible() throws Exception {
         var record=record(student,internship,LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.PHYSICAL_CAPTURE);
-        decide(record,mentor,"APPROVED",0,null).andExpect(status().isConflict());
-        decide(record,mentor,"MANUAL_REVIEW",0,"Please discuss the missing liveness verification.").andExpect(status().isOk());
-        assertThat(jdbc.queryForObject("select message from student_notifications where student_user_id=? and notification_type='ATTENDANCE_MANUAL_REVIEW'",String.class,student.getId()))
-                .contains("Contact your mentor","original submission remains available").doesNotContain("resubmit");
+        assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
+        decide(record,mentor,"REJECTED",0,"Required liveness verification is missing.").andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendanceResult").value("ABSENT"));
+        assertThat(attendance.findById(record.getId()).orElseThrow().getEvidence().getLocationVerificationStatus()).isEqualTo(LocationVerificationStatus.VERIFIED);
     }
 
     @Test void manualReviewCanBeResolvedButStaleAndRepeatedDecisionsCreateNoExtraEvents() throws Exception {
@@ -133,6 +137,31 @@ class AttendanceReviewIntegrationTest {
         var record=record(otherStudent,internship(otherStudent),LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.BASIC);
         jdbc.update("update attendance_records set deleted_at=?,active_slot=null where id=?",java.sql.Timestamp.from(clock.instant()),record.getId());
         decide(record,mentor,"REJECTED",0,"Deleted record must remain unavailable.").andExpect(status().isNotFound());
+    }
+
+    @Test void finalizedAttendanceCanOnlyBeAcknowledgedWithoutChangingItsResult() throws Exception {
+        var record=record(student,internship,LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.BASIC);
+        record.finalizeSubmission(true); attendance.saveAndFlush(record);
+        assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+        decide(record,mentor,"APPROVED",0,null).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ATTENDANCE_ALREADY_FINALIZED"));
+        mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(otherMentor))))
+                .andExpect(status().isNotFound());
+        var first=mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(mentor))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.acknowledgement.mentorId").value(mentor.getId()))
+                .andExpect(jsonPath("$.acknowledgement.seenAt").isNotEmpty()).andReturn();
+        String seen=json.readTree(first.getResponse().getContentAsString()).at("/acknowledgement/seenAt").asText();
+        mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(mentor))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.acknowledgement.seenAt").value(seen));
+        assertThat(attendance.findById(record.getId()).orElseThrow().getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+    }
+
+    @Test void pendingAttendanceRequiresDecisionAndCannotBeAcknowledged() throws Exception {
+        var record=record(student,internship,LocationVerificationStatus.OUTSIDE_RADIUS,AttendanceSubmissionType.BASIC);
+        mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(mentor))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_REVIEW_REQUIRED"));
+        assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
     }
 
     @Test void failedNotificationTransactionRollsBackReviewAuditAndNoticeTogether() {
@@ -167,11 +196,18 @@ class AttendanceReviewIntegrationTest {
         mvc.perform(get(base+"/resume/analysis/corrections").with(user(UserPrincipal.from(mentor)))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.original.skills[0]").value("Java")).andExpect(jsonPath("$.values.skills[0]").value("Spring Boot"));
         for (String suffix:List.of("/professional-profile","/resume/download","/resume/analysis","/resume/analysis/corrections"))
-            mvc.perform(get(base+suffix).with(user(UserPrincipal.from(otherMentor)))).andExpect(status().isNotFound());
+            mvc.perform(get(base+suffix).with(user(UserPrincipal.from(otherMentor)))).andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("ASSIGNED_RESUME_NOT_FOUND"));
         mvc.perform(put(base+"/resume/analysis/corrections").with(user(UserPrincipal.from(mentor))).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isMethodNotAllowed());
+        storage.delete(resume.getStorageKey());
+        mvc.perform(get(base+"/resume/download").with(user(UserPrincipal.from(mentor))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESUME_FILE_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("The stored resume file was not found"));
         assignment.end(clock.instant()); assignments.flush();
-        mvc.perform(get(base+"/resume/download").with(user(UserPrincipal.from(mentor)))).andExpect(status().isNotFound());
+        mvc.perform(get(base+"/resume/download").with(user(UserPrincipal.from(mentor)))).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ASSIGNED_RESUME_NOT_FOUND"));
     }
 
     private org.springframework.test.web.servlet.ResultActions decide(AttendanceRecord record,User actor,String status,int revision,String reason) throws Exception {
@@ -187,7 +223,7 @@ class AttendanceReviewIntegrationTest {
         return internships.saveAndFlush(details);
     }
     private AttendanceRecord record(User owner,InternshipDetails details,LocationVerificationStatus gps,AttendanceSubmissionType type) {
-        var record=attendance.saveAndFlush(new AttendanceRecord(owner,details,LocalDate.now(clock),AttendanceResult.PRESENT,VerificationStatus.UNVERIFIED,type,clock.instant()));
+        var record=attendance.saveAndFlush(new AttendanceRecord(owner,details,LocalDate.now(clock),AttendanceResult.PENDING_MENTOR_REVIEW,VerificationStatus.UNVERIFIED,type,clock.instant()));
         var captured=new AttendanceEvidence(record,SubmissionLocation.require(new BigDecimal("18.52"),new BigDecimal("73.85"),BigDecimal.TEN),clock.instant());
         captured.recordLocationVerification(null,new LocationVerificationDecision(gps,BigDecimal.ONE,gps==LocationVerificationStatus.VERIFIED),clock.instant());
         evidence.saveAndFlush(captured); return record;

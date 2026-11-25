@@ -57,14 +57,20 @@ public class RemoteAttendanceService {
     public AttendanceResponse submitToday(UserPrincipal principal, MultipartFile photo,
             AiVerificationEvidenceRequest aiEvidence, String workSummary, BigDecimal latitude,
             BigDecimal longitude, BigDecimal accuracy, Instant locationCapturedAt) {
+        return submitToday(principal,null,photo,aiEvidence,workSummary,latitude,longitude,accuracy,locationCapturedAt);
+    }
+    @Transactional
+    public AttendanceResponse submitToday(UserPrincipal principal,Long internshipId, MultipartFile photo,
+            AiVerificationEvidenceRequest aiEvidence, String workSummary, BigDecimal latitude,
+            BigDecimal longitude, BigDecimal accuracy, Instant locationCapturedAt) {
         String summary = validateSummary(workSummary);
         ValidatedCameraImage image = imageValidator.validate(photo);
         User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
-        InternshipDetails internship = policies.eligibleInternship(student.getId());
-        LocalDate today = LocalDate.now(clock);
-        requireWithinInternship(internship, today);
-        policies.requireSubmissionOpen(student.getId(), today);
+        InternshipDetails internship = policies.eligibleInternship(student.getId(),internshipId);
+        LocalDate today = edu.institution.ims.internship.InternshipLifecycle.today(clock);
+        policies.requireAttendanceActive(internship, today);
+        policies.requireSubmissionOpen(student.getId(), internship.getId(), today);
         ResolvedAttendancePolicy policy = policies.resolve(internship, today);
         if (policy.verificationMethod() != AttendanceVerificationMethod.REMOTE) {
             throw policy.verificationMethod() == AttendanceVerificationMethod.PHYSICAL
@@ -84,6 +90,9 @@ public class RemoteAttendanceService {
         AttendanceEvidence captured = new AttendanceEvidence(record, image, summary, null, reason, aiDecision, serverTime);
         captured.recordSubmissionLocation(submitted.latitude(), submitted.longitude(), submitted.accuracyMeters());
         locationVerification.save(captured, internship, submitted, locationCapturedAt, false, accuracy);
+        record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
+        attendance.saveAndFlush(record);
+        submissions.notifyMentor(record);
         return AttendanceService.response(record);
     }
 

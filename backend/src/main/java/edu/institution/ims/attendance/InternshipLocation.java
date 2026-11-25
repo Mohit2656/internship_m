@@ -20,7 +20,7 @@ public class InternshipLocation {
     @Column(nullable = false, precision = 10, scale = 6) private BigDecimal longitude;
     @Column(name = "geofence_radius_meters", nullable = false, precision = 8, scale = 2)
     private BigDecimal geofenceRadiusMeters;
-    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20) private InternshipLocationStatus status;
+    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 30) private InternshipLocationStatus status;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
     @Column(name = "confirmed_at") private Instant confirmedAt;
@@ -51,12 +51,12 @@ public class InternshipLocation {
     public String getMentorRemarks() { return mentorRemarks; }
     public String getIiicDecision() { return iiicDecision; }
     public String getIiicRemarks() { return iiicRemarks; }
-    public boolean dualApproved() { return status==InternshipLocationStatus.APPROVED && "APPROVE".equals(mentorDecision) && "APPROVE".equals(iiicDecision) && mentorReviewer!=null && mentorReviewer.isActive() && mentorReviewer.getRole()==edu.institution.ims.user.Role.MENTOR && confirmedBy!=null && confirmedBy.isActive() && confirmedBy.getRole()==edu.institution.ims.user.Role.ADMIN && mentorReviewedAt!=null && confirmedAt!=null && workplaceAddress!=null; }
+    public boolean currentMentorApprovalRecorded() { return "APPROVE".equals(mentorDecision) && mentorReviewer != null && mentorReviewedAt != null; }
+    public boolean mentorApproved() { return status==InternshipLocationStatus.APPROVED && "APPROVE".equals(mentorDecision) && mentorReviewer!=null && mentorReviewer.isActive() && mentorReviewer.getRole()==edu.institution.ims.user.Role.MENTOR && mentorReviewedAt!=null && workplaceAddress!=null; }
     public void review(User actor,String decision,String remarks,Instant now) {
-        if(actor.getRole()==edu.institution.ims.user.Role.MENTOR) { mentorReviewer=actor;mentorReviewedAt=now;mentorDecision=decision;mentorRemarks=remarks; }
-        else if(actor.getRole()==edu.institution.ims.user.Role.ADMIN) { confirmedBy=actor;confirmedAt=now;iiicDecision=decision;iiicRemarks=remarks; }
-        else throw new IllegalArgumentException("Reviewer role is invalid");
-        status="REJECT".equals(mentorDecision)||"REJECT".equals(iiicDecision)?InternshipLocationStatus.REJECTED:"APPROVE".equals(mentorDecision)&&"APPROVE".equals(iiicDecision)?InternshipLocationStatus.APPROVED:InternshipLocationStatus.PENDING;
+        if(actor.getRole()!=edu.institution.ims.user.Role.MENTOR) throw new IllegalArgumentException("Only a mentor may review workplace coordinates");
+        mentorReviewer=actor;mentorReviewedAt=now;mentorDecision=decision;mentorRemarks=remarks;
+        status="REJECT".equals(mentorDecision)?InternshipLocationStatus.REJECTED:"APPROVE".equals(mentorDecision)?InternshipLocationStatus.APPROVED:InternshipLocationStatus.PENDING_MENTOR_APPROVAL;
         updatedAt=now;
     }
     protected InternshipLocation() {}
@@ -75,7 +75,7 @@ public class InternshipLocation {
         this.geofenceRadiusMeters = radius;
         this.revision++;
         this.mentorReviewer=null;this.mentorReviewedAt=null;this.mentorDecision=null;this.mentorRemarks=null;this.iiicDecision=null;this.iiicRemarks=null;
-        this.status = InternshipLocationStatus.PENDING;
+        this.status = InternshipLocationStatus.PENDING_MENTOR_APPROVAL;
         this.confirmedAt = null;
         this.confirmedBy = null;
         this.updatedAt = now;

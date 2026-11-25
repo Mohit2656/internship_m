@@ -62,9 +62,10 @@ public class DashboardReportRepository {
         });
         if (filters.containsKey("historyFrom") && filters.containsKey("historyTo") && date(filters.get("historyFrom")).isAfter(date(filters.get("historyTo"))))
             throw new IllegalArgumentException("History from must be on or before history through");
-        LocalDate attendanceDate = filters.containsKey("attendanceDate") ? date(filters.get("attendanceDate")) : LocalDate.now(clock);
+        LocalDate institutionalToday = edu.institution.ims.internship.InternshipLifecycle.today(clock);
+        LocalDate attendanceDate = filters.containsKey("attendanceDate") ? date(filters.get("attendanceDate")) : institutionalToday;
         MapSqlParameterSource params = new MapSqlParameterSource().addValue("attendanceDate", java.sql.Date.valueOf(attendanceDate))
-                .addValue("completionToday", java.sql.Date.valueOf(LocalDate.now(clock))).addValue("dayOfWeek", attendanceDate.getDayOfWeek().name()).addValue("viewerId", user.id());
+                .addValue("completionToday", java.sql.Date.valueOf(institutionalToday)).addValue("dayOfWeek", attendanceDate.getDayOfWeek().name()).addValue("viewerId", user.id());
         StringBuilder where = new StringBuilder(" where u.role = 'STUDENT'");
         if (!admin) where.append(" and a.mentor_user_id = :viewerId");
         // Reject guessed / out-of-scope IDs even if another filter would produce an empty result.
@@ -122,7 +123,7 @@ public class DashboardReportRepository {
     }
     /** Authorized, one-row-per-student projection shared by institutional report types. */
     String reportStudentsSql(Scope scope) {
-        return "select u.id as sid,coalesce(p.uid,sa.uid) as uid,coalesce(p.student_name,sa.student_name) as studentName,p.branch,mp.name as mentorName,i.id as internshipId,i.company_name as company,acs.name as academicSession,i.start_date as startDate,i.end_date as endDate,i.completed_at as completionDate,cr.email as completionReviewer,i.completion_remarks as completionRemarks,case when i.id is null then null else " + edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL + " end as completionStatus,coalesce(o.source,'UNRECORDED') as source,i.stipend_per_month as stipend,i.full_time_employment_offered as offer,coalesce(o.workflow_status,'NOT_SECURED') as workflow,o.diary_issued as diary,coalesce(p.updated_at,p.created_at) as profileLastStudentUpdatedAt,coalesce(i.updated_at,i.created_at) as internshipLastStudentUpdatedAt " + FROM + scope.where();
+        return "select u.id as sid,coalesce(p.uid,sa.uid) as uid,coalesce(p.student_name,sa.student_name) as studentName,p.branch,mp.name as mentorName,i.id as internshipId,i.company_name as company,acs.name as academicSession,i.start_date as startDate,i.end_date as endDate,(" + edu.institution.ims.internship.InternshipCompletionService.COMPLETION_DATE_SQL + ") as completionDate,cr.email as completionReviewer,i.completion_remarks as completionRemarks,case when i.id is null then null else " + edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL + " end as completionStatus,coalesce(o.source,'UNRECORDED') as source,i.stipend_per_month as stipend,i.full_time_employment_offered as offer,coalesce(o.workflow_status,'NOT_SECURED') as workflow,o.diary_issued as diary,coalesce(p.updated_at,p.created_at) as profileLastStudentUpdatedAt,coalesce(i.updated_at,i.created_at) as internshipLastStudentUpdatedAt " + FROM + scope.where();
     }
     public long count(Scope scope) {
         return Objects.requireNonNull(jdbc.queryForObject("select count(*) " + FROM + scope.where(), scope.params(), Long.class));
@@ -136,7 +137,11 @@ public class DashboardReportRepository {
             Map<String, Object> row = new LinkedHashMap<>(); row.put("_id", rs.getLong("report_student_id"));
             for (var field : fields) {
                 Object value = field.expression() == null ? null : rs.getObject(field.id());
-                if (field.id().equals("aadhaarNumber") && value != null) value = encryption.decrypt(value.toString());
+                if (field.id().equals("aadhaarNumber") && value != null) {
+                    try {
+                        value = encryption.decrypt(value.toString());
+                    } catch (Exception ignored) {}
+                }
                 row.put(field.id(), value);
             }
             return row;

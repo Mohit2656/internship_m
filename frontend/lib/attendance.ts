@@ -1,4 +1,4 @@
-export type AttendanceResult = "PRESENT" | "ABSENT";
+export type AttendanceResult = "PRESENT" | "PENDING_MENTOR_REVIEW" | "ABSENT";
 export type VerificationStatus = "UNVERIFIED" | "VERIFIED";
 export type LivenessStatus = "VERIFIED" | "FAILED" | "NOT_PERFORMED" | "HISTORICAL" | "NOT_APPLICABLE";
 export type AttendanceSubmissionType = "BASIC" | "PHYSICAL_CAPTURE" | "REMOTE_CAPTURE" | "AUTO_ABSENT";
@@ -15,6 +15,7 @@ export type AttendanceLocationEvidence = {
 export type AttendanceReviewStatus = "PENDING" | "APPROVED" | "REJECTED" | "MANUAL_REVIEW" | "NOT_APPLICABLE";
 export type AttendanceReview = { status: AttendanceReviewStatus; revision: number; reviewerId: number | null; reviewerName: string | null; reviewedAt: string | null; reason: string | null; approvalAllowed: boolean };
 export type AttendanceReviewAudit = { revision: number; previousStatus: AttendanceReviewStatus; status: AttendanceReviewStatus; reviewerId: number; reviewerName: string; reviewedAt: string; reason: string | null };
+export type AttendanceAcknowledgement = { mentorId: number; seenAt: string };
 export const attendanceReviewLabel = (status?: AttendanceReviewStatus) => status === "APPROVED" ? "Approved" : status === "REJECTED" ? "Rejected" : status === "MANUAL_REVIEW" ? "Manual review required" : status === "NOT_APPLICABLE" ? "Not applicable" : "Pending mentor approval";
 
 export function locationVerificationLabel(status?: LocationVerificationStatus | null) {
@@ -44,10 +45,12 @@ export type Attendance = {
   serverSubmittedAt: string;
   evidence?: AttendanceLocationEvidence | null;
   review?: AttendanceReview | null;
+  acknowledgement?: AttendanceAcknowledgement | null;
 };
 
 export function attendanceLabel(attendance: Attendance) {
-  if (attendance.attendanceResult !== "PRESENT") return "Absent";
+  if (attendance.attendanceResult === "PENDING_MENTOR_REVIEW") return "Pending mentor review";
+  if (attendance.attendanceResult === "ABSENT") return "Absent";
   return `Present — ${livenessLabel(attendance.livenessStatus)}`;
 }
 
@@ -86,6 +89,9 @@ export function attendanceSubmissionOpen(today: TodayAttendance | null, now = Da
 
 export type LateAttendancePermission = {
   studentUserId: number;
+  internshipId?: number;
+  internshipNumber?: number;
+  companyName?: string | null;
   studentName: string | null;
   uid: string | null;
   attendanceDate: string;
@@ -97,6 +103,8 @@ export type LateAttendancePermission = {
 
 export type MentorStudentAttendance = {
   studentUserId: number;
+  internshipId: number;
+  internshipNumber: number;
   name: string | null;
   uid: string | null;
   branchLabel: string | null;
@@ -117,8 +125,38 @@ export type AttendancePolicy = {
   verificationMethod: AttendanceVerificationMethod;
   attendanceAlreadySubmitted: boolean;
   configurationReady: boolean;
+  workplaceStatus: "NOT_REQUIRED" | "DECLARATION_REQUIRED" | "AWAITING_MENTOR_APPROVAL" | "APPROVED";
+  lifecycleStatus: "NOT_STARTED" | "ACTIVE" | "ENDED" | "COMPLETED";
+  internshipStartDate: string;
+  internshipEndDate: string;
+  attendanceTrackingActive: boolean;
   serverDate: string;
   maxGpsAccuracyMeters: number;
+  scheduledWorkingDay?: boolean;
+  scheduledDayOff?: boolean;
+  approvedHoliday?: boolean;
+  pendingHoliday?: boolean;
+  approvedExtraWorkday?: boolean;
+  workingDaysPerWeek?: number;
+  workingDays?: string[];
+};
+
+export type AttendanceException = {
+  id: number;
+  internshipId: number;
+  internshipNumber: number;
+  companyName: string | null;
+  studentUserId: number;
+  studentName: string | null;
+  uid: string | null;
+  exceptionDate: string;
+  exceptionType: "COMPANY_HOLIDAY" | "EXTRA_WORKDAY";
+  reason: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  reviewRemarks: string | null;
+  createdAt: string;
 };
 
 export type HybridScheduleEntry = { dayOfWeek: string; workMode: HybridWorkMode };
@@ -139,7 +177,7 @@ export type AiVerificationEvidence = {
   modelVersion: string;
 };
 
-export type InternshipLocationStatus = "PENDING" | "CONFIRMED" | "APPROVED" | "REJECTED";
+export type InternshipLocationStatus = "PENDING" | "PENDING_MENTOR_APPROVAL" | "CONFIRMED" | "APPROVED" | "REJECTED";
 
 export type InternshipLocation = {
   id: number;
@@ -157,4 +195,5 @@ export type InternshipLocation = {
   workplaceName: string | null;
   companyName: string;
   revision: number; mentorDecision: "APPROVE" | "REJECT" | null; mentorReviewerId: number | null; mentorReviewedAt: string | null; mentorRemarks: string | null; iiicDecision: "APPROVE" | "REJECT" | null; iiicRemarks: string | null;
+  coordinatesLocked: boolean;
 };

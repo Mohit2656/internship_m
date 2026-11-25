@@ -6,8 +6,14 @@ import java.time.*;
 final class AttendanceSubmissionWindow {
     private AttendanceSubmissionWindow() {}
 
+    static ZoneId zone(Clock clock) {
+        return clock != null && "Asia/Kolkata".equals(clock.getZone().getId())
+                ? clock.getZone()
+                : ZoneId.of("Asia/Kolkata");
+    }
+
     static Instant deadline(LocalDate date, Clock clock) {
-        return date.atTime(LocalTime.NOON).atZone(clock.getZone()).toInstant();
+        return date.atTime(LocalTime.NOON).atZone(zone(clock)).toInstant();
     }
 
     static boolean isClosed(LocalDate date, Clock clock) {

@@ -7,9 +7,14 @@ const React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 function load(file, imports = {}) {
   const module = { exports: {} };
+  const resolvedImports = {
+    "@/components/CustomReportBuilder": { CustomReportBuilder: () => null },
+    "@/components/SavedReportsList": { SavedReportsList: () => null },
+    ...imports,
+  };
   new Function("require", "module", "exports", ts.transpileModule(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), {
     compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }
-  }).outputText)(name => imports[name] || require(name), module, module.exports);
+  }).outputText)(name => resolvedImports[name] || require(name), module, module.exports);
   return module.exports;
 }
 const attendance = load("lib/attendance.ts");

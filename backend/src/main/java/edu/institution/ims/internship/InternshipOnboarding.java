@@ -5,13 +5,14 @@ import jakarta.persistence.*;
 import java.time.Instant;
 
 @Entity
-@Table(name = "internship_onboarding", uniqueConstraints = @UniqueConstraint(name = "uk_internship_onboarding_student", columnNames = "student_user_id"), indexes = {
+@Table(name = "internship_onboarding", uniqueConstraints = @UniqueConstraint(name = "uk_internship_onboarding_student_number", columnNames = {"student_user_id","internship_number"}), indexes = {
         @Index(name = "idx_internship_onboarding_status", columnList = "workflow_status"),
         @Index(name = "idx_internship_onboarding_source", columnList = "source")
 })
 public class InternshipOnboarding {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
-    @OneToOne(fetch = FetchType.LAZY, optional = false) @JoinColumn(name = "student_user_id", nullable = false) private User student;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false) @JoinColumn(name = "student_user_id", nullable = false) private User student;
+    @Column(name="internship_number",nullable=false) private short internshipNumber=1;
     @Enumerated(EnumType.STRING) @Column(length = 20) private InternshipSource source;
     @Enumerated(EnumType.STRING) @Column(name = "workflow_status", nullable = false, length = 30) private WorkflowStatus workflowStatus;
     @Column(name = "secured_at", nullable = false, updatable = false) private Instant securedAt;
@@ -27,6 +28,7 @@ public class InternshipOnboarding {
         this.student = student;
         this.workflowStatus = WorkflowStatus.INTERNSHIP_SECURED;
     }
+    public InternshipOnboarding(User student,int internshipNumber){this(student);this.internshipNumber=(short)internshipNumber;}
     @PrePersist void createTimestamps() { var now = Instant.now(); securedAt = now; createdAt = now; updatedAt = now; }
     @PreUpdate void updateTimestamp() { updatedAt = Instant.now(); }
     public void selectSource(InternshipSource source) {
@@ -53,6 +55,7 @@ public class InternshipOnboarding {
     public void markStudentUpdated() { updatedAt = Instant.now(); }
     public Long getId() { return id; }
     public User getStudent() { return student; }
+    public int getInternshipNumber(){return internshipNumber;}
     public InternshipSource getSource() { return source; }
     public WorkflowStatus getWorkflowStatus() { return workflowStatus; }
     public Instant getSecuredAt() { return securedAt; }

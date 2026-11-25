@@ -53,6 +53,7 @@ class OpportunityMatchingReportIntegrationTest {
         studentSkills.addOwn(UserPrincipal.from(student),new SkillNameRequest("Docker"));
         studentSkills.addOwn(UserPrincipal.from(other),new SkillNameRequest("Java"));
         studentSkills.addOwn(UserPrincipal.from(other),new SkillNameRequest("Docker"));
+        parsedResume(student); parsedResume(other);
     }
 
     @Test void publicationSavesRankedReportAndNotifiesOnlyStrongEligibleStudentOnce() {
@@ -75,11 +76,11 @@ class OpportunityMatchingReportIntegrationTest {
         opportunitySkills.saveAndFlush(new OpportunitySkill(opportunity,new NormalizedSkill("SQL","sql"),OpportunitySkillType.REQUIRED));
         var run=matching.rerun(opportunity.getId());
         var first=run.report().candidates().get(0);
-        assertThat(first.matchScore()).isEqualTo(60);
+        assertThat(first.matchScore()).isEqualTo(50);
         assertThat(first.matchedSkills()).containsExactly("Java");
         assertThat(first.missingRequiredSkills()).containsExactly("SQL");
         assertThat(first.strongMatch()).isFalse();
-        assertThat(run.report().candidates().get(1).matchScore()).isEqualTo(60);
+        assertThat(run.report().candidates().get(1).matchScore()).isEqualTo(50);
         assertThat(run.report().candidates().get(1).eligibility()).isEqualTo("INELIGIBLE");
         assertThat(notices(student)).isZero(); // Draft review never sends student alerts.
     }
@@ -88,6 +89,7 @@ class OpportunityMatchingReportIntegrationTest {
         User higherId=candidate("A Ranked Student",Branch.COMPUTER_ENGINEERING,7,UUID.randomUUID().toString());
         studentSkills.addOwn(UserPrincipal.from(higherId),new SkillNameRequest("Java"));
         studentSkills.addOwn(UserPrincipal.from(higherId),new SkillNameRequest("Docker"));
+        parsedResume(higherId);
         service.publish(opportunity.getId());
         var run=matching.get(opportunity.getId(),matching.history(opportunity.getId()).get(0).id());
         assertThat(run.report().candidates()).filteredOn(OpportunityMatchingService.Candidate::strongMatch)
@@ -118,13 +120,14 @@ class OpportunityMatchingReportIntegrationTest {
         opportunitySkills.saveAndFlush(new OpportunitySkill(opportunity,new NormalizedSkill("PostgreSQL","postgresql"),OpportunitySkillType.PREFERRED));
         matching.rerun(opportunity.getId()); matching.rerun(opportunity.getId());
         assertThat(notices(student)).isEqualTo(2);
-        assertThat(matching.history(opportunity.getId())).hasSize(4);
+        assertThat(matching.history(opportunity.getId())).hasSize(5); // confirmed skill change recalculates automatically
         assertThat(matching.get(opportunity.getId(),first.id()).report()).isEqualTo(first.report());
         assertThat(first.report().candidates().get(0).matchedPreferredSkills()).doesNotContain("PostgreSQL");
     }
 
     @Test void correctedResumeReplacesExtractedSkillsAndOriginalExtractionAndManualSkillsRemainIntact() {
         var professional=professionalProfiles.findByStudentId(student.getId()).orElseThrow();
+        resumes.findByProfessionalProfileIdAndActiveTrue(professional.getId()).ifPresent(value->{value.deactivate();resumes.saveAndFlush(value);});
         var resume=new StudentResume(professional); resume.activate("resume.pdf","matching-"+UUID.randomUUID(),"application/pdf",100);
         resume.markAnalysisParsed(); resumes.saveAndFlush(resume);
         var analysis=new ResumeAnalysis(resume);
@@ -172,11 +175,96 @@ class OpportunityMatchingReportIntegrationTest {
         mvc.perform(get("/api/v1/student/opportunities/{id}/matching-score",opportunity.getId()).cookie(own)).andExpect(status().isNotFound());
     }
 
+    @Test void systemMatchedStudentsUseLiveRequiredSkillPercentageAndAreNotApplicants() throws Exception {
+        opportunitySkills.saveAndFlush(new OpportunitySkill(opportunity,
+                new NormalizedSkill("SQL", "sql"), OpportunitySkillType.REQUIRED));
+        Cookie administrator = login(admin);
+        String endpoint = "/api/v1/admin/opportunities/" + opportunity.getId() + "/system-matched-students";
+
+        mvc.perform(get(endpoint).cookie(administrator)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(true))
+                .andExpect(jsonPath("$.students.length()").value(2))
+                .andExpect(jsonPath("$.students[0].matchedSkills").value(org.hamcrest.Matchers.contains("Java")))
+                .andExpect(jsonPath("$.students[0].missingRequiredSkills").value(org.hamcrest.Matchers.contains("SQL")))
+                .andExpect(jsonPath("$.students[0].matchPercentage").value(50.0));
+
+        studentSkills.addOwn(UserPrincipal.from(student), new SkillNameRequest("SQL"));
+        mvc.perform(get(endpoint).cookie(administrator)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.students[0].studentId").value(student.getId()))
+                .andExpect(jsonPath("$.students[0].matchPercentage").value(100.0))
+                .andExpect(jsonPath("$.students[0].missingRequiredSkills").isEmpty());
+
+        Opportunity noRequirements = opportunity(null, List.of());
+        opportunitySkills.deleteAllByOpportunityId(noRequirements.getId()); opportunitySkills.flush();
+        mvc.perform(get("/api/v1/admin/opportunities/{id}/system-matched-students", noRequirements.getId()).cookie(administrator))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.available").value(false))
+                .andExpect(jsonPath("$.message").value("Skill match unavailable"))
+                .andExpect(jsonPath("$.students").isEmpty());
+        mvc.perform(get(endpoint).cookie(login(student))).andExpect(status().isForbidden());
+    }
+
+    @Test void studentInterestIsIndependentOfSkillMatchAndDuplicateSafe() throws Exception {
+        opportunitySkills.saveAllAndFlush(List.of(
+                new OpportunitySkill(opportunity, new NormalizedSkill("SQL", "sql"), OpportunitySkillType.REQUIRED),
+                new OpportunitySkill(opportunity, new NormalizedSkill("Kubernetes", "kubernetes"), OpportunitySkillType.REQUIRED)));
+        service.publish(opportunity.getId());
+        Cookie own = login(student); Cookie administrator = login(admin);
+        String interest = "/api/v1/student/opportunities/" + opportunity.getId() + "/interest";
+
+        mvc.perform(post(interest).cookie(own)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.interested").value(true));
+        mvc.perform(post(interest).cookie(own)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.interested").value(true));
+        assertThat(jdbc.queryForObject("select count(*) from opportunity_interests where opportunity_id=? and student_user_id=?",
+                Long.class, opportunity.getId(), student.getId())).isEqualTo(1);
+        mvc.perform(get("/api/v1/student/opportunities/interests").cookie(own)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0]").value(opportunity.getId()));
+
+        mvc.perform(get("/api/v1/admin/opportunities/{id}/interested-students", opportunity.getId()).cookie(administrator))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.students.length()").value(1))
+                .andExpect(jsonPath("$.students[0].studentId").value(student.getId()))
+                .andExpect(jsonPath("$.students[0].studentName").value("First Student"))
+                .andExpect(jsonPath("$.students[0].uid").value("M" + student.getId()))
+                .andExpect(jsonPath("$.students[0].matchPercentage").value(org.hamcrest.Matchers.closeTo(33.333, .01)));
+        mvc.perform(get("/api/v1/admin/opportunities/{id}/interested-students", opportunity.getId()).cookie(own))
+                .andExpect(status().isForbidden());
+        mvc.perform(post(interest).cookie(administrator)).andExpect(status().isForbidden());
+
+        Opportunity draft = opportunity(null, List.of());
+        mvc.perform(post("/api/v1/student/opportunities/{id}/interest", draft.getId()).cookie(own))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test void aliasesRankExactlyMissingResumeIsUnavailableAndAdminNotifyIsDeduplicated() throws Exception {
+        User alias=candidate("Alias Student",Branch.COMPUTER_ENGINEERING,7,UUID.randomUUID().toString());
+        studentSkills.addOwn(UserPrincipal.from(alias),new SkillNameRequest("JS")); parsedResume(alias);
+        opportunitySkills.deleteAllByOpportunityId(opportunity.getId()); opportunitySkills.flush();
+        opportunitySkills.saveAndFlush(new OpportunitySkill(opportunity,new NormalizedSkill("JavaScript","javascript"),OpportunitySkillType.REQUIRED));
+        var report=matching.rerun(opportunity.getId()).report();
+        var aliasResult=report.candidates().stream().filter(c->c.studentId().equals(alias.getId())).findFirst().orElseThrow();
+        assertThat(aliasResult.skillsAvailable()).isTrue(); assertThat(aliasResult.matchScore()).isEqualTo(100);
+        User unavailable=candidate("No Resume",Branch.COMPUTER_ENGINEERING,7,UUID.randomUUID().toString());
+        studentSkills.addOwn(UserPrincipal.from(unavailable),new SkillNameRequest("JavaScript"));
+        var unavailableResult=matching.rerun(opportunity.getId()).report().candidates().stream().filter(c->c.studentId().equals(unavailable.getId())).findFirst().orElseThrow();
+        assertThat(unavailableResult.skillsAvailable()).isFalse(); assertThat(unavailableResult.strongMatch()).isFalse();
+        Cookie administrator=login(admin); Cookie own=login(student);
+        String notify="/api/v1/admin/opportunities/"+opportunity.getId()+"/recommended-students/"+alias.getId()+"/notify";
+        mvc.perform(post(notify).cookie(own)).andExpect(status().isForbidden());
+        mvc.perform(post(notify).cookie(administrator)).andExpect(status().isOk());
+        mvc.perform(post(notify).cookie(administrator)).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("select count(*) from student_notifications where student_user_id=? and notification_type='OPPORTUNITY_MATCH'",Long.class,alias.getId())).isEqualTo(1);
+    }
+
     private User candidate(String name,Branch branch,int semester,String suffix) {
         User user=users.save(new User("matching-report-"+suffix+"@example.edu",encoder.encode("Password!23"),Role.STUDENT,true));
         StudentProfile p=new StudentProfile(user);
         p.apply(name,branch,"M"+user.getId(),"R"+user.getId(),"Address",null,user.getEmail(),user.getEmail(),"9876543210","Guardian","9876543211","9876543212","O+","Mentor","9876543213","Coordinator","9876543214","CDC","9876543215","2026-2027",semester);
         p.setEncryptedAadhaar("test-encrypted-value","1234"); profiles.saveAndFlush(p); return user;
+    }
+    private void parsedResume(User user) {
+        var professional=professionalProfiles.findByStudentId(user.getId()).orElseThrow();
+        var resume=new StudentResume(professional); resume.activate("resume.pdf","parsed-"+UUID.randomUUID(),"application/pdf",100); resume.markAnalysisParsed(); resumes.saveAndFlush(resume);
+        var analysis=new ResumeAnalysis(resume); analysis.complete(new AiResumeResult("test","1",List.of(),List.of(),List.of(),List.of())); analyses.saveAndFlush(analysis);
     }
     private Opportunity opportunity(BigDecimal cgpa,List<Branch> branches) {
         var request=new OpportunityRequest("Example Company","Software Intern","Build Java applications using Docker",null,"Pune",OpportunityMode.HYBRID,3,BigDecimal.ZERO,"INR",LocalDate.now().plusDays(10),cgpa,branches,List.of(),List.of("Java"),List.of("Docker"));

@@ -7,21 +7,28 @@ import edu.institution.ims.user.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.util.List;
 
 @Service
 public class MentorStudentProfileService {
-    private final UserRepository users;
     private final MentorStudentAssignmentRepository assignments;
     private final StudentProfileRepository profiles;
     private final StudentProfessionalProfileRepository professionalProfiles;
     private final StudentSkillRepository skills;
+    private final UserRepository users;
 
-    public MentorStudentProfileService(UserRepository users, MentorStudentAssignmentRepository assignments,
-            StudentProfileRepository profiles, StudentProfessionalProfileRepository professionalProfiles,
-            StudentSkillRepository skills) {
-        this.users = users; this.assignments = assignments; this.profiles = profiles;
-        this.professionalProfiles = professionalProfiles; this.skills = skills;
+    public MentorStudentProfileService(MentorStudentAssignmentRepository assignments,
+            StudentProfileRepository profiles,
+            StudentProfessionalProfileRepository professionalProfiles,
+            StudentSkillRepository skills,
+            UserRepository users) {
+        this.assignments = assignments;
+        this.profiles = profiles;
+        this.professionalProfiles = professionalProfiles;
+        this.skills = skills;
+        this.users = users;
     }
 
     @Transactional(readOnly = true)
@@ -36,8 +43,10 @@ public class MentorStudentProfileService {
         List<String> confirmedSkills = professional == null ? List.of() : skills
                 .findAllByProfessionalProfileIdAndActiveTrueOrderByDisplayNameAsc(professional.getId())
                 .stream().map(StudentSkill::getDisplayName).toList();
-        return new MentorStudentProfileResponse(profile.getStudentName(), profile.getUid(), profile.getBranch().name(),
-                profile.getBranch().getLabel(), profile.getRollNumber(), profile.getInstituteEmail(), profile.getPersonalEmail(),
+        return new MentorStudentProfileResponse(profile.getStudentName(), profile.getUid(),
+                profile.getBranch() == null ? null : profile.getBranch().name(),
+                profile.getBranch() == null ? null : profile.getBranch().getLabel(),
+                profile.getRollNumber(), profile.getInstituteEmail(), profile.getPersonalEmail(),
                 profile.getPhoneNumber(), profile.getAcademicYear(), profile.getSemester(),
                 professional == null ? null : professional.getHeadline(),
                 professional == null ? null : professional.getCareerInterests(), confirmedSkills,
@@ -48,10 +57,10 @@ public class MentorStudentProfileService {
 
     private void requireMentor(Long userId) {
         users.findById(userId).filter(user -> user.getRole() == Role.MENTOR)
-                .orElseThrow(() -> error("MENTOR_NOT_FOUND", "Mentor was not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied"));
     }
 
-    private static MentorAssignmentException error(String code, String message) {
-        return new MentorAssignmentException(HttpStatus.NOT_FOUND, code, message);
+    private static ResponseStatusException error(String code, String message) {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, message);
     }
 }

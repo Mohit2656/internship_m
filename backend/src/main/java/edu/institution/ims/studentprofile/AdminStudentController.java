@@ -22,9 +22,10 @@ public class AdminStudentController {
             @RequestParam(required = false) CompanyType companyType, @RequestParam(required = false) InternshipMode internshipMode,
             @RequestParam(required = false) Boolean paid, @RequestParam(required = false) Boolean fullTimeEmploymentOffered,
             @RequestParam(required = false) AttentionCategory attention, @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size, @RequestParam(required=false) Long academicSessionId) {
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) Long academicSessionId,
+            @RequestParam(required = false) Boolean internshipSecured, @RequestParam(required = false) String companyName) {
         return service.list(search, branch, academicYear, semester, internshipStatus, internshipSource, profileStatus, companyType,
-                internshipMode, paid, fullTimeEmploymentOffered, attention, page, size, academicSessionId);
+                internshipMode, paid, fullTimeEmploymentOffered, attention, page, size, academicSessionId, internshipSecured, companyName);
     }
     @GetMapping("/{id}") public AdminStudentDetailResponse detail(@PathVariable Long id) { return service.detail(id); }
 }

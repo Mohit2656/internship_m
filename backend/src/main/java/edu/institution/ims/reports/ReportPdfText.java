@@ -10,12 +10,41 @@ public final class ReportPdfText {
     private ReportPdfText() {}
 
     public static String clean(String value, PDFont font) throws IOException {
-        String text = value == null ? "Not available" : value.replace('\t', ' ');
-        try { font.encode(text); }
-        catch (IllegalArgumentException exception) {
-            throw new UnrenderableTextException("The report PDF font cannot render a character in this report. Please check the report text.", exception);
+        if (value == null) return "Not available";
+        String text = value
+                .replace('\t', ' ')
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .replace('\u00A0', ' ')
+                .replace('\u200B', ' ')
+                .replace('\uFEFF', ' ')
+                .replace('\u2018', '\'')
+                .replace('\u2019', '\'')
+                .replace('\u201A', '\'')
+                .replace('\u201C', '"')
+                .replace('\u201D', '"')
+                .replace('\u201E', '"')
+                .replace('\u2013', '-')
+                .replace('\u2014', '-')
+                .replace("\u2026", "...")
+                .replace('\u2022', '*')
+                .replace('\u25CF', '*')
+                .replace('\u25CB', '*')
+                .replace('\u25AA', '-')
+                .replace('\u25AB', '-')
+                .replace("\u20B9", "Rs.");
+
+        StringBuilder safe = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            try {
+                font.encode(String.valueOf(c));
+                safe.append(c);
+            } catch (IllegalArgumentException exception) {
+                safe.append(' ');
+            }
         }
-        return text;
+        return safe.toString();
     }
 
     public static List<String> wrap(String value, PDFont font, float size, float maxWidth) throws IOException {

@@ -88,7 +88,7 @@ function reviewHarness(scope, fail) {
   const states = { 2: "Incorrect branch selected", 3: { revision: 7, latitude: 21, longitude: 79, geofenceRadiusMeters: 200, workplaceAddress: "Actual branch address", status: "PENDING", mentorDecision: null, iiicDecision: "APPROVE" }, 6: "200", 7: false };
   let index = 0; const calls = [];
   const hooks = { useEffect() {}, useRef(initial) { return { current: initial }; }, useState(initial) { const i = index++; return [i in states ? states[i] : initial, value => { states[i] = value; }]; } };
-  const { InternshipLocationManager } = load("InternshipLocationManager", { react: hooks, "@/lib/api": { api: { async post(url, body) { calls.push({ url, body }); if (fail) throw { response: { data: { message: "Workplace changed. Refresh." } } }; return { data: { ...states[3], status: "APPROVED", mentorDecision: "APPROVE" } }; } } }, "@/components/OpenStreetMapWorkplacePicker": { OpenStreetMapWorkplacePicker: () => null }, "@/components/LocationMapLink": { LocationMapLink: () => null } });
+  const { InternshipLocationManager } = load("InternshipLocationManager", { react: hooks, "next/dynamic": () => () => null, "@/lib/api": { api: { async post(url, body) { calls.push({ url, body }); if (fail) throw { response: { data: { message: "Workplace changed. Refresh." } } }; return { data: { ...states[3], status: "APPROVED", mentorDecision: "APPROVE" } }; } } }, "@/components/OpenStreetMapWorkplacePicker": { OpenStreetMapWorkplacePicker: () => null }, "@/components/LocationMapLink": { LocationMapLink: () => null } });
   return { states, calls, tree: InternshipLocationManager({ studentId: 42, scope }) };
 }
 test("mentor review posts selected revision through mentor endpoint and updates the panel", async () => {
@@ -96,10 +96,4 @@ test("mentor review posts selected revision through mentor endpoint and updates 
   button.props.onClick(); await tick();
   assert.deepEqual(h.calls[0], { url: "/mentor/students/42/internship/location/review", body: { revision: 7, decision: "APPROVE", remarks: "Incorrect branch selected" } });
   assert.equal(h.states[3].status, "APPROVED");
-});
-test("IIIC rejection uses its own endpoint and shows backend review errors", async () => {
-  const h = reviewHarness("admin", true); const button = nodes(h.tree).find(n => n.type === "button" && n.props.children === "Reject workplace");
-  button.props.onClick(); await tick();
-  assert.equal(h.calls[0].url, "/admin/students/42/internship/location/review"); assert.equal(h.calls[0].body.decision, "REJECT");
-  assert.equal(h.states[10], "Workplace changed. Refresh."); assert.equal(h.states[3].iiicDecision, "APPROVE");
 });

@@ -27,24 +27,32 @@ public class MonthlyProgressService {
     private final FileStorageService storage;
     private final ProgressPhotoValidator photos;
     private final MonthlyProgressPdfService pdfs;
+    private final ProgressReportPdfValidator reportPdfs;
     private final Clock clock;
     @org.springframework.beans.factory.annotation.Autowired private edu.institution.ims.notification.NotificationService notifications;
+    @org.springframework.beans.factory.annotation.Autowired private edu.institution.ims.notification.MentorNotificationService mentorNotifications;
 
     public MonthlyProgressService(MonthlyProgressReportRepository reports, InternshipDetailsRepository internships,
             MentorStudentAssignmentRepository assignments, FileStorageService storage, ProgressPhotoValidator photos,
-            MonthlyProgressPdfService pdfs, Clock clock) {
+            MonthlyProgressPdfService pdfs, ProgressReportPdfValidator reportPdfs, Clock clock) {
         this.reports = reports;
         this.internships = internships;
         this.assignments = assignments;
         this.storage = storage;
         this.photos = photos;
         this.pdfs = pdfs;
+        this.reportPdfs = reportPdfs;
         this.clock = clock;
     }
 
     @Transactional(readOnly = true)
     public MonthlyProgressOverviewResponse ownOverview(UserPrincipal principal) {
-        InternshipDetails internship = eligibleInternship(principal.id());
+        return ownOverview(principal, null);
+    }
+
+    @Transactional(readOnly = true)
+    public MonthlyProgressOverviewResponse ownOverview(UserPrincipal principal, Long internshipId) {
+        InternshipDetails internship = eligibleInternship(principal.id(), internshipId);
         Map<Integer, MonthlyProgressReport> submitted = new HashMap<>();
         reports.findAllByStudentInternshipIdOrderByReportMonthNumberAsc(internship.getId())
                 .forEach(report -> submitted.put(report.getReportMonthNumber(), report));
@@ -61,7 +69,16 @@ public class MonthlyProgressService {
 
     @Transactional
     public MonthlyProgressReportResponse submit(UserPrincipal principal, int monthNumber, String description, MultipartFile photo) {
-        InternshipDetails internship = eligibleInternship(principal.id());
+        return submit(principal, null, monthNumber, description, photo);
+    }
+
+    @Transactional
+    public MonthlyProgressReportResponse submit(UserPrincipal principal, Long internshipId, int monthNumber, String description, MultipartFile photo) {
+        return submit(principal, internshipId, monthNumber, description, photo, null);
+    }
+    @Transactional
+    public MonthlyProgressReportResponse submit(UserPrincipal principal, Long internshipId, int monthNumber, String description, MultipartFile photo, MultipartFile reportPdf) {
+        InternshipDetails internship = eligibleInternship(principal.id(), internshipId);
         Period period = period(internship, monthNumber);
         if (LocalDate.now(clock).isBefore(period.start()))
             throw error(HttpStatus.CONFLICT, "REPORT_MONTH_UPCOMING", "This internship month has not started yet");
@@ -72,6 +89,7 @@ public class MonthlyProgressService {
         MonthlyProgressReport report = new MonthlyProgressReport(internship, monthNumber, period.start(), period.end(), work,
                 storageKey, image.originalName(), image.mimeType(), image.size(), null, null, null, clock.instant());
         report.applyImageIntegrity(image);
+        if (reportPdf != null && !reportPdf.isEmpty()) attachPdf(report, reportPdf);
         try { reports.saveAndFlush(report); }
         catch (DataIntegrityViolationException exception) { throw duplicate(); }
         submissionEvent(report);
@@ -80,9 +98,13 @@ public class MonthlyProgressService {
 
     @Transactional
     public MonthlyProgressReportResponse resubmit(UserPrincipal principal, Long id, int revision, String description, MultipartFile photo) {
+        return resubmit(principal, id, revision, description, photo, null);
+    }
+    @Transactional
+    public MonthlyProgressReportResponse resubmit(UserPrincipal principal, Long id, int revision, String description, MultipartFile photo, MultipartFile reportPdf) {
         MonthlyProgressReport report = reports.findForReviewById(id).orElseThrow(MonthlyProgressService::notFound);
         if (!studentId(report).equals(principal.id())) throw notFound();
-        eligibleInternship(principal.id());
+        eligibleInternship(principal.id(),report.getStudentInternship().getId());
         requireRevision(report,revision);
         if (report.getStatus()!=MonthlyProgressStatus.REJECTED)
             throw error(HttpStatus.CONFLICT,"REPORT_NOT_REJECTED","Only a rejected report may be corrected and resubmitted");
@@ -90,6 +112,7 @@ public class MonthlyProgressService {
         ValidatedProgressPhoto image=photos.validate(photo);
         String key=store(image);
         report.resubmit(work,key,image,clock.instant());
+        if (reportPdf != null && !reportPdf.isEmpty()) attachPdf(report, reportPdf);
         reports.saveAndFlush(report);
         submissionEvent(report);
         return response(report);
@@ -118,6 +141,10 @@ public class MonthlyProgressService {
         reports.saveAndFlush(report);
         reviewEvents.saveAndFlush(new MonthlyProgressReviewEvent(report,reviewer,approved?"APPROVED":"REJECTED",clean,clock.instant()));
         if (!approved) notifications.reportRejected(report, reviewer);
+        else notifications.create(studentId(report),"report-approved:"+report.getId()+":"+report.getRevision(),"REPORT_APPROVED",
+                "Monthly Progress Report - Month "+report.getReportMonthNumber()+" approved",
+                "Your faculty mentor approved this monthly progress report.",null,principal.email(),
+                "/student/progress-reports?tab=monthly&internshipId="+report.getStudentInternship().getId()+"#report-"+report.getId(),report.getReviewedAt());
         return response(report);
     }
 
@@ -126,6 +153,10 @@ public class MonthlyProgressService {
     }
     private void submissionEvent(MonthlyProgressReport report) {
         reviewEvents.saveAndFlush(new MonthlyProgressReviewEvent(report,report.getStudentInternship().getOnboarding().getStudent(),"SUBMITTED",null,report.getSubmittedAt()));
+        mentorNotifications.workflowSubmitted(studentId(report),"monthly-submitted:"+report.getId()+":"+report.getRevision(),"MONTHLY_REPORT_SUBMITTED",
+                "Monthly progress requires review",Objects.toString(response(report).studentName(),"Student")+" submitted month "+report.getReportMonthNumber()
+                        +" at "+report.getStudentInternship().getCompanyName()+".",
+                "/mentor/progress?tab=monthly&internshipId="+report.getStudentInternship().getId()+"#report-"+report.getId(),report.getSubmittedAt());
     }
     private String store(ValidatedProgressPhoto image) {
         String key;
@@ -137,6 +168,21 @@ public class MonthlyProgressService {
             });
         }
         return key;
+    }
+    private void attachPdf(MonthlyProgressReport report, MultipartFile multipart) {
+        ProgressReportPdfValidator.ValidatedPdf pdf=reportPdfs.validate(multipart);
+        String previous=report.getReportPdfStorageKey();
+        String key;
+        try (InputStream input=new ByteArrayInputStream(pdf.bytes())) { key=storage.store(input,"pdf"); }
+        catch(IOException exception) { throw error(HttpStatus.BAD_REQUEST,"REPORT_PDF_READ_FAILED","The uploaded PDF could not be read"); }
+        report.attachReportPdf(key,pdf.originalName(),pdf.size());
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+                @Override public void afterCompletion(int status) {
+                    if(status!=STATUS_COMMITTED) storage.delete(key); else if(previous!=null&&!previous.equals(key)) storage.delete(previous);
+                }
+            });
+        }
     }
 
     @Transactional(readOnly = true) public MonthlyProgressReportResponse ownReport(UserPrincipal principal, Long id) {
@@ -161,19 +207,42 @@ public class MonthlyProgressService {
         return photo(require(id, report -> studentId(report).equals(principal.id())));
     }
     @Transactional(readOnly = true) public ProgressFileDownload mentorPhoto(UserPrincipal principal, Long id) {
-        return photo(require(id, report -> assignedTo(principal.id(), studentId(report))));
+        return photo(require(id, report -> assignedTo(principal.id(), studentId(report)) || isReviewer(principal.id(), report)));
     }
     @Transactional(readOnly = true) public ProgressFileDownload adminPhoto(Long id) { return photo(require(id, report -> true)); }
     @Transactional(readOnly = true) public ProgressFileDownload ownPdf(UserPrincipal principal, Long id) {
         return pdf(require(id, report -> studentId(report).equals(principal.id())));
     }
     @Transactional(readOnly = true) public ProgressFileDownload mentorPdf(UserPrincipal principal, Long id) {
-        return pdf(require(id, report -> assignedTo(principal.id(), studentId(report))));
+        return pdf(require(id, report -> assignedTo(principal.id(), studentId(report)) || isReviewer(principal.id(), report)));
     }
     @Transactional(readOnly = true) public ProgressFileDownload adminPdf(Long id) { return pdf(require(id, report -> true)); }
+    @Transactional(readOnly = true) public ProgressFileDownload ownAttachment(UserPrincipal principal, Long id) {
+        return attachment(require(id, report -> studentId(report).equals(principal.id())));
+    }
+    @Transactional(readOnly = true) public ProgressFileDownload mentorAttachment(UserPrincipal principal, Long id) {
+        return attachment(require(id, report -> assignedTo(principal.id(), studentId(report)) || isReviewer(principal.id(), report)));
+    }
+    @Transactional(readOnly = true) public ProgressFileDownload adminAttachment(Long id) {
+        return attachment(require(id, report -> true));
+    }
+    private boolean isReviewer(Long mentorId, MonthlyProgressReport report) {
+        return report.getReviewer() != null && report.getReviewer().getId().equals(mentorId);
+    }
+    private ProgressFileDownload attachment(MonthlyProgressReport report) {
+        if(report.getReportPdfStorageKey()==null) throw notFound();
+        StoredFile stored=storage.load(report.getReportPdfStorageKey());
+        return ProgressFileDownload.resource(stored.resource(),report.getReportPdfOriginalName(),"application/pdf",stored.size());
+    }
 
     private InternshipDetails eligibleInternship(Long studentId) {
-        InternshipDetails internship = internships.findByOnboardingStudentId(studentId)
+        return eligibleInternship(studentId, null);
+    }
+
+    private InternshipDetails eligibleInternship(Long studentId, Long internshipId) {
+        InternshipDetails internship = (internshipId != null
+                ? internships.findByIdAndOnboardingStudentId(internshipId, studentId)
+                : internships.findByOnboardingStudentId(studentId))
                 .orElseThrow(() -> error(HttpStatus.CONFLICT, "MONTHLY_PROGRESS_NOT_ELIGIBLE", "Complete internship registration before submitting monthly progress"));
         if (internship.getOnboarding().getWorkflowStatus() != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE)
             throw error(HttpStatus.CONFLICT, "MONTHLY_PROGRESS_NOT_ELIGIBLE", "Complete internship registration before submitting monthly progress");
@@ -194,15 +263,27 @@ public class MonthlyProgressService {
         return ProgressFileDownload.resource(stored.resource(), report.getPhotoOriginalName(), report.getPhotoMimeType(), stored.size());
     }
     private ProgressFileDownload pdf(MonthlyProgressReport report) {
-        StoredFile photo = storage.load(report.getPhotoStorageKey());
-        try (InputStream input = photo.resource().getInputStream()) {
-            byte[] result = pdfs.generate(report, input.readAllBytes());
-            String uid = response(report).uid();
-            String safeUid = (uid == null ? "Student" : uid).replaceAll("[^A-Za-z0-9_-]", "_");
-            return ProgressFileDownload.bytes(result, "Monthly_Progress_" + safeUid + "_Month_" + report.getReportMonthNumber() + ".pdf", "application/pdf");
-        } catch (IOException exception) {
-            throw error(HttpStatus.INTERNAL_SERVER_ERROR, "PHOTO_READ_FAILED", "The stored photograph could not be read");
+        byte[] photoBytes = null;
+        if (report.getPhotoStorageKey() != null) {
+            try {
+                StoredFile photo = storage.load(report.getPhotoStorageKey());
+                try (InputStream input = photo.resource().getInputStream()) {
+                    photoBytes = input.readAllBytes();
+                }
+            } catch (Exception ignored) {}
         }
+        User student = report.getStudentInternship().getOnboarding().getStudent();
+        boolean hasTwoInternships = jdbc.queryForObject("select count(*) from second_internship_requests where student_user_id=? and status='APPROVED'", Integer.class, student.getId()) > 0;
+        String facultyMentor = jdbc.query(
+                "select coalesce(mp.name, mu.email) from mentor_student_assignments a join users mu on mu.id=a.mentor_user_id left join mentor_profiles mp on mp.user_id=mu.id where a.student_user_id=? and a.active=true",
+                (rs, rowNum) -> rs.getString(1), student.getId()).stream().findFirst().orElse(report.getReviewer() != null ? report.getReviewer().getEmail() : "Not assigned");
+
+        byte[] result = pdfs.generate(report, photoBytes, hasTwoInternships, facultyMentor);
+        String uid = response(report).uid();
+        String safeUid = (uid == null ? "Student" : uid).replaceAll("[^A-Za-z0-9_-]", "_");
+        return ProgressFileDownload.bytes(result, "Monthly_Progress_" + safeUid + "_Internship_"
+                + report.getStudentInternship().getOnboarding().getInternshipNumber() + "_Month_"
+                + report.getReportMonthNumber() + ".pdf", "application/pdf");
     }
     private static String cleanDescription(String value) {
         String clean = value == null ? "" : value.trim();
@@ -212,12 +293,15 @@ public class MonthlyProgressService {
     }
     private static List<Period> periods(InternshipDetails internship) {
         List<Period> result = new ArrayList<>();
+        LocalDate effectiveEnd = internship.isEarlyTerminated() && internship.getTerminatedAt() != null
+                ? internship.getTerminatedAt().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate()
+                : internship.getEndDate();
         LocalDate start = internship.getStartDate();
         for (int month = 1; ; month++) {
             LocalDate periodStart = start.plusMonths(month - 1L);
-            if (periodStart.isAfter(internship.getEndDate())) break;
+            if (periodStart.isAfter(effectiveEnd)) break;
             LocalDate periodEnd = start.plusMonths(month).minusDays(1);
-            if (periodEnd.isAfter(internship.getEndDate())) periodEnd = internship.getEndDate();
+            if (periodEnd.isAfter(effectiveEnd)) periodEnd = effectiveEnd;
             result.add(new Period(month, periodStart, periodEnd));
         }
         return result;
@@ -234,12 +318,18 @@ public class MonthlyProgressService {
         String name = profile != null ? profile.getStudentName() : account == null ? null : account.getStudentName();
         String uid = profile != null ? profile.getUid() : account == null ? null : account.getUid();
         String branch = profile == null ? null : profile.getBranch().getLabel();
-        Integer semester = profile != null ? profile.getSemester() : account == null ? null : account.getSemester();
+        Integer semester = null;
+        if (profile != null) {
+            semester = profile.getSemester();
+        } else if (account != null) {
+            semester = account.getSemester();
+        }
         InternshipDetails internship = report.getStudentInternship();
         return new MonthlyProgressReportResponse(report.getId(), student.getId(), name, uid, branch, semester,
-                internship.getId(), internship.getCompanyName(), internship.getInternshipMode().getLabel(),
+                internship.getId(), internship.getOnboarding().getInternshipNumber(), internship.getCompanyName(), internship.getInternshipMode().getLabel(),
                 report.getReportMonthNumber(), report.getPeriodStart(), report.getPeriodEnd(), report.getWorkDescription(),
-                report.getPhotoOriginalName(), report.getPhotoMimeType(), report.getPhotoSize(), report.getSubmittedAt(),
+                report.getPhotoOriginalName(), report.getPhotoMimeType(), report.getPhotoSize(),
+                report.getReportPdfOriginalName(), report.getReportPdfSize(), report.getSubmittedAt(),
                 report.getImageWidth(), report.getImageHeight(), report.getImageSha256(), report.getStatus(), report.getRevision(),
                 report.getReviewer()==null?null:report.getReviewer().getId(),
                 report.getReviewer()==null?null:report.getReviewer().getEmail(), report.getReviewedAt(), report.getRejectionReason());

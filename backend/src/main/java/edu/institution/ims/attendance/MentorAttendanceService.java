@@ -37,23 +37,27 @@ public class MentorAttendanceService {
                 assignments.findAllByMentorIdAndActiveTrueOrderByStudentEmailAsc(principal.id());
         if (current.isEmpty()) return List.of();
         List<Long> studentIds = current.stream().map(a -> a.getStudent().getId()).toList();
-        Map<Long, InternshipDetails> internshipByStudent = internships.findAllByOnboardingStudentIdIn(studentIds)
-                .stream().collect(Collectors.toMap(d -> d.getOnboarding().getStudent().getId(), Function.identity()));
-        Map<Long, AttendanceRecord> attendanceByStudent = attendance
-                .findAllByStudentIdInAndAttendanceDate(studentIds, LocalDate.now(clock))
-                .stream().collect(Collectors.toMap(a -> a.getStudent().getId(), Function.identity()));
+        List<InternshipDetails> studentInternships = internships.findAllByOnboardingStudentIdIn(studentIds);
+        Map<Long, AttendanceRecord> attendanceByInternship = new HashMap<>();
+        attendance.findAllByStudentIdInAndAttendanceDate(studentIds, LocalDate.now(clock))
+                .stream().filter(a -> a.getInternship() != null)
+                .forEach(a -> attendanceByInternship.putIfAbsent(a.getInternship().getId(), a));
 
         LocalDate today = LocalDate.now(clock);
-        return current.stream().map(assignment -> response(assignment.getStudent(),
-                internshipByStudent.get(assignment.getStudent().getId()),
-                attendanceByStudent.get(assignment.getStudent().getId()), today)).toList();
+        Map<Long,User> assignedStudents=current.stream().collect(Collectors.toMap(a->a.getStudent().getId(),MentorStudentAssignment::getStudent));
+        return studentInternships.stream()
+                .filter(i -> assignedStudents.containsKey(i.getOnboarding().getStudent().getId()))
+                .sorted(Comparator.comparing((InternshipDetails i)->i.getOnboarding().getStudent().getEmail())
+                        .thenComparing(i->i.getOnboarding().getInternshipNumber()))
+                .map(i -> response(assignedStudents.get(i.getOnboarding().getStudent().getId()),i,
+                        attendanceByInternship.get(i.getId()),today)).toList();
     }
 
     private MentorStudentAttendanceResponse response(User student, InternshipDetails internship,
             AttendanceRecord attendance, LocalDate today) {
         StudentProfile profile = student.getStudentProfile();
         StudentAccount account = student.getStudentAccount();
-        return new MentorStudentAttendanceResponse(student.getId(),
+        return new MentorStudentAttendanceResponse(student.getId(), internship.getId(), internship.getOnboarding().getInternshipNumber(),
                 profile == null ? account == null ? null : account.getStudentName() : profile.getStudentName(),
                 profile == null ? account == null ? null : account.getUid() : profile.getUid(),
                 profile == null ? null : profile.getBranch().getLabel(),

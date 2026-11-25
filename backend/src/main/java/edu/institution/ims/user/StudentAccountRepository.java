@@ -5,4 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface StudentAccountRepository extends JpaRepository<StudentAccount, Long> {
     boolean existsByUserId(Long userId);
     boolean existsByUidIgnoreCase(String uid);
+    boolean existsByUidIgnoreCaseAndUserIdNot(String uid, Long userId);
+    java.util.Optional<StudentAccount> findByUserId(Long userId);
 }

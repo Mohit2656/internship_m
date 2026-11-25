@@ -46,7 +46,7 @@ public class DashboardReportCatalog {
         add("branch", "Branch", "Academic Information", Kind.TEXT, "p.branch", true, false);
         add("academicSession", "Assigned academic session", "Academic Information", Kind.TEXT, "acs.name", false, false);
         add("completionStatus", "Internship completion status", "Internship Completion", Kind.TEXT, "case when i.id is null then null else " + edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL + " end", false, false);
-        add("completionDate", "Official completion date", "Internship Completion", Kind.DATETIME, "i.completed_at", false, false);
+        add("completionDate", "Official completion date", "Internship Completion", Kind.DATETIME, edu.institution.ims.internship.InternshipCompletionService.COMPLETION_DATE_SQL, false, false);
         add("completionReviewer", "IIIC completion reviewer", "Internship Completion", Kind.TEXT, "cr.email", false, true);
         add("completionRemarks", "Completion remarks", "Internship Completion", Kind.TEXT, "i.completion_remarks", false, true);
         profile("academicYear", "Academic year", "academic_year", "Academic Information", false);

@@ -33,7 +33,8 @@ public class DeadlineNotificationScheduler {
                     LocalDate periodStart=candidate.start().plusMonths(deadline.monthNumber()-1L);
                     if(periodStart.isAfter(candidate.end()) || periodStart.isAfter(today) || deadline.dueDate().isBefore(periodStart)) continue;
                     remind(candidate.owner(),"monthly:"+deadline.internshipId()+":"+deadline.monthNumber(),
-                        "Monthly Progress Report - Month "+deadline.monthNumber(),deadline.dueDate(),stage,"/student/monthly-progress#month-"+deadline.monthNumber());
+                        "Monthly Progress Report - Month "+deadline.monthNumber(),deadline.dueDate(),stage,
+                        "/student/progress-reports?tab=monthly&internshipId="+deadline.internshipId()+"#month-"+deadline.monthNumber());
                 }
             } catch(RuntimeException failure) { LoggerFactory.getLogger(getClass()).error("Monthly deadline reminder failed; will retry",failure); }
         }

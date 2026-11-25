@@ -16,11 +16,14 @@ export function internshipWeeks(start: string, end: string): number | null {
 
 export type InternshipDetails = {
   workplace?: RegisteredWorkplace | null;
-  id: number; onboardingId: number; companyName: string; companyType: CompanyType; companyTypeLabel: string;
-  otherCompanyType: string | null; companyAddress: string; companyPhone: string; industrySupervisorName: string;
-  industrySupervisorDesignation: string; industrySupervisorContact: string; durationMonths: number; startDate: string;
-  endDate: string; totalWeeks: number; internshipMode: InternshipMode; internshipModeLabel: string;
-  stipendPerMonth: number; fullTimeEmploymentOffered: boolean; createdAt: string; updatedAt: string;
+  id: number; onboardingId: number; internshipNumber: number; companyName?: string | null; companyType?: CompanyType | null; companyTypeLabel?: string | null;
+  otherCompanyType?: string | null; companyAddress?: string | null; companyPhone?: string | null; industrySupervisorName?: string | null;
+  industrySupervisorDesignation?: string | null; industrySupervisorContact?: string | null; durationMonths?: number | null; startDate?: string | null;
+  endDate?: string | null; totalWeeks?: number | null; internshipMode?: InternshipMode | null; internshipModeLabel?: string | null;
+  stipendPerMonth?: number | null; fullTimeEmploymentOffered?: boolean | null; createdAt: string; updatedAt: string;
+  workingDaysPerWeek?: number | null; workingDays?: string[] | null;
+  lifecycleStatus?: string | null; terminatedAt?: string | null; terminationReason?: string | null;
+  deletedAt?: string | null; deletionReason?: string | null;
 };
 
 export type InternshipDetailsFormData = {
@@ -29,19 +32,35 @@ export type InternshipDetailsFormData = {
   industrySupervisorName: string; industrySupervisorDesignation: string; industrySupervisorContact: string;
   durationMonths: string; startDate: string; endDate: string; totalWeeks: string; internshipMode: InternshipMode | "";
   stipendPerMonth: string; fullTimeEmploymentOffered: "" | "true" | "false";
+  workingDaysPerWeek: string; workingDays: string[];
 };
 
 export const emptyInternshipDetails: InternshipDetailsFormData = {
   companyName: "", companyType: "", otherCompanyType: "", companyAddress: "", companyPhone: "",
   industrySupervisorName: "", industrySupervisorDesignation: "", industrySupervisorContact: "", durationMonths: "",
   startDate: "", endDate: "", totalWeeks: "", internshipMode: "", stipendPerMonth: "", fullTimeEmploymentOffered: "",
+  workingDaysPerWeek: "5", workingDays: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
 };
 
 export function toFormData(details: InternshipDetails): InternshipDetailsFormData {
-  return { workplace: details.workplace ?? null, companyName: details.companyName, companyType: details.companyType, otherCompanyType: details.otherCompanyType ?? "",
-    companyAddress: details.companyAddress, companyPhone: details.companyPhone, industrySupervisorName: details.industrySupervisorName,
-    industrySupervisorDesignation: details.industrySupervisorDesignation, industrySupervisorContact: details.industrySupervisorContact,
-    durationMonths: String(details.durationMonths), startDate: details.startDate, endDate: details.endDate,
-    totalWeeks: String(details.totalWeeks), internshipMode: details.internshipMode, stipendPerMonth: String(details.stipendPerMonth),
-    fullTimeEmploymentOffered: String(details.fullTimeEmploymentOffered) as "true" | "false" };
+  return {
+    workplace: details.workplace ?? null,
+    companyName: details.companyName ?? "",
+    companyType: details.companyType ?? "",
+    otherCompanyType: details.otherCompanyType ?? "",
+    companyAddress: details.companyAddress ?? "",
+    companyPhone: details.companyPhone ?? "",
+    industrySupervisorName: details.industrySupervisorName ?? "",
+    industrySupervisorDesignation: details.industrySupervisorDesignation ?? "",
+    industrySupervisorContact: details.industrySupervisorContact ?? "",
+    durationMonths: details.durationMonths != null ? String(details.durationMonths) : "",
+    startDate: details.startDate ?? "",
+    endDate: details.endDate ?? "",
+    totalWeeks: details.totalWeeks != null ? String(details.totalWeeks) : "",
+    internshipMode: details.internshipMode ?? "",
+    stipendPerMonth: details.stipendPerMonth != null ? String(details.stipendPerMonth) : "",
+    fullTimeEmploymentOffered: details.fullTimeEmploymentOffered === true ? "true" : details.fullTimeEmploymentOffered === false ? "false" : "",
+    workingDaysPerWeek: details.workingDaysPerWeek != null ? String(details.workingDaysPerWeek) : (details.workingDays && details.workingDays.length > 0 ? String(details.workingDays.length) : "5"),
+    workingDays: details.workingDays && details.workingDays.length > 0 ? details.workingDays : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+  };
 }

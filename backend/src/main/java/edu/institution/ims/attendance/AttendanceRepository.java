@@ -14,6 +14,8 @@ public interface AttendanceRepository extends JpaRepository<AttendanceRecord, Lo
     Optional<AttendanceRecord> findForReviewUpdate(@org.springframework.data.repository.query.Param("id") Long id);
     @EntityGraph(attributePaths = {"internship", "internship.onboarding", "evidence", "review"})
     List<AttendanceRecord> findAllByStudentIdInOrderByAttendanceDateAscIdAsc(Collection<Long> studentIds);
+    @EntityGraph(attributePaths = {"internship", "internship.onboarding", "evidence", "review"})
+    List<AttendanceRecord> findAllByStudentIdAndInternshipIdOrderByAttendanceDateAscIdAsc(Long studentId, Long internshipId);
     // Native queries intentionally include soft-deleted history: a mentor's deletion must not become an absence.
     @Query(value = "select attendance_date from attendance_records where internship_id = :internshipId", nativeQuery = true)
     List<java.sql.Date> findRecordedDatesIncludingDeleted(Long internshipId);
@@ -22,7 +24,11 @@ public interface AttendanceRepository extends JpaRepository<AttendanceRecord, Lo
     @EntityGraph(attributePaths = {"internship", "evidence", "review"})
     Optional<AttendanceRecord> findByStudentIdAndAttendanceDate(Long studentUserId, LocalDate attendanceDate);
     @EntityGraph(attributePaths = {"internship", "evidence", "review"})
+    Optional<AttendanceRecord> findByStudentIdAndInternshipIdAndAttendanceDate(Long studentUserId, Long internshipId, LocalDate attendanceDate);
+    @EntityGraph(attributePaths = {"internship", "evidence", "review"})
     List<AttendanceRecord> findAllByStudentIdOrderByAttendanceDateDescServerSubmittedAtDesc(Long studentUserId);
+    @EntityGraph(attributePaths = {"internship", "evidence", "review"})
+    List<AttendanceRecord> findAllByStudentIdAndInternshipIdOrderByAttendanceDateDescServerSubmittedAtDesc(Long studentUserId, Long internshipId);
     @EntityGraph(attributePaths = {"student", "internship", "evidence", "review"})
     List<AttendanceRecord> findAllByStudentIdInAndAttendanceDate(Collection<Long> studentUserIds, LocalDate attendanceDate);
 }

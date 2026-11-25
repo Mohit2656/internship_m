@@ -39,18 +39,22 @@ public class AiVerificationService {
 
     @Transactional
     public AiVerificationSessionResponse create(UserPrincipal principal) {
+        return create(principal,null);
+    }
+    @Transactional
+    public AiVerificationSessionResponse create(UserPrincipal principal,Long internshipId) {
         User student = student(principal.id());
-        InternshipDetails internship = policies.eligibleInternship(student.getId());
+        InternshipDetails internship = policies.eligibleInternship(student.getId(),internshipId);
         LocalDate today = LocalDate.now(clock);
         requireWithinInternship(internship, today);
-        policies.requireSubmissionOpen(student.getId(), today);
+        policies.requireSubmissionOpen(student.getId(), internship.getId(), today);
         AttendanceVerificationMethod method = policies.resolve(internship, today).verificationMethod();
         if (method != AttendanceVerificationMethod.PHYSICAL && method != AttendanceVerificationMethod.REMOTE) {
             throw error(HttpStatus.CONFLICT, "EDGE_AI_NOT_APPLICABLE",
                     "Edge verification is not available for today's attendance policy");
         }
-        if (attendance.findByStudentIdAndAttendanceDate(student.getId(), today)
-                .filter(record -> !policies.canReplaceAutomaticAbsence(record, student.getId(), today)).isPresent()) {
+        if (attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), internship.getId(), today)
+                .filter(record -> !policies.canReplaceAutomaticAbsence(record, student.getId(), internship.getId(), today)).isPresent()) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_ALREADY_SUBMITTED",
                     "Today's attendance has already been submitted");
         }

@@ -8,6 +8,6 @@ public class MentorInternshipLocationController {
     private final InternshipLocationService service;
     public MentorInternshipLocationController(InternshipLocationService service) { this.service=service; }
     @PostMapping("/review")
-    public InternshipLocationResponse review(@PathVariable Long studentId,@AuthenticationPrincipal UserPrincipal principal,@jakarta.validation.Valid @RequestBody WorkplaceReview request) { return service.review(studentId,principal,request); }
-    @GetMapping public InternshipLocationResponse get(@PathVariable Long studentId,@AuthenticationPrincipal UserPrincipal principal) { return service.getForMentor(studentId,principal); }
+    public InternshipLocationResponse review(@PathVariable Long studentId,@RequestParam(required=false) Long internshipId,@AuthenticationPrincipal UserPrincipal principal,@jakarta.validation.Valid @RequestBody WorkplaceReview request) { return service.review(studentId,internshipId,principal,request); }
+    @GetMapping public InternshipLocationResponse get(@PathVariable Long studentId,@RequestParam(required=false) Long internshipId,@AuthenticationPrincipal UserPrincipal principal) { return service.getForMentor(studentId,internshipId,principal); }
 }

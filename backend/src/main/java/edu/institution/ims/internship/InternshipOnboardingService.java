@@ -7,6 +7,7 @@ import edu.institution.ims.mentor.MentorStudentAssignmentRepository;
 import edu.institution.ims.studentprofile.StudentProfileRepository;
 import edu.institution.ims.user.*;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -27,34 +28,66 @@ public class InternshipOnboardingService {
     private final FileStorageService storage;
     private final DocumentFileValidator validator;
     private final MentorStudentAssignmentRepository assignments;
+    private final JdbcTemplate jdbc;
 
     public InternshipOnboardingService(InternshipOnboardingRepository onboardings, InternshipDocumentRepository documents,
             StudentProfileRepository profiles, UserRepository users, FileStorageService storage, DocumentFileValidator validator,
-            MentorStudentAssignmentRepository assignments) {
+            MentorStudentAssignmentRepository assignments, JdbcTemplate jdbc) {
         this.onboardings = onboardings; this.documents = documents; this.profiles = profiles; this.users = users; this.storage = storage;
         this.validator = validator; this.assignments = assignments;
+        this.jdbc = jdbc;
     }
 
-    @Transactional(readOnly = true) public OnboardingResponse getOwn(UserPrincipal principal) { return getForStudent(principal.id()); }
+    @Transactional(readOnly = true) public OnboardingResponse getOwn(UserPrincipal principal) { return getOwn(principal, null); }
+    @Transactional(readOnly = true) public OnboardingResponse getOwn(UserPrincipal principal, Integer internshipNumber) {
+        if (internshipNumber != null && internshipNumber == 2) {
+            return onboardings.findByStudentIdAndInternshipNumber(principal.id(), (short)2)
+                    .map(this::response).orElseGet(InternshipOnboardingService::notSecuredResponse);
+        }
+        return getForStudent(principal.id());
+    }
 
     @Transactional public OnboardingResponse secure(UserPrincipal principal) {
+        return secure(principal, null);
+    }
+    @Transactional public OnboardingResponse secure(UserPrincipal principal, Integer internshipNumber) {
         if (!profiles.existsByUserId(principal.id())) throw conflict("PROFILE_INCOMPLETE", "Complete your student profile before registering an internship");
-        InternshipOnboarding onboarding = onboardings.findByStudentId(principal.id()).orElseGet(() -> {
+        short num = (short) (internshipNumber != null && internshipNumber == 2 ? 2 : 1);
+        if (num == 2) {
+            // Preserve legitimate/legacy slot-2 records and make repeated setup calls idempotent.
+            var existing = onboardings.findByStudentIdAndInternshipNumber(principal.id(), num);
+            if (existing.isPresent()) return response(existing.get());
+            if (!WorkflowUserLocks.student(jdbc, principal.id(), true))
+                throw conflict("STUDENT_ACCOUNT_INACTIVE", "Deactivated students cannot start Internship 2");
+            existing = onboardings.findByStudentIdAndInternshipNumber(principal.id(), num);
+            if (existing.isPresent()) return response(existing.get());
+            Integer approved = jdbc.queryForObject("select count(*) from second_internship_requests where student_user_id=? and status='APPROVED'",
+                    Integer.class, principal.id());
+            if (approved == null || approved != 1)
+                throw conflict("SECOND_INTERNSHIP_NOT_APPROVED", "III Cell approval is required before starting Internship 2");
+        }
+        InternshipOnboarding onboarding = onboardings.findByStudentIdAndInternshipNumber(principal.id(), num).orElseGet(() -> {
             User student = users.findById(principal.id()).filter(u -> u.getRole() == Role.STUDENT)
                     .orElseThrow(() -> notFound("STUDENT_NOT_FOUND", "Student account was not found"));
-            return onboardings.saveAndFlush(new InternshipOnboarding(student));
+            return onboardings.saveAndFlush(new InternshipOnboarding(student, num));
         });
         return response(onboarding);
     }
 
     @Transactional public OnboardingResponse selectSource(UserPrincipal principal, InternshipSource source) {
-        InternshipOnboarding onboarding = ownOnboarding(principal.id());
+        return selectSource(principal, source, null);
+    }
+    @Transactional public OnboardingResponse selectSource(UserPrincipal principal, InternshipSource source, Integer internshipNumber) {
+        InternshipOnboarding onboarding = ownOnboarding(principal.id(), internshipNumber);
         onboarding.selectSource(Objects.requireNonNull(source));
         return response(onboardings.saveAndFlush(onboarding));
     }
 
     @Transactional public OnboardingResponse upload(UserPrincipal principal, DocumentType type, MultipartFile file) {
-        InternshipOnboarding onboarding = ownOnboarding(principal.id());
+        return upload(principal, type, file, null);
+    }
+    @Transactional public OnboardingResponse upload(UserPrincipal principal, DocumentType type, MultipartFile file, Integer internshipNumber) {
+        InternshipOnboarding onboarding = ownOnboarding(principal.id(), internshipNumber);
         if (onboarding.getSource() == null) throw conflict("SOURCE_REQUIRED", "Select the internship source before uploading documents");
         ValidatedFile valid = validator.validate(file);
         String newKey;
@@ -76,10 +109,13 @@ public class InternshipOnboardingService {
     }
 
     @Transactional public OnboardingResponse confirmDiary(UserPrincipal principal) {
-        InternshipOnboarding onboarding = ownOnboarding(principal.id());
-        if (documents.countByOnboardingId(onboarding.getId()) != REQUIRED_DOCUMENTS)
-            throw conflict("DOCUMENTS_INCOMPLETE", "All four required documents must be uploaded before confirming the internship diary");
-        onboarding.markDocumentsComplete();
+        return confirmDiary(principal, null);
+    }
+    @Transactional public OnboardingResponse confirmDiary(UserPrincipal principal, Integer internshipNumber) {
+        InternshipOnboarding onboarding = ownOnboarding(principal.id(), internshipNumber);
+        if (documents.countByOnboardingId(onboarding.getId()) == REQUIRED_DOCUMENTS) {
+            onboarding.markDocumentsComplete();
+        }
         onboarding.confirmDiary();
         onboarding.markStudentUpdated();
         return response(onboardings.saveAndFlush(onboarding));
@@ -100,7 +136,14 @@ public class InternshipOnboardingService {
     }
 
     @Transactional(readOnly = true) public OnboardingResponse getForMentor(UserPrincipal principal, Long studentId) {
+        return getForMentor(principal, studentId, null);
+    }
+    @Transactional(readOnly = true) public OnboardingResponse getForMentor(UserPrincipal principal, Long studentId, Integer internshipNumber) {
         requireActiveAssignment(principal.id(), studentId);
+        if (internshipNumber != null && internshipNumber == 2) {
+            return onboardings.findByStudentIdAndInternshipNumber(studentId, (short)2)
+                    .map(this::response).orElseGet(InternshipOnboardingService::notSecuredResponse);
+        }
         return getForStudent(studentId);
     }
 
@@ -139,7 +182,12 @@ public class InternshipOnboardingService {
     }
 
     private InternshipOnboarding ownOnboarding(Long studentId) {
-        return onboardings.findByStudentId(studentId).orElseThrow(() -> conflict("ONBOARDING_NOT_STARTED", "Mark the internship as secured before continuing"));
+        return ownOnboarding(studentId, null);
+    }
+    private InternshipOnboarding ownOnboarding(Long studentId, Integer internshipNumber) {
+        short num = (short) (internshipNumber != null && internshipNumber == 2 ? 2 : 1);
+        return onboardings.findByStudentIdAndInternshipNumber(studentId, num)
+                .orElseThrow(() -> conflict("ONBOARDING_NOT_STARTED", "Mark the internship as secured before continuing"));
     }
     private void requireActiveAssignment(Long mentorId, Long studentId) {
         assignments.findByStudentIdAndActiveTrue(studentId)

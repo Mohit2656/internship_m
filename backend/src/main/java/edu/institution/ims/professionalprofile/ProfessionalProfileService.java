@@ -38,11 +38,20 @@ public class ProfessionalProfileService {
                 .orElseGet(ProfessionalProfileResponse::empty);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private edu.institution.ims.notification.StudentChangeNotificationService changeNotifications;
+
     @Transactional
     public ProfessionalProfileResponse updateOwn(UserPrincipal principal, ProfessionalProfileRequest request) {
         StudentProfessionalProfile profile = profileForUpdateOrCreate(principal.id());
+        String oldHeadline = profile.getHeadline();
+        String oldInterests = profile.getCareerInterests();
         profile.update(nullable(request.headline()), nullable(request.careerInterests()));
-        return response(profiles.saveAndFlush(profile));
+        var saved = profiles.saveAndFlush(profile);
+        if (changeNotifications != null) {
+            changeNotifications.notifyProfessionalProfileChanged(principal.id(), oldHeadline, saved.getHeadline(), oldInterests, saved.getCareerInterests());
+        }
+        return response(saved);
     }
 
     @Transactional
@@ -77,6 +86,9 @@ public class ProfessionalProfileService {
         notifications.notifyCoordinators(principal.id(), "resume-upload:"+resume.getId(),
                 previous==null?"RESUME_UPLOADED":"RESUME_UPDATED",previous==null?"Resume uploaded":"Resume updated",
                 previous==null?" uploaded their resume.":" updated their resume.",resume.getUploadedAt());
+        if (changeNotifications != null) {
+            changeNotifications.notifyResumeUpdated(principal.id(), valid.originalFilename(), previous != null);
+        }
         return response(profile);
     }
 
@@ -129,8 +141,15 @@ public class ProfessionalProfileService {
     }
 
     private ResumeDownload download(StudentResume resume) {
-        StoredFile file = storage.load(resume.getStorageKey());
-        return new ResumeDownload(file.resource(), resume.getOriginalFilename(), resume.getContentType(), file.size());
+        try {
+            StoredFile file = storage.load(resume.getStorageKey());
+            return new ResumeDownload(file.resource(), resume.getOriginalFilename(), resume.getContentType(), file.size());
+        } catch (edu.institution.ims.internship.OnboardingException e) {
+            if (e.getStatus() == HttpStatus.NOT_FOUND) {
+                throw notFound("RESUME_FILE_NOT_FOUND", "The stored resume file was not found");
+            }
+            throw e;
+        }
     }
 
     private static ResumeResponse resumeResponse(StudentResume resume) {

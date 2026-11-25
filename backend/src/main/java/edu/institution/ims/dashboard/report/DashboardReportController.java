@@ -46,8 +46,9 @@ public class DashboardReportController {
             };
             // The normal Resource message converter streams the file and closes it on success or disconnect.
             // This follows existing download endpoints and preserves the synchronous security filter chain.
+            String safeFilename = download.filename().replaceAll("[^\\x20-\\x7E]", "_").replace("\"", "");
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentLength(length).contentType(MediaType.parseMediaType(download.contentType()))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(download.filename(), StandardCharsets.UTF_8).build().toString())
+                    .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(safeFilename).build().toString())
                     .header("X-Report-Student-Count", Integer.toString(download.studentCount()))
                     .header("X-Content-Type-Options", "nosniff").body(new InputStreamResource(stream));
         } catch (IOException | RuntimeException error) { Files.deleteIfExists(download.path()); throw error; }

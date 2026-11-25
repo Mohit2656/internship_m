@@ -30,6 +30,7 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
     @Query("select u from User u where lower(u.email) = lower(:email)")
     Optional<User> findByEmailForPasswordUpdate(@Param("email") String email);
     boolean existsByEmailIgnoreCase(String email);
+    boolean existsByEmailIgnoreCaseAndIdNot(String email, Long id);
     @EntityGraph(attributePaths = {"studentProfile", "studentAccount"})
     List<User> findAllByRoleOrderByEmailAsc(Role role);
     @Lock(LockModeType.PESSIMISTIC_WRITE)

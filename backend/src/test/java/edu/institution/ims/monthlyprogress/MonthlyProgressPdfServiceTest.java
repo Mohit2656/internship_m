@@ -26,8 +26,10 @@ class MonthlyProgressPdfServiceTest {
             byte[] bytes = new MonthlyProgressPdfService().generate(report, photo());
             try (var document = PDDocument.load(bytes)) {
                 String text = new PDFTextStripper().getText(document);
-                assertThat(text).contains("MONTHLY INTERNSHIP PROGRESS REPORT", "Student Zoë", "APPROVED",
-                        "Last updated by student", "Mentor@example.edu", "Faculty Mentor Signature", "Page 1 of");
+                assertThat(text).contains("MONTHLY PROGRESS REPORT", "Department of Computer Engineering", "Student Zoë", "APPROVED",
+                        "Selected Internship", "Internship 2",
+                        "Last updated by student", "Mentor@example.edu", "Page 1 of");
+                assertThat(text).doesNotContain("Signature", "Student Signature", "Faculty Mentor Signature", "III Cell Incharge");
                 if (longReport) {
                     assertThat(document.getNumberOfPages()).isGreaterThan(1);
                     assertThat(text).contains("Final work paragraph.");
@@ -80,6 +82,7 @@ class MonthlyProgressPdfServiceTest {
         when(report.getStudentInternship()).thenReturn(internship);
         when(internship.getOnboarding()).thenReturn(onboarding);
         when(onboarding.getStudent()).thenReturn(student);
+        when(onboarding.getInternshipNumber()).thenReturn(2);
         when(student.getStudentAccount()).thenReturn(account);
         when(account.getStudentName()).thenReturn("Student Zoë");
         when(account.getUid()).thenReturn("UID-001");

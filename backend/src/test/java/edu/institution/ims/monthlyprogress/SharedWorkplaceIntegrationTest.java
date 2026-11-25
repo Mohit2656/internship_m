@@ -29,11 +29,21 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
   var mentor=student.getId().equals(studentA.getId()) ? mentorA : mentorB;
   var location=locations.findByInternshipId(internships.findByOnboardingStudentId(student.getId()).orElseThrow().getId()).orElseThrow();
   locationService.review(student.getId(),UserPrincipal.from(mentor),new WorkplaceReview(location.getRevision(),WorkplaceReview.Decision.APPROVE,null));
-  locationService.review(student.getId(),UserPrincipal.from(admin),new WorkplaceReview(location.getRevision(),WorkplaceReview.Decision.APPROVE,null));
  }
  long submitPhoto(User u,String password) throws Exception {
   var result=mvc.perform(multipart("/api/v1/student/monthly-progress/1").file(new MockMultipartFile("photo","test.jpg","image/jpeg",ProgressPhotoValidatorTest.fixture(true,true,21))).file(new MockMultipartFile("workDescription","","text/plain","GPS comparison test".getBytes())).cookie(login(u,password))).andExpect(status().isCreated()).andReturn();
   return json.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+ }
+ @Test void newWorkplacesUseTwoHundredMetreDefaultWhileStoredOverridesRemainAuthoritative() {
+  register(studentA,"21.125","79.0875","Default-radius branch");
+  var internship=internships.findByOnboardingStudentId(studentA.getId()).orElseThrow();
+  var created=locations.findByInternshipId(internship.getId()).orElseThrow();
+  assertThat(created.getGeofenceRadiusMeters()).isEqualByComparingTo("200");
+  locationService.radiusForAdmin(studentA.getId(),UserPrincipal.from(admin),new BigDecimal("175"));
+  locationService.registerSelectedPlace(internship,new RegisteredWorkplaceRequest("moved-place","Moved branch address",
+    new BigDecimal("21.126"),new BigDecimal("79.088"),"Moved branch"));
+  assertThat(locations.findByInternshipId(internship.getId()).orElseThrow().getGeofenceRadiusMeters())
+    .isEqualByComparingTo("175");
  }
  @Test void differentStudentsResolveDifferentWorkplacesForPhotoAndRetainedLegacyPolicy() throws Exception {
   register(studentA,"21.125","79.0875","Branch A"); register(studentB,"19.076","72.8777","Branch B");
@@ -60,21 +70,22 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
    var ai=new MockMultipartFile("aiEvidence","ai-evidence.json","application/json",json.writeValueAsBytes(java.util.Map.of(
     "sessionId",issued.get("sessionId").asText(),"challenge",issued.get("challenge").asText(),"faceCount",1,
     "qualityPassed",true,"livenessPassed",true,"modelVersion","mediapipe-face-landmarker@1.0.1/test")));
-   mvc.perform(multipart("/api/v1/student/attendance/today/physical")
+   var submission=mvc.perform(multipart("/api/v1/student/attendance/today/physical")
     .file(new MockMultipartFile("photo","capture.jpg","image/jpeg",ProgressPhotoValidatorTest.fixture(true,true,21)))
-    .file(ai).param("latitude","21.125").param("longitude","79.0875").param("accuracy","5").cookie(cookie))
-    .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
-    .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
-    .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
+    .file(ai).param("latitude","21.125").param("longitude","79.0875").param("accuracy","5").param("locationCapturedAt",NOW.toString()).cookie(cookie))
+    .andExpect(student==studentA?status().isCreated():status().isConflict());
+   if(student==studentA) submission.andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+    .andExpect(jsonPath("$.verificationStatus").value("VERIFIED")).andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
     .andExpect(jsonPath("$.evidence.verificationReason").value("EDGE_AI_VERIFIED"))
-    .andExpect(jsonPath("$.evidence.latitude").value(21.125))
-    .andExpect(jsonPath("$.evidence.locationVerificationStatus").value(student==studentA?"VERIFIED":"WORKPLACE_NOT_APPROVED"))
+    .andExpect(jsonPath("$.evidence.latitude").value(21.125)).andExpect(jsonPath("$.evidence.locationVerificationStatus").value("VERIFIED"))
     .andExpect(jsonPath("$.evidence.exifLatitude").value(org.hamcrest.Matchers.nullValue()));
+   else submission.andExpect(jsonPath("$.code").value("WORKPLACE_NOT_APPROVED"));
   }
   long approvedPhoto=submitPhoto(studentA,"StudentPassword!23"),pendingPhoto=submitPhoto(studentB,"StudentPassword!24");
   assertThat(reports.findById(approvedPhoto).orElseThrow().getWorkplaceVerificationStatus()).isNull();
   assertThat(reports.findById(pendingPhoto).orElseThrow().getWorkplaceVerificationStatus()).isNull();
-  assertThat(jdbc.queryForObject("select count(*) from attendance_records where verification_status='VERIFIED'",Integer.class)).isEqualTo(2);
+  assertThat(jdbc.queryForObject("select count(*) from attendance_records where verification_status='VERIFIED'",Integer.class)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("select count(*) from attendance_records where student_user_id=?",Integer.class,studentB.getId())).isZero();
  }
  @Test void correctionsRequireAdminScopeAndKeepHistoricalPhotoSnapshot() throws Exception {
   register(studentA,"21.125","79.0875","Original branch");approve(studentA);long id=submitPhoto(studentA,"StudentPassword!23");
@@ -82,7 +93,7 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
   var correction=new WorkplaceCorrection(new RegisteredWorkplaceRequest("test-corrected","Corrected test address",new BigDecimal("19.076"),new BigDecimal("72.8777"),"Corrected branch"),new BigDecimal("150"),"Incorrect branch selected");
   for(var user:new User[]{mentorA,studentA}) mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/correction").cookie(login(user,user==mentorA?"MentorPassword!23":"StudentPassword!23")).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(correction))).andExpect(status().isForbidden());
   mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content("{\"latitude\":19.076,\"longitude\":72.8777,\"geofenceRadiusMeters\":150}")).andExpect(status().isConflict());
-  mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/correction").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(correction))).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING"));
+  mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/correction").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(correction))).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING_MENTOR_APPROVAL"));
   var original=reports.findById(id).orElseThrow();assertThat(original.getWorkplaceLatitude()).isEqualByComparingTo("21.125");assertThat(original.getWorkplaceVerificationStatus()).isEqualTo("WITHIN_RADIUS");
   assertThat(jdbc.queryForObject("select count(*) from workplace_correction_audit",Integer.class)).isEqualTo(1);
  }
@@ -112,6 +123,6 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
  @Test void assignedMentorOnlyCanReadWorkplaceAndRadiusChangesRequireReconfirmation() throws Exception {
   register(studentA,"21.125","79.0875","Branch A");approve(studentA);
   mvc.perform(get("/api/v1/mentor/students/"+studentA.getId()+"/internship/location").cookie(login(mentorB,"MentorPassword!24"))).andExpect(status().isNotFound());
-  mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/radius").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content("{\"radiusMeters\":300}")).andExpect(status().isOk()).andExpect(jsonPath("$.geofenceRadiusMeters").value(300)).andExpect(jsonPath("$.workplaceName").value("Branch A")).andExpect(jsonPath("$.status").value("PENDING"));
+  mvc.perform(put("/api/v1/admin/students/"+studentA.getId()+"/internship/location/radius").cookie(login(admin,"AdminPassword!23")).contentType(MediaType.APPLICATION_JSON).content("{\"radiusMeters\":300}")).andExpect(status().isOk()).andExpect(jsonPath("$.geofenceRadiusMeters").value(300)).andExpect(jsonPath("$.workplaceName").value("Branch A")).andExpect(jsonPath("$.status").value("PENDING_MENTOR_APPROVAL"));
  }
 }

@@ -219,7 +219,6 @@ class EdgeAiAttendanceIntegrationTest {
         locationService.registerSelectedPlace(internships.findByOnboardingStudentId(student.getId()).orElseThrow(),new edu.institution.ims.internship.dto.RegisteredWorkplaceRequest("test-branch-"+student.getId(),"Actual test workplace address",new BigDecimal("18.520400"),new BigDecimal("73.856700")));
         var current=locationService.getForAdmin(student.getId());
         locationService.review(student.getId(),edu.institution.ims.security.UserPrincipal.from(mentor),new WorkplaceReview(current.revision(),WorkplaceReview.Decision.APPROVE,null));
-        locationService.review(student.getId(),edu.institution.ims.security.UserPrincipal.from(admin),new WorkplaceReview(current.revision(),WorkplaceReview.Decision.APPROVE,null));
     }
 
     private User studentWithInternship(String email, String uid, InternshipMode mode) {

@@ -24,4 +24,7 @@ public class StudentAccount {
     public String getStudentName() { return studentName; }
     public String getUid() { return uid; }
     public Integer getSemester() { return semester; }
+    public void setUid(String uid) { this.uid = uid; }
+    public void setStudentName(String studentName) { this.studentName = studentName; }
+    public void setSemester(Integer semester) { this.semester = semester; }
 }

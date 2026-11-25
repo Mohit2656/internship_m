@@ -8,6 +8,15 @@ const values = { skills: ["Java"], certifications: ["Cloud fundamentals"], exper
 const original = { resumeId: 42, status: "PARSED", completedAt: "2026-10-30T07:00:00Z", ...values };
 const response = { resumeId: 42, revision: 0, source: "AI_EXTRACTED", original, values, editedAt: null, editorId: null, editorName: null, history: [] };
 
+test("student profile keeps upload-triggered skill sync without a separate analyzer interface", () => {
+  const page = fs.readFileSync(path.join(__dirname, "../app/student/professional-profile/page.tsx"), "utf8");
+  assert.ok(page.includes('api.post<ResumeAnalysis>("/student/resume/analysis")'));
+  assert.ok(page.includes("<SkillProfileCard"));
+  assert.ok(!page.includes("<ResumeAnalysisCard"));
+  assert.ok(!page.includes("<ResumeCorrectionEditor"));
+  assert.ok(!page.includes("Analyze Resume"));
+});
+
 function findAll(node, predicate) {
   if (Array.isArray(node)) return node.flatMap(child => findAll(child, predicate));
   if (!React.isValidElement(node)) return [];
@@ -85,4 +94,42 @@ test("mentor read-only review preserves snapshots and history without edit or sa
   assert.match(h.html(), /Original AI-extracted information/); assert.match(h.html(), /Correction history/);
   assert.equal(h.button("Edit parsed information"), undefined); assert.equal(h.button("Save corrections"), undefined);
   assert.equal(findAll(h.tree(), node => node.type === "form").length, 0); h.unmount();
+});
+
+test("downloadResume extracts clear error messages from Blob responses on download failure", async () => {
+  const axios = require("axios");
+  const profileLib = { exports: {} };
+  let mockGet;
+  const mockApi = { get: (...args) => mockGet(...args) };
+  new Function("require", "module", "exports", ts.transpileModule(fs.readFileSync(path.join(__dirname, "../lib/professional-profile.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText)(name => {
+    if (name === "@/lib/api") return { api: mockApi };
+    if (name === "axios") return axios;
+    return require(name);
+  }, profileLib, profileLib.exports);
+
+  const { downloadResume, resumeError } = profileLib.exports;
+
+  const missingFileBlob = new Blob([JSON.stringify({ status: 404, code: "RESUME_FILE_NOT_FOUND", message: "The stored resume file was not found" })], { type: "application/json" });
+  const missingFileErr = new axios.AxiosError("Not Found", "404", {}, {}, { status: 404, data: missingFileBlob });
+  mockGet = async () => { throw missingFileErr; };
+
+  await assert.rejects(
+    async () => downloadResume("/mentor/students/2/resume/download", "resume.pdf"),
+    err => {
+      assert.equal(resumeError(err, "Resume could not be downloaded."), "The stored resume file was not found");
+      return true;
+    }
+  );
+
+  const unauthorizedBlob = new Blob([JSON.stringify({ status: 404, code: "ASSIGNED_RESUME_NOT_FOUND", message: "Resume was not found in your assigned scope" })], { type: "application/json" });
+  const unauthorizedErr = new axios.AxiosError("Not Found", "404", {}, {}, { status: 404, data: unauthorizedBlob });
+  mockGet = async () => { throw unauthorizedErr; };
+
+  await assert.rejects(
+    async () => downloadResume("/mentor/students/2/resume/download", "resume.pdf"),
+    err => {
+      assert.equal(resumeError(err, "Resume could not be downloaded."), "Resume was not found in your assigned scope");
+      return true;
+    }
+  );
 });

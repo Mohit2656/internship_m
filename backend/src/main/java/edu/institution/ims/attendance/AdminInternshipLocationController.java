@@ -12,8 +12,6 @@ public class AdminInternshipLocationController {
 
     public AdminInternshipLocationController(InternshipLocationService service) { this.service = service; }
 
-    @PostMapping("/review")
-    public InternshipLocationResponse review(@PathVariable Long studentId,@AuthenticationPrincipal UserPrincipal principal,@jakarta.validation.Valid @RequestBody WorkplaceReview request) { return service.review(studentId,principal,request); }
     @GetMapping
     public InternshipLocationResponse get(@PathVariable Long studentId) {
         return service.getForAdmin(studentId);

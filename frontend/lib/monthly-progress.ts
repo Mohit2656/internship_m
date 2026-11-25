@@ -16,6 +16,7 @@ export type MonthlyProgressReport = {
   branch: string | null;
   semester: number | null;
   internshipId: number;
+  internshipNumber: number;
   companyName: string;
   internshipMode: string;
   reportMonthNumber: number;
@@ -25,6 +26,8 @@ export type MonthlyProgressReport = {
   photoOriginalName: string;
   photoMimeType: string;
   photoSize: number;
+  reportPdfOriginalName: string | null;
+  reportPdfSize: number | null;
   status: MonthlyProgressStatus;
   revision: number;
   reviewerId: number | null;
@@ -82,18 +85,29 @@ export async function openPrivateFile(url: string, filename?: string) {
     }
     const storedUrl = objectUrl;
     window.setTimeout(() => URL.revokeObjectURL(storedUrl), 60_000);
-  } catch (error) {
+  } catch (error: any) {
     preview?.close();
     if (objectUrl) URL.revokeObjectURL(objectUrl);
+    if (error?.response?.data instanceof Blob) {
+      try {
+        const text = await error.response.data.text();
+        const json = JSON.parse(text);
+        if (json?.message) {
+          error.backendMessage = json.message;
+        }
+      } catch {}
+    }
     throw error;
   }
 }
 
 export function privateFileErrorMessage(cause: unknown, kind: "photo" | "pdf") {
   if (cause instanceof Error && cause.message === "PHOTO_WINDOW_BLOCKED") return "Allow pop-ups for this site, then select View Photograph again.";
+  const backendMsg = (cause as { backendMessage?: string })?.backendMessage;
+  if (backendMsg) return backendMsg;
   const status = (cause as { response?: { status?: number } } | null)?.response?.status;
-  if (status === 404) return "The report or its photograph is no longer available. Refresh this page.";
-  if (status === 401) return "Your session has expired. Sign in again to view the photograph or PDF.";
-  if (status === 403) return "You do not have permission to view this report.";
+  if (status === 404) return `The report ${kind} is no longer available. Refresh this page.`;
+  if (status === 401) return `Your session has expired. Sign in again to view the ${kind}.`;
+  if (status === 403) return `You do not have permission to view or download this report ${kind}.`;
   return `Unable to open the report ${kind}.`;
 }

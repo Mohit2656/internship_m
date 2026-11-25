@@ -6,6 +6,8 @@ import jakarta.validation.constraints.*;
 import java.util.List;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.ResponseEntity;
+import edu.institution.ims.monthlyprogress.MonthlyProgressDownloads;
 
 @RestController
 @RequestMapping("/api/v1/mentor/weekly-progress")
@@ -18,4 +20,12 @@ public class MentorWeeklyProgressController {
             @PathVariable Long periodId, @Valid @RequestBody ReviewRequest request) { return service.review(principal, periodId, request.revision(), true, null); }
     @PostMapping("/{periodId}/reject") public WeeklyProgressService.Week reject(@AuthenticationPrincipal UserPrincipal principal,
             @PathVariable Long periodId, @Valid @RequestBody ReviewRequest request) { return service.review(principal, periodId, request.revision(), false, request.reason()); }
+    @GetMapping("/{periodId}/attachment") public ResponseEntity<?> attachment(@AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long periodId,@RequestParam(defaultValue="false") boolean download) {
+        return MonthlyProgressDownloads.response(service.mentorAttachment(principal,periodId),!download);
+    }
+    @GetMapping("/{periodId}/pdf") public ResponseEntity<?> pdf(@AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long periodId) {
+        return MonthlyProgressDownloads.response(service.mentorPdf(principal,periodId),false);
+    }
 }

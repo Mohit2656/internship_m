@@ -12,6 +12,9 @@ public interface OpportunitySkillRepository extends JpaRepository<OpportunitySki
     List<OpportunitySkill> findAllByOpportunityIdInAndRequirementTypeOrderByDisplayNameAsc(Collection<Long> opportunityIds, OpportunitySkillType requirementType);
     Optional<OpportunitySkill> findByOpportunityIdAndRequirementTypeAndNormalizedName(Long opportunityId, OpportunitySkillType requirementType, String normalizedName);
 
+    @Query("select distinct s.displayName from OpportunitySkill s where lower(s.normalizedName) = lower(:normalizedName)")
+    List<String> findDisplayNamesByNormalizedName(@Param("normalizedName") String normalizedName);
+
     @Modifying
     @Query("delete from OpportunitySkill s where s.opportunity.id = :opportunityId")
     void deleteAllByOpportunityId(@Param("opportunityId") Long opportunityId);

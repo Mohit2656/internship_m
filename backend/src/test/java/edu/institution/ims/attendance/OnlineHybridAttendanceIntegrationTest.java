@@ -162,6 +162,7 @@ class OnlineHybridAttendanceIntegrationTest {
         saveSchedule(hybridOffice, "OFFICE");
         assignments.saveAndFlush(new MentorStudentAssignment(mentorA, hybridRemote, admin, NOW));
         assignments.saveAndFlush(new MentorStudentAssignment(mentorA, hybridOffice, admin, NOW));
+        saveApprovedLocation(hybridOffice);
 
         Cookie remoteSession = loginCookie(hybridRemote.getEmail(), "StudentPassword!23");
         Cookie officeSession = loginCookie(hybridOffice.getEmail(), "StudentPassword!24");
@@ -206,7 +207,7 @@ class OnlineHybridAttendanceIntegrationTest {
                         .cookie(officeSession)).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"));
-        assertThat(locations.findAll()).isEmpty();
+        assertThat(locations.findAll()).hasSize(1);
 
         mvc.perform(get("/api/v1/mentor/attendance/today").cookie(mentorSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
@@ -249,11 +250,22 @@ class OnlineHybridAttendanceIntegrationTest {
         assertThat(attendance.findAll()).isEmpty(); assertThat(evidence.findAll()).isEmpty();
     }
 
+
+
     private void saveSchedule(User student, String mode) throws Exception {
         mvc.perform(put("/api/v1/admin/students/{id}/internship/hybrid-schedule", student.getId())
                         .cookie(adminSession).contentType(MediaType.APPLICATION_JSON).content(scheduleJson(mode)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.entries[0].dayOfWeek").value("FRIDAY"))
                 .andExpect(jsonPath("$.entries[0].workMode").value(mode));
+    }
+
+    private void saveApprovedLocation(User student) {
+        InternshipDetails internship = internships.findByOnboardingStudentId(student.getId()).orElseThrow();
+        InternshipLocation location = new InternshipLocation(internship, new BigDecimal("18.520400"),
+                new BigDecimal("73.856700"), new BigDecimal("200"), NOW);
+        location.selectedPlace("hybrid-office-" + internship.getId(), "Hybrid office workplace");
+        location.review(mentorA, "APPROVE", null, NOW);
+        locations.saveAndFlush(location);
     }
 
     private String scheduleJson(String mode) throws Exception {
@@ -314,6 +326,8 @@ class OnlineHybridAttendanceIntegrationTest {
     }
 
     private void clearData() {
+        jdbc.update("delete from late_attendance_permissions");
+        jdbc.update("delete from attendance_submission_audit");
         jdbc.update("delete from workplace_review_audit");
         evidence.deleteAll(); attendance.deleteAll(); verificationSessions.deleteAll(); locations.deleteAll(); schedules.deleteAll(); assignments.deleteAll();
         internships.deleteAll(); onboardings.deleteAll(); studentProfiles.deleteAll(); mentorProfiles.deleteAll();

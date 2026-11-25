@@ -10,6 +10,8 @@ import org.springframework.web.client.RestClient;
 import java.net.SocketTimeoutException;
 import java.time.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.*;
+import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.*;
 import static org.springframework.test.web.client.ExpectedCount.times;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
@@ -32,7 +34,7 @@ class WorkplaceLocationSearchServiceTest {
     }
 
     @Test void searchesFixedProviderWithEncodedQueryAndMapsLongitudeBeforeLatitude() {
-        upstream.expect(requestTo("https://photon.example/api/?q=R%26D%20%2B%20Labs&limit=5&lang=en"))
+        upstream.expect(requestTo("https://photon.example/api/?q=R%26D%20%2B%20Labs&limit=5&lang=en&countrycode=IN"))
                 .andExpect(method(HttpMethod.GET)).andRespond(withSuccess(PLACE, MediaType.APPLICATION_JSON));
         var results = service.search("  R&D  + Labs  ");
         assertThat(results).containsExactly(new WorkplaceLocationSearchResult("Actual branch",
@@ -60,13 +62,9 @@ class WorkplaceLocationSearchServiceTest {
         upstream.verify();
     }
 
-    @Test void differentQueriesShareOneOutboundRequestPerSecondIncludingBoundary() {
+    @Test void differentQueriesAreServedThroughTheProviderCoordinator() {
         upstream.expect(times(2), anything()).andRespond(withSuccess(PLACE, MediaType.APPLICATION_JSON));
         service.search("first branch");
-        nanos.set(Duration.ofSeconds(1).toNanos() - 1);
-        assertThatThrownBy(() -> service.search("second branch")).isInstanceOfSatisfying(WorkplaceLocationSearchException.class,
-                error -> assertThat(error.status()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS));
-        nanos.incrementAndGet();
         assertThat(service.search("second branch")).hasSize(1);
         upstream.verify();
     }
@@ -100,10 +98,129 @@ class WorkplaceLocationSearchServiceTest {
         upstream.verify();
     }
 
+    @Test void concurrentMissesCannotGrowCachePastConfiguredCapacity() throws Exception {
+        service.shutdown();
+        var builder = RestClient.builder().baseUrl("https://photon.example");
+        upstream = MockRestServiceServer.bindTo(builder).build();
+        service = new WorkplaceLocationSearchService(builder.build(), clock, nanos::get,
+                4, 32, Duration.ofSeconds(2), Duration.ZERO, 3, Duration.ofSeconds(30),
+                new WorkplaceSearchMetrics(null));
+        upstream.expect(times(20), anything()).andRespond(withSuccess(PLACE, MediaType.APPLICATION_JSON));
+        var futures = IntStream.range(0, 20).mapToObj(index -> service.searchAsync("concurrent branch " + index, null, null)).toList();
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).get(2, TimeUnit.SECONDS);
+        assertThat(service.cachedEntryCount()).isEqualTo(4);
+        upstream.verify();
+    }
+
     @Test void emptySearchesAreCachedAndNoCoordinatesAreInvented() {
         upstream.expect(anything()).andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
         assertThat(service.search("unknown branch")).isEmpty();
         assertThat(service.search("unknown branch")).isEmpty();
+        upstream.verify();
+    }
+
+    @Test void oneHundredIdenticalConcurrentSearchesUseOneUpstreamCall() throws Exception {
+        long benchmarkStart = System.nanoTime();
+        CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
+        upstream.expect(times(1), anything()).andRespond(request -> {
+            entered.countDown();
+            try { assertThat(release.await(2, TimeUnit.SECONDS)).isTrue(); }
+            catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new AssertionError(error); }
+            return withSuccess(PLACE, MediaType.APPLICATION_JSON).createResponse(request);
+        });
+        var futures = IntStream.range(0, 100)
+                .mapToObj(index -> service.searchAsync("Concurrent Branch", 21.1498, 79.082))
+                .toList();
+        assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+        release.countDown();
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).get(2, TimeUnit.SECONDS);
+        assertThat(futures).allSatisfy(future -> assertThat(future.join()).hasSize(1));
+        System.out.printf("PHASE3 identical=100 success=100 upstream=1 elapsedMs=%.2f%n",
+                (System.nanoTime() - benchmarkStart) / 1_000_000.0);
+        upstream.verify();
+    }
+
+    @Test void cachedResultServesTenThousandRequestsWithoutAnotherUpstreamCall() {
+        upstream.expect(times(1), anything()).andRespond(withSuccess(PLACE, MediaType.APPLICATION_JSON));
+        service.search("cached branch");
+        long start = System.nanoTime();
+        for (int index = 0; index < 10_000; index++) assertThat(service.search(" CACHED  branch ")).hasSize(1);
+        double elapsedMs = (System.nanoTime() - start) / 1_000_000.0;
+        System.out.printf("PHASE3 cacheHits=10000 upstream=1 elapsedMs=%.2f throughputPerSecond=%.0f%n",
+                elapsedMs, 10_000_000.0 / elapsedMs);
+        upstream.verify();
+    }
+
+    @Test void failedInFlightEntryIsRemovedAndTheSameQueryCanRecover() {
+        upstream.expect(anything()).andRespond(withServerError());
+        upstream.expect(anything()).andRespond(withSuccess(PLACE, MediaType.APPLICATION_JSON));
+        assertUnavailable(() -> service.search("recovering branch"));
+        assertThat(service.search("recovering branch")).hasSize(1);
+        upstream.verify();
+    }
+
+    @Test void circuitSuppressesCallsAfterThreeFailuresAndRecoversAfterOpenDuration() {
+        upstream.expect(times(3), anything()).andRespond(withServerError());
+        upstream.expect(anything()).andRespond(withSuccess(PLACE, MediaType.APPLICATION_JSON));
+        for (int attempt = 0; attempt < 3; attempt++) {
+            int current = attempt;
+            assertUnavailable(() -> service.search("failed branch " + current));
+        }
+        assertUnavailable(() -> service.search("suppressed branch"));
+        clock.instant = clock.instant.plusSeconds(30);
+        assertThat(service.search("recovered branch")).hasSize(1);
+        upstream.verify();
+    }
+
+    @Test void emptySearchCacheExpiresAfterFiveMinutesWithoutChangingPositiveTtl() {
+        upstream.expect(times(2), anything()).andRespond(withSuccess("{\"features\":[]}", MediaType.APPLICATION_JSON));
+        assertThat(service.search("unknown branch")).isEmpty();
+        clock.instant = clock.instant.plus(Duration.ofMinutes(5)).minusMillis(1);
+        assertThat(service.search("unknown branch")).isEmpty();
+        clock.instant = clock.instant.plusMillis(1);
+        nanos.addAndGet(Duration.ofMinutes(5).toNanos());
+        assertThat(service.search("unknown branch")).isEmpty();
+        upstream.verify();
+    }
+
+    @Test void sendsIndiaFilterAndOptionalPhotonLocationBiasAndSeparatesCacheKeys() {
+        upstream.expect(requestTo("https://photon.example/api/?q=Nagpur%20office&limit=5&lang=en&countrycode=IN&lat=21.1498&lon=79.082&zoom=12&location_bias_scale=0.1"))
+                .andRespond(withSuccess(PLACE, MediaType.APPLICATION_JSON));
+        upstream.expect(requestTo("https://photon.example/api/?q=Nagpur%20office&limit=5&lang=en&countrycode=IN"))
+                .andRespond(withSuccess(PLACE, MediaType.APPLICATION_JSON));
+        assertThat(service.search("Nagpur office", 21.1498, 79.082)).hasSize(1);
+        nanos.addAndGet(Duration.ofSeconds(1).toNanos());
+        assertThat(service.search("Nagpur office")).hasSize(1);
+        upstream.verify();
+    }
+
+    @Test void rejectsPartialOrInvalidBiasBeforeCallingPhoton() {
+        for (Double[] bias : new Double[][]{{21.0, null}, {null, 79.0}, {91.0, 79.0}, {21.0, 181.0}, {Double.NaN, 79.0}}) {
+            assertThatThrownBy(() -> service.search("Nagpur office", bias[0], bias[1]))
+                    .isInstanceOfSatisfying(WorkplaceLocationSearchException.class,
+                            error -> assertThat(error.code()).isEqualTo("INVALID_WORKPLACE_SEARCH_BIAS"));
+        }
+        upstream.verify();
+    }
+
+    @Test void conservativelyClassifiesPhotonMetadataAndFiltersUnrelatedBusinesses() {
+        String response = """
+                {"features":[
+                  {"geometry":{"type":"Point","coordinates":[79.08,21.14]},"properties":{"name":"Virtual Galaxy Infotech","osm_key":"office","osm_value":"company","street":"Vivekanand Nagar","city":"Nagpur","country":"India"}},
+                  {"geometry":{"type":"Point","coordinates":[79.09,21.13]},"properties":{"name":"Itech Galaxy","osm_key":"shop","osm_value":"supermarket","street":"Other Road","city":"Nagpur","country":"India"}},
+                  {"geometry":{"type":"Point","coordinates":[79.10,21.12]},"properties":{"name":"Plot 26","osm_key":"building","osm_value":"yes","housenumber":"26","street":"Vivekanand Nagar","city":"Nagpur","country":"India"}},
+                  {"geometry":{"type":"Point","coordinates":[79.11,21.11]},"properties":{"name":"Ring Road","osm_key":"highway","osm_value":"secondary","postcode":"440015","city":"Nagpur","country":"India"}},
+                  {"geometry":{"type":"Point","coordinates":[79.082,21.149]},"properties":{"name":"Nagpur","osm_key":"place","osm_value":"city","state":"Maharashtra","country":"India"}}
+                ]}
+                """;
+        upstream.expect(anything()).andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        assertThat(service.search("Virtual Galaxy Infotech Nagpur 440015"))
+                .extracting(WorkplaceLocationSearchResult::name, WorkplaceLocationSearchResult::matchQuality)
+                .containsExactly(
+                        tuple("Virtual Galaxy Infotech", WorkplaceLocationMatchQuality.EXACT_BUSINESS),
+                        tuple("Plot 26", WorkplaceLocationMatchQuality.APPROXIMATE_ADDRESS),
+                        tuple("Ring Road", WorkplaceLocationMatchQuality.STREET_OR_POSTCODE),
+                        tuple("Nagpur", WorkplaceLocationMatchQuality.LOCALITY_OR_CITY));
         upstream.verify();
     }
 
@@ -128,7 +245,7 @@ class WorkplaceLocationSearchServiceTest {
 
     @Test void limitsResponseCountAndTextLengthsAndDoesNotLeakProviderIds() {
         String feature = "{\"geometry\":{\"type\":\"Point\",\"coordinates\":[79,21]},\"properties\":{\"name\":\""
-                + "x".repeat(1200) + "\",\"osm_id\":123,\"place_id\":456}}";
+                + "x".repeat(1200) + "\",\"street\":\"Long Road\",\"osm_id\":123,\"place_id\":456}}";
         upstream.expect(anything()).andRespond(withSuccess("{\"features\":[" + String.join(",", java.util.Collections.nCopies(7, feature)) + "]}", MediaType.APPLICATION_JSON));
         var results = service.search("large response");
         assertThat(results).hasSize(5).allSatisfy(result -> {
@@ -138,11 +255,10 @@ class WorkplaceLocationSearchServiceTest {
         upstream.verify();
     }
 
-    @Test void providerErrorsAreNotRetriedAndStillConsumeRateLimit() {
-        upstream.expect(anything()).andRespond(withServerError());
+    @Test void providerErrorsAreNotRetriedOrCached() {
+        upstream.expect(times(2), anything()).andRespond(withServerError());
         assertUnavailable(() -> service.search("failed branch"));
-        assertThatThrownBy(() -> service.search("another branch")).isInstanceOfSatisfying(WorkplaceLocationSearchException.class,
-                error -> assertThat(error.status()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS));
+        assertUnavailable(() -> service.search("another branch"));
         upstream.verify();
     }
 

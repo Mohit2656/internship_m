@@ -1,5 +1,6 @@
 package edu.institution.ims.attendance;
 
+import edu.institution.ims.internship.InternshipDetails;
 import edu.institution.ims.mentor.MentorStudentAssignment;
 import edu.institution.ims.user.User;
 import jakarta.persistence.*;
@@ -8,8 +9,8 @@ import java.time.LocalDate;
 
 @Entity
 @Table(name = "late_attendance_permissions", uniqueConstraints =
-        @UniqueConstraint(name = "uk_late_attendance_permission_student_date",
-                columnNames = {"student_user_id", "attendance_date"}))
+        @UniqueConstraint(name = "uk_late_attendance_permission_student_internship_date",
+                columnNames = {"student_user_id", "internship_id", "attendance_date"}))
 public class LateAttendancePermission {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -22,6 +23,10 @@ public class LateAttendancePermission {
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "assignment_id", nullable = false)
     private MentorStudentAssignment assignment;
+
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "internship_id", nullable = false)
+    private InternshipDetails internship;
 
     @Column(name = "attendance_date", nullable = false, updatable = false)
     private LocalDate attendanceDate;
@@ -38,9 +43,10 @@ public class LateAttendancePermission {
 
     protected LateAttendancePermission() {}
 
-    public LateAttendancePermission(MentorStudentAssignment assignment, LocalDate attendanceDate,
-            Instant authorizedAt) {
+    public LateAttendancePermission(MentorStudentAssignment assignment, InternshipDetails internship,
+            LocalDate attendanceDate, Instant authorizedAt) {
         this.student = assignment.getStudent();
+        this.internship = internship;
         this.attendanceDate = attendanceDate;
         enable(assignment, authorizedAt);
     }
@@ -57,6 +63,7 @@ public class LateAttendancePermission {
     public Long getId() { return id; }
     public User getStudent() { return student; }
     public MentorStudentAssignment getAssignment() { return assignment; }
+    public InternshipDetails getInternship() { return internship; }
     public LocalDate getAttendanceDate() { return attendanceDate; }
     public boolean isEnabled() { return enabled; }
     public User getAuthorizedBy() { return authorizedBy; }

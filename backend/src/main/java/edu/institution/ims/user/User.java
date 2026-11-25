@@ -5,6 +5,7 @@ import edu.institution.ims.studentprofile.StudentProfile;
 import edu.institution.ims.internship.InternshipOnboarding;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.List;
 
 @Entity
 @Table(name = "users", uniqueConstraints = @UniqueConstraint(name = "uk_users_email", columnNames = "email"), indexes = {
@@ -23,7 +24,8 @@ public class User {
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
     @OneToOne(mappedBy = "user", fetch = FetchType.LAZY) private StudentProfile studentProfile;
     @OneToOne(mappedBy = "user", fetch = FetchType.LAZY) private StudentAccount studentAccount;
-    @OneToOne(mappedBy = "student", fetch = FetchType.LAZY) private InternshipOnboarding internshipOnboarding;
+    @OneToMany(mappedBy = "student", fetch = FetchType.LAZY) @OrderBy("internshipNumber asc")
+    private List<InternshipOnboarding> internshipOnboardings = new java.util.ArrayList<>();
 
     protected User() {}
     public User(String email, String passwordHash, Role role, boolean active) {
@@ -58,5 +60,5 @@ public class User {
     public Instant getUpdatedAt() { return updatedAt; }
     public StudentProfile getStudentProfile() { return studentProfile; }
     public StudentAccount getStudentAccount() { return studentAccount; }
-    public InternshipOnboarding getInternshipOnboarding() { return internshipOnboarding; }
+    public InternshipOnboarding getInternshipOnboarding() { return internshipOnboardings.stream().filter(o -> o.getInternshipNumber()==1).findFirst().orElse(null); }
 }

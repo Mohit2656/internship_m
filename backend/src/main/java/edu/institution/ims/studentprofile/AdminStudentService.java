@@ -14,28 +14,35 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AdminStudentService {
-    private final UserRepository users; private final StudentProfileRepository profiles; private final InternshipOnboardingService onboardingService; private final InternshipDetailsService detailsService; private final AadhaarEncryptionService encryption;
+    private final UserRepository users; private final StudentProfileRepository profiles; private final InternshipOnboardingService onboardingService; private final InternshipDetailsService detailsService; private final AadhaarEncryptionService encryption; private final StudentProfileService profileService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
-    public AdminStudentService(UserRepository users, StudentProfileRepository profiles, InternshipOnboardingService onboardingService, InternshipDetailsService detailsService, AadhaarEncryptionService encryption, org.springframework.jdbc.core.JdbcTemplate jdbc) {
+    public AdminStudentService(UserRepository users, StudentProfileRepository profiles, InternshipOnboardingService onboardingService, InternshipDetailsService detailsService, AadhaarEncryptionService encryption, org.springframework.jdbc.core.JdbcTemplate jdbc, StudentProfileService profileService) {
         this.users = users; this.profiles = profiles; this.onboardingService = onboardingService; this.detailsService = detailsService; this.encryption = encryption;
         this.jdbc=jdbc;
+        this.profileService=profileService;
     }
 
     @Transactional(readOnly = true) public PagedResponse<AdminStudentSummaryResponse> list(String search, Branch branch, String academicYear, Integer semester,
             WorkflowStatus internshipStatus, InternshipSource internshipSource, ProfileStatus profileStatus, CompanyType companyType,
             InternshipMode internshipMode, Boolean paid, Boolean fullTimeEmploymentOffered, AttentionCategory attention, int page, int size) {
-        return list(search,branch,academicYear,semester,internshipStatus,internshipSource,profileStatus,companyType,internshipMode,paid,fullTimeEmploymentOffered,attention,page,size,null);
+        return list(search,branch,academicYear,semester,internshipStatus,internshipSource,profileStatus,companyType,internshipMode,paid,fullTimeEmploymentOffered,attention,page,size,null,null,null);
     }
     @Transactional(readOnly = true) public PagedResponse<AdminStudentSummaryResponse> list(String search, Branch branch, String academicYear, Integer semester,
             WorkflowStatus internshipStatus, InternshipSource internshipSource, ProfileStatus profileStatus, CompanyType companyType,
             InternshipMode internshipMode, Boolean paid, Boolean fullTimeEmploymentOffered, AttentionCategory attention, int page, int size, Long academicSessionId) {
+        return list(search,branch,academicYear,semester,internshipStatus,internshipSource,profileStatus,companyType,internshipMode,paid,fullTimeEmploymentOffered,attention,page,size,academicSessionId,null,null);
+    }
+    @Transactional(readOnly = true) public PagedResponse<AdminStudentSummaryResponse> list(String search, Branch branch, String academicYear, Integer semester,
+            WorkflowStatus internshipStatus, InternshipSource internshipSource, ProfileStatus profileStatus, CompanyType companyType,
+            InternshipMode internshipMode, Boolean paid, Boolean fullTimeEmploymentOffered, AttentionCategory attention, int page, int size,
+            Long academicSessionId, Boolean internshipSecured, String companyName) {
         int safePage = Math.max(page, 0); int safeSize = Math.min(Math.max(size, 1), 100);
         Specification<User> spec = (root, query, cb) -> {
             var profile = root.<User, StudentProfile>join("studentProfile", JoinType.LEFT);
             var account = root.<User, StudentAccount>join("studentAccount", JoinType.LEFT);
-            var onboarding = root.<User, InternshipOnboarding>join("internshipOnboarding", JoinType.LEFT);
+            var onboarding = root.<User, InternshipOnboarding>join("internshipOnboardings", JoinType.LEFT);
             var details = onboarding.<InternshipOnboarding, InternshipDetails>join("internshipDetails", JoinType.LEFT);
-            var predicate = cb.and(cb.equal(root.get("role"), Role.STUDENT),cb.isTrue(root.get("active")));
+            var predicate = cb.and(cb.equal(root.get("role"), Role.STUDENT),cb.isTrue(root.get("active")),cb.or(cb.isNull(onboarding.get("id")),cb.equal(onboarding.get("internshipNumber"),1)));
             if (academicSessionId != null) predicate=cb.and(predicate,cb.equal(root.get("academicSessionId"),academicSessionId));
             if (search != null && !search.isBlank()) {
                 String value = "%" + search.trim().toLowerCase() + "%";
@@ -47,8 +54,16 @@ public class AdminStudentService {
             if (semester != null) predicate = cb.and(predicate, cb.equal(profile.get("semester"), semester));
             if (profileStatus == ProfileStatus.COMPLETE) predicate = cb.and(predicate, cb.isNotNull(profile.get("id")));
             if (profileStatus == ProfileStatus.INCOMPLETE) predicate = cb.and(predicate, cb.isNull(profile.get("id")));
-            if (internshipStatus == WorkflowStatus.NOT_SECURED) predicate = cb.and(predicate, cb.isNull(onboarding.get("id")));
-            else if (internshipStatus != null) predicate = cb.and(predicate, cb.equal(onboarding.get("workflowStatus"), internshipStatus));
+            if (internshipSecured != null) {
+                predicate = cb.and(predicate, internshipSecured ? cb.isNotNull(onboarding.get("id")) : cb.isNull(onboarding.get("id")));
+            } else if (internshipStatus == WorkflowStatus.NOT_SECURED) {
+                predicate = cb.and(predicate, cb.isNull(onboarding.get("id")));
+            } else if (internshipStatus != null) {
+                predicate = cb.and(predicate, cb.equal(onboarding.get("workflowStatus"), internshipStatus));
+            }
+            if (companyName != null && !companyName.isBlank()) {
+                predicate = cb.and(predicate, cb.equal(cb.lower(cb.trim(details.get("companyName"))), companyName.trim().toLowerCase()));
+            }
             if (internshipSource != null) predicate = cb.and(predicate, cb.equal(onboarding.get("source"), internshipSource));
             if (companyType != null) predicate = cb.and(predicate, cb.equal(details.get("companyType"), companyType));
             if (internshipMode != null) predicate = cb.and(predicate, cb.equal(details.get("internshipMode"), internshipMode));
@@ -64,7 +79,7 @@ public class AdminStudentService {
                 "select u.id,r.uploaded_at,d.updated_at as internship_at,l.updated_at as workplace_at from users u "
                 + "left join student_professional_profiles p on p.student_user_id=u.id "
                 + "left join student_resumes r on r.professional_profile_id=p.id and r.is_active=true "
-                + "left join internship_onboarding o on o.student_user_id=u.id left join internship_details d on d.onboarding_id=o.id "
+                + "left join internship_onboarding o on o.student_user_id=u.id and o.internship_number=1 left join internship_details d on d.onboarding_id=o.id "
                 + "left join internship_locations l on l.internship_id=d.id where u.id in (:ids)",
                 java.util.Map.of("ids",result.getContent().stream().map(User::getId).toList()),
                 (org.springframework.jdbc.core.RowCallbackHandler) row -> {
@@ -88,8 +103,16 @@ public class AdminStudentService {
     @Transactional(readOnly = true) public AdminStudentDetailResponse detail(Long userId) {
         User user = users.findById(userId).filter(u -> u.getRole() == Role.STUDENT).orElseThrow(ProfileNotFoundException::new);
         StudentProfile profile = profiles.findByUserId(userId).orElse(null);
+        String aadhaar = null;
+        if (profile != null && profile.getAadhaarEncrypted() != null) {
+            try {
+                aadhaar = encryption.decrypt(profile.getAadhaarEncrypted());
+            } catch (Exception e) {
+                aadhaar = profile.getAadhaarLastFour() != null ? "••••••••" + profile.getAadhaarLastFour() : null;
+            }
+        }
         return new AdminStudentDetailResponse(user.getId(), user.getEmail(), profile == null ? ProfileStatus.INCOMPLETE : ProfileStatus.COMPLETE,
-                profile == null ? null : StudentProfileService.response(profile), profile == null ? null : encryption.decrypt(profile.getAadhaarEncrypted()),
+                profile == null ? null : profileService.responseWithMentor(profile), aadhaar,
                 onboardingService.getForStudent(userId), detailsService.findForStudentOrNull(userId));
     }
     private AdminStudentSummaryResponse summary(User user, java.time.Instant[] activity) {

@@ -18,8 +18,9 @@ public interface OpportunityRepository extends JpaRepository<Opportunity, Long> 
             select o from Opportunity o
             where o.status = :status
               and (o.applicationDeadline is null or o.applicationDeadline >= :today)
-              and (:search is null or lower(o.companyName) like lower(concat('%', :search, '%'))
-                   or lower(o.title) like lower(concat('%', :search, '%')))
+              and (cast(:search as string) is null
+                   or lower(o.companyName) like cast(:search as string)
+                   or lower(o.title) like cast(:search as string))
               and (:mode is null or o.internshipMode = :mode)
             """)
     Page<Opportunity> findActiveForStudents(@Param("status") OpportunityStatus status, @Param("today") LocalDate today,

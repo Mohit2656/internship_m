@@ -62,7 +62,7 @@ export function MentorAssignmentManager({ mentor, onClose, onCountChanged }: Pro
     try {
       const { data } = await api.post<MentorAssignmentWorkspace>(`/admin/mentors/${mentor.userId}/students`, { studentUserIds: selected });
       applyWorkspace(data); setSelected([]);
-      setSuccess("Selected students were assigned successfully. Existing assignments were safely reassigned.");
+      setSuccess("Selected students were assigned successfully.");
     } catch (cause) {
       setError((cause as AxiosError<ApiError>).response?.data?.message ?? "Unable to assign the selected students.");
     } finally { setSaving(false); }
@@ -101,8 +101,8 @@ export function MentorAssignmentManager({ mentor, onClose, onCountChanged }: Pro
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <h3 className="font-bold">Available for assignment</h3>
-              {mentor.active ? <><p className="mt-1 text-xs text-slate-500">Students assigned elsewhere may be selected to reassign them transactionally.</p>
-              {workspace.availableStudents.length === 0 ? <p className="mt-4 text-sm text-slate-500">No other students are available.</p> : <ul className="mt-4 max-h-96 divide-y divide-slate-100 overflow-y-auto pr-1">{workspace.availableStudents.map(student => <li key={student.userId} className="py-4 first:pt-0 last:pb-0"><label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={selected.includes(student.userId)} onChange={() => toggle(student.userId)} className="mt-1 h-4 w-4" /><span><span className="font-semibold">{identity(student)}</span><StudentFacts student={student} />{student.currentMentorName && <span className="mt-1 block text-xs font-medium text-amber-700">Currently assigned to {student.currentMentorName}</span>}</span></label></li>)}</ul>}
+              {mentor.active ? <><p className="mt-1 text-xs text-slate-500">Only students without an active faculty mentor assignment are shown.</p>
+              {workspace.availableStudents.length === 0 ? <p className="mt-4 text-sm text-slate-500">No unassigned students are available.</p> : <ul className="mt-4 max-h-96 divide-y divide-slate-100 overflow-y-auto pr-1">{workspace.availableStudents.map(student => <li key={student.userId} className="py-4 first:pt-0 last:pb-0"><label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={selected.includes(student.userId)} onChange={() => toggle(student.userId)} className="mt-1 h-4 w-4" /><span><span className="font-semibold">{identity(student)}</span><StudentFacts student={student} /></span></label></li>)}</ul>}
               <button type="button" disabled={saving || selected.length === 0} onClick={() => void assignSelected()} className="mt-5 w-full">{saving ? "Saving…" : `Assign Selected (${selected.length})`}</button></> : <p className="mt-4 text-sm text-slate-500">New assignments are unavailable for a deactivated mentor.</p>}
             </div>
           </div>

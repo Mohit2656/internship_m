@@ -22,7 +22,7 @@ async function errorMessage(error: unknown, fallback: string) {
 export function DashboardReportExport({ role, initialFilters = {} }: { role: "ADMIN" | "MENTOR"; initialFilters?: Record<string, string> }) {
   const [open, setOpen] = useState(false);
   return <>
-    <button type="button" onClick={() => setOpen(true)} className="text-sm">Export Report</button>
+    <button type="button" onClick={() => setOpen(true)} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition">Export Custom Roster</button>
     {open && <ReportDialog role={role} initialFilters={initialFilters} onClose={() => setOpen(false)} />}
   </>;
 }
@@ -140,7 +140,7 @@ function ReportDialog({ role, initialFilters, onClose }: { role: "ADMIN" | "MENT
             <p className="mt-2 text-xs text-slate-500">Excel includes a report metadata sheet, formatted columns, filters, and a frozen header. CSV includes the same selected headers and data, using UTF-8. PDF includes the selected data and report details in Times New Roman, with page numbers; wide selections use readable sections for each student.</p>
           </section>
         </fieldset>
-        <div className="flex flex-wrap items-center gap-4"><button type="button" disabled={generating || previewing || !currentPreview || !selected.length} onClick={() => void download()} className="text-sm">{generating ? "Generating report…" : `Download ${format === "XLSX" ? "Excel" : format} Report`}</button>
+        <div className="flex flex-wrap items-center gap-4"><button type="button" disabled={generating || previewing || !currentPreview || !selected.length} onClick={() => void download()} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{generating ? "Generating report…" : `Download ${format === "XLSX" ? "Excel" : format} Report`}</button>
           {generating && <p role="status" className="text-sm text-slate-500">Preparing your selected student records. Please keep this dialog open.</p>}
           {success && <p role="status" className="text-sm text-emerald-700">{success}</p>}</div>
       </>}

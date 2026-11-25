@@ -28,7 +28,7 @@ public class InternshipCompletionService {
         this.jdbc=jdbc; this.named=named; this.internships=internships; this.sessions=sessions; this.notifications=notifications; this.clock=clock;
     }
     public record Event(int revision,String previousStatus,String finalStatus,Long reviewerId,String reviewer,Instant performedAt,String remarks) {}
-    public record Completion(Long internshipId,Long studentId,String studentName,String uid,String companyName,LocalDate startDate,LocalDate endDate,int totalWeeks,
+    public record Completion(Long internshipId,int internshipNumber,Long studentId,String studentName,String uid,String companyName,LocalDate startDate,LocalDate endDate,int totalWeeks,
             Long sessionId,String sessionName,String status,int revision,Instant completedAt,Long reviewerId,String reviewer,String remarks,
             int requiredReports,int submittedReports,int pendingReports,int approvedReports,int weeklyRequired,int monthlyRequired,
             String mentorApprovalStatus,String finalProjectReportStatus,boolean eligible,List<String> blockers,List<Event> history) {}
@@ -36,20 +36,31 @@ public class InternshipCompletionService {
     public record Stats(long totalStudents,long totalInternships,long completedInternships,long activeInternships,long completionPending,double completionPercentage) {}
     public record Page(Long sessionId,Stats stats,List<Map<String,Object>> content,long totalElements,int page) {}
     /** Reused by session exports; end dates never imply an approved completion. */
-    public static final String STATUS_SQL="case when i.completion_status='COMPLETED' then 'COMPLETED' when i.end_date < :completionToday then 'COMPLETION_PENDING' when i.start_date > :completionToday then 'NOT_STARTED' else 'IN_PROGRESS' end";
+    public static final String COMPLETION_DATE_SQL = "case "
+            + "when i.completion_status = 'TERMINATED_EARLY' or i.lifecycle_status = 'TERMINATED_EARLY' then coalesce(cast(i.terminated_at as date), cast(i.completed_at as date)) "
+            + "when i.completion_status = 'COMPLETED' and i.completed_at is not null then cast(i.completed_at as date) "
+            + "when i.end_date is not null and i.end_date < :completionToday then i.end_date "
+            + "else null end";
+    public static final String STATUS_SQL="case when i.completion_status='TERMINATED_EARLY' or i.lifecycle_status='TERMINATED_EARLY' then 'TERMINATED_EARLY' when i.completion_status='COMPLETED' or (i.end_date is not null and i.end_date < :completionToday) then 'COMPLETED' when i.start_date is not null and i.start_date > :completionToday then 'NOT_STARTED' else 'IN_PROGRESS' end";
 
     @Transactional(readOnly=true)
     @PreAuthorize("hasRole('ADMIN')")
-    public Completion forAdmin(Long studentId) { return read(internships.findByOnboardingStudentId(studentId).orElseThrow(InternshipCompletionService::notFound)); }
+    public Completion forAdmin(Long studentId,Long internshipId) { return read(resolve(studentId,internshipId)); }
+    public Completion forAdmin(Long studentId) { return forAdmin(studentId,null); }
+    @Transactional(readOnly=true) @PreAuthorize("hasRole('ADMIN')")
+    public List<Completion> allForAdmin(Long studentId) { return internships.findAllByOnboardingStudentIdOrderByOnboardingInternshipNumber(studentId).stream().map(this::read).toList(); }
     @Transactional(readOnly=true)
     @PreAuthorize("hasRole('STUDENT')")
-    public Completion own(UserPrincipal principal) { return read(internships.findByOnboardingStudentId(principal.id()).orElseThrow(InternshipCompletionService::notFound)); }
+    public Completion own(UserPrincipal principal,Long internshipId) { return read(resolve(principal.id(),internshipId)); }
+    public Completion own(UserPrincipal principal) { return own(principal,null); }
+    @Transactional(readOnly=true) @PreAuthorize("hasRole('STUDENT')")
+    public List<Completion> allOwn(UserPrincipal principal) { return internships.findAllByOnboardingStudentIdOrderByOnboardingInternshipNumber(principal.id()).stream().map(this::read).toList(); }
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
-    public Completion decide(UserPrincipal actor,Long studentId,Decision request,boolean reopen) {
+    public Completion decide(UserPrincipal actor,Long studentId,Long internshipId,Decision request,boolean reopen) {
         if(!WorkflowUserLocks.student(jdbc,studentId,true)) throw notFound();
-        InternshipDetails internship=internships.findForUpdateByStudentId(studentId).orElseThrow(InternshipCompletionService::notFound);
+        InternshipDetails internship=internships.findForUpdateByIdAndStudentId(internshipId,studentId).orElseThrow(InternshipCompletionService::notFound);
         Completion before=read(internship);
         if(request.revision()==null || request.revision()!=before.revision()) throw conflict("The completion record changed. Refresh before continuing.");
         String remarks=request.remarks()==null?null:request.remarks().strip();
@@ -72,8 +83,12 @@ public class InternshipCompletionService {
                 reopen?"INTERNSHIP_REOPENED":"INTERNSHIP_COMPLETED",reopen?"Internship reopened":"Internship officially completed",
                 "Your internship at "+internship.getCompanyName()+" ("+internship.getStartDate()+" to "+internship.getEndDate()+") has been "
                         +(reopen?"reopened by the IIIC coordinator. Reason: "+remarks:"officially marked as completed by the IIIC coordinator."),
-                reopen?remarks:null,null,"/student/dashboard#internship-completion",at);
+                reopen?remarks:null,null,"/student/dashboard?internshipId="+internship.getId()+"#internship-completion",at);
         return read(internship);
+    }
+    /** Compatibility for internal callers; interactive endpoints always require an explicit internship id. */
+    public Completion decide(UserPrincipal actor,Long studentId,Decision request,boolean reopen) {
+        return decide(actor,studentId,resolve(studentId,null).getId(),request,reopen);
     }
 
     private Completion read(InternshipDetails i) {
@@ -109,14 +124,15 @@ public class InternshipCompletionService {
         if(i.getEndDate().isAfter(LocalDate.now(clock))) blockers.add("The internship end date has not been reached");
         if(submitted<required) blockers.add((required-submitted)+" mandatory weekly/monthly reports are missing");
         if(approved<submitted) blockers.add((submitted-approved)+" submitted reports need mentor approval or correction");
-        String status=effectiveStatus((String)row.get("completion_status"),i.getStartDate(),i.getEndDate());
+        String savedStatus = i.isEarlyTerminated() ? "TERMINATED_EARLY" : (String)row.get("completion_status");
+        String status = effectiveStatus(savedStatus, i.getStartDate(), i.getEndDate());
         List<Event> history=jdbc.query("select e.*,u.email from internship_completion_events e join users u on u.id=e.reviewer_id where internship_id=? order by e.revision",
                 (rs,n)->new Event(rs.getInt("revision"),rs.getString("previous_status"),rs.getString("final_status"),rs.getLong("reviewer_id"),rs.getString("email"),rs.getTimestamp("performed_at").toInstant(),rs.getString("remarks")),i.getId());
-        return new Completion(i.getId(),student,(String)row.get("student_name"),(String)row.get("uid"),i.getCompanyName(),i.getStartDate(),i.getEndDate(),weeks,
-                number(row.get("academic_session_id")),(String)row.get("session_name"),status,((Number)row.get("completion_revision")).intValue(),instant(row.get("completed_at")),
+        return new Completion(i.getId(),i.getOnboarding().getInternshipNumber(),student,(String)row.get("student_name"),(String)row.get("uid"),i.getCompanyName(),i.getStartDate(),i.getEndDate(),weeks,
+                number(row.get("academic_session_id")),(String)row.get("session_name"),status,((Number)row.get("completion_revision")).intValue(),(row.get("completed_at") != null ? instant(row.get("completed_at")) : ("COMPLETED".equals(status) && i.getEndDate() != null ? i.getEndDate().atStartOfDay(ZoneId.of("Asia/Kolkata")).toInstant() : null)),
                 number(row.get("completion_reviewer_id")),(String)row.get("reviewer"),(String)row.get("completion_remarks"),required,submitted,required-submitted,approved,weeks,months,
                 approved==required && required>0?"APPROVED":"PENDING","NOT_APPLICABLE — no separate final-project report workflow is configured",
-                !status.equals("COMPLETED") && required>0 && blockers.isEmpty(),List.copyOf(blockers),history);
+                !"COMPLETED".equals(row.get("completion_status")) && required>0 && blockers.isEmpty(),List.copyOf(blockers),history);
     }
     private record ReportPeriod(int number,LocalDate start,LocalDate end,boolean approved) {}
     private static ReportPeriod reportPeriod(ResultSet rs,int index) throws SQLException {
@@ -124,30 +140,38 @@ public class InternshipCompletionService {
                 "APPROVED".equals(rs.getString("review_status")) && rs.getObject("reviewer_id")!=null && rs.getObject("reviewed_at")!=null);
     }
     private String effectiveStatus(String saved,LocalDate start,LocalDate end) {
+        if("TERMINATED_EARLY".equals(saved)) return "TERMINATED_EARLY";
         if("COMPLETED".equals(saved)) return saved;
-        LocalDate today=LocalDate.now(clock);
-        return end.isBefore(today)?"COMPLETION_PENDING":start.isAfter(today)?"NOT_STARTED":"IN_PROGRESS";
+        LocalDate today=InternshipLifecycle.today(clock);
+        return (end!=null && end.isBefore(today))?"COMPLETED":start!=null && start.isAfter(today)?"NOT_STARTED":"IN_PROGRESS";
     }
     private static LocalDate min(LocalDate a,LocalDate b) { return a.isBefore(b)?a:b; }
     private static Long number(Object n) { return n==null?null:((Number)n).longValue(); }
     private static Instant instant(Object value) { return value==null?null:value instanceof OffsetDateTime time?time.toInstant():((Timestamp)value).toInstant(); }
     private static ResponseStatusException conflict(String message) { return new ResponseStatusException(HttpStatus.CONFLICT,message); }
     private static ResponseStatusException notFound() { return new ResponseStatusException(HttpStatus.NOT_FOUND,"Internship not found"); }
+    private InternshipDetails resolve(Long studentId,Long internshipId) {
+        return internshipId==null ? internships.findByOnboardingStudentId(studentId).orElseThrow(InternshipCompletionService::notFound)
+                : internships.findByIdAndOnboardingStudentId(internshipId,studentId).orElseThrow(InternshipCompletionService::notFound);
+    }
 
     @Transactional(readOnly=true)
     @PreAuthorize("hasRole('ADMIN')")
     public Page list(Long sessionId,String search,String status,String sort,int page) {
         Long selected=sessions.selectedId(sessionId);
-        MapSqlParameterSource params=new MapSqlParameterSource("session",selected).addValue("completionToday",LocalDate.now(clock));
+        LocalDate completionToday=InternshipLifecycle.today(clock);
+        MapSqlParameterSource params=new MapSqlParameterSource("session",selected).addValue("completionToday",completionToday);
         String base=" from users u left join student_accounts sa on sa.user_id=u.id left join student_profiles p on p.user_id=u.id "
                 +"left join internship_onboarding o on o.student_user_id=u.id left join internship_details i on i.onboarding_id=o.id "
                 +"left join mentor_student_assignments a on a.student_user_id=u.id and a.active=true left join users mu on mu.id=a.mentor_user_id "
                 +"left join mentor_profiles mp on mp.user_id=mu.id left join users reviewer on reviewer.id=i.completion_reviewer_id "
-                +"where u.role='STUDENT' and u.academic_session_id=:session";
-        Map<String,Object> counts=named.queryForMap("select count(u.id) as students,count(i.id) as total,coalesce(sum(case when i.completion_status='COMPLETED' then 1 else 0 end),0) as completed,"
-                +"coalesce(sum(case when i.id is not null and i.completion_status<>'COMPLETED' and i.end_date < :completionToday then 1 else 0 end),0) as pending"+base,params);
-        long total=((Number)counts.get("total")).longValue(),completed=((Number)counts.get("completed")).longValue(),pending=((Number)counts.get("pending")).longValue();
-        Stats stats=new Stats(((Number)counts.get("students")).longValue(),total,completed,total-completed-pending,pending,total==0?0:Math.round(10000.0*completed/total)/100.0);
+                +"where u.role='STUDENT' and u.academic_session_id=:session and (i.id is null or i.deleted_at is null)";
+        Map<String,Object> counts=named.queryForMap("select count(distinct u.id) as students,count(i.id) as total,"
+                +"coalesce(sum(case when i.completion_status='COMPLETED' or (i.id is not null and i.end_date is not null and i.end_date < :completionToday) then 1 else 0 end),0) as completed,"
+                +"coalesce(sum(case when i.id is not null and i.completion_status<>'COMPLETED' and i.end_date is not null and i.end_date < :completionToday then 1 else 0 end),0) as pending,"
+                +"coalesce(sum(case when i.id is not null and (i.completion_status is null or i.completion_status<>'COMPLETED') and (i.end_date is null or i.end_date >= :completionToday) and (i.start_date is null or i.start_date <= :completionToday) then 1 else 0 end),0) as active"+base,params);
+        long total=((Number)counts.get("total")).longValue(),completed=((Number)counts.get("completed")).longValue(),pending=((Number)counts.get("pending")).longValue(),active=((Number)counts.get("active")).longValue();
+        Stats stats=new Stats(((Number)counts.get("students")).longValue(),total,completed,active,pending,total==0?0:Math.round(10000.0*completed/total)/100.0);
         String where=base+" and i.id is not null";
         if(search!=null && !search.isBlank()) {
             if(search.length()>254) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Search must be 254 characters or fewer");
@@ -156,20 +180,24 @@ public class InternshipCompletionService {
         }
         if(status!=null && !status.isBlank()) {
             if(!Set.of("COMPLETED","IN_PROGRESS","NOT_STARTED","COMPLETION_PENDING").contains(status)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid completion status");
-            params.addValue("status",status); where+=" and ("+STATUS_SQL+")=:status";
+            if("COMPLETION_PENDING".equals(status)) {
+                where+=" and (i.completion_status<>'COMPLETED' and i.end_date is not null and i.end_date < :completionToday)";
+            } else {
+                params.addValue("status",status); where+=" and ("+STATUS_SQL+")=:status";
+            }
         }
         String order=switch(sort==null?"completionDate":sort) {
             case "name" -> "student_name asc,u.id";
             case "company" -> "i.company_name asc,u.id";
             case "startDate" -> "i.start_date desc,u.id";
-            case "completionDate" -> "i.completed_at desc nulls last,u.id";
+            case "completionDate" -> "(" + COMPLETION_DATE_SQL + ") desc nulls last,u.id";
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Unsupported sort");
         };
         int safePage=Math.max(0,Math.min(page,1000000));
         long rows=named.queryForObject("select count(*)"+where,params,Long.class);
         params.addValue("offset",safePage*30);
         List<Map<String,Object>> content=named.queryForList("select u.id as \"studentId\",coalesce(p.student_name,sa.student_name,u.email) as student_name,coalesce(p.uid,sa.uid) as uid,"
-                +"i.company_name as company,coalesce(mp.name,mu.email) as mentor,i.start_date as \"startDate\",i.end_date as \"endDate\",i.completed_at as \"completionDate\","
+                +"i.company_name as company,coalesce(mp.name,mu.email) as mentor,i.start_date as \"startDate\",i.end_date as \"endDate\",("+COMPLETION_DATE_SQL+") as \"completionDate\","
                 +"reviewer.email as reviewer,("+STATUS_SQL+") as status"+where+" order by "+order+" limit 30 offset :offset",params);
         return new Page(selected,stats,content,rows,safePage);
     }

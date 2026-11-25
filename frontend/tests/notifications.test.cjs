@@ -23,6 +23,24 @@ test("exact rejection reason is visible and opening marks the selected notificat
   h.button("Open report").props.onClick(); await flush();
   assert.deepEqual(calls, ["/student/notifications/12/read"]); assert.deepEqual(h.paths, ["/student/monthly-progress#report-7"]); cleanup();
 });
+test("Internship 2 progress notification preserves its selected internship and report target", async t => {
+  browser(t); const calls = [];
+  const actionUrl = "/student/progress-reports?tab=monthly&internshipId=202#report-77";
+  const h = harness("components/NotificationsContent.tsx", "NotificationsContent", {
+    async get() { return { data: { content: [{ ...item, id: 22, actionUrl }], page: 0, totalPages: 1, unreadCount: 1 } }; },
+    async patch(url) { calls.push(url); return { data: { unreadCount: 0 } }; },
+  });
+  const cleanup = await h.mount();
+  h.button("Open report").props.onClick(); await flush();
+  assert.deepEqual(calls, ["/student/notifications/22/read"]);
+  assert.deepEqual(h.paths, [actionUrl]);
+
+  const destination = fs.readFileSync(path.join(__dirname, "..", "app/student/progress-reports/page.tsx"), "utf8");
+  assert.match(destination, /searchParams\.get\("internshipId"\)/);
+  assert.match(destination, /data\.find\(item=>item\.id===requestedInternshipId\)/);
+  assert.match(destination, /setInternshipTab\(slot\)/);
+  cleanup();
+});
 test("mark all uses owner-scoped API and an empty inbox has a clear state", async t => {
   browser(t); const calls = [];
   const h = harness("components/NotificationsContent.tsx", "NotificationsContent", { async get() { return { data: { content: [], page: 0, totalPages: 0, unreadCount: 1 } }; }, async patch(url) { calls.push(url); return { data: { unreadCount: 0 } }; } });
@@ -146,6 +164,10 @@ test("app navigation enables notification bell for IIIC, mentors and students", 
       "@/lib/auth": { useAuth: () => ({ user: { id: 5, role, roleLabel: role }, async logout() {} }) },
       "@/components/ThemeToggle": { ThemeToggle: () => null },
       "@/components/NotificationMenu": { NotificationMenu: ({ role: notificationRole }) => React.createElement("span", { "data-notification-role": notificationRole }) },
+      "@/components/StudentSidebar": { StudentSidebar: () => null },
+      "@/components/AdminSidebar": { AdminSidebar: () => null },
+      "@/components/MentorSidebar": { MentorSidebar: () => null },
+      "@/components/SettingsDropdown": { SettingsDropdown: () => null },
     } });
     assert.ok(h.html().includes(`data-notification-role="${role}"`));
   }

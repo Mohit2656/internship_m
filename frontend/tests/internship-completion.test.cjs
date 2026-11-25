@@ -14,44 +14,65 @@ const link = { default: ({ children, ...props }) => React.createElement('a', pro
 const dates = { formatDateTime: v => v || 'Not available' };
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const nodes = tree => !tree || typeof tree !== 'object' ? [] : [tree, ...React.Children.toArray(tree.props?.children).flatMap(nodes)];
-const completion = (eligible = true) => ({ internshipId: 9, studentId: 7, studentName: 'Existing Student', uid: 'UID7', companyName: 'Existing Company', startDate: '2025-01-01', endDate: '2025-01-09', totalWeeks: 2, sessionId: 4, sessionName: '2025-2026', status: 'COMPLETION_PENDING', revision: 2, completedAt: null, reviewerId: null, reviewer: null, remarks: null, requiredReports: 3, submittedReports: 3, pendingReports: 0, approvedReports: eligible ? 3 : 1, weeklyRequired: 2, monthlyRequired: 1, mentorApprovalStatus: eligible ? 'APPROVED' : 'PENDING', finalProjectReportStatus: 'NOT_APPLICABLE', eligible, blockers: eligible ? [] : ['2 reports require mentor approval'], history: [] });
+const completion = (eligible = true) => ({ internshipId: 9, internshipNumber: 1, studentId: 7, studentName: 'Existing Student', uid: 'UID7', companyName: 'Existing Company', startDate: '2025-01-01', endDate: '2025-01-09', totalWeeks: 2, sessionId: 4, sessionName: '2025-2026', status: 'COMPLETION_PENDING', revision: 2, completedAt: null, reviewerId: null, reviewer: null, remarks: null, requiredReports: 3, submittedReports: 3, pendingReports: 0, approvedReports: eligible ? 3 : 1, weeklyRequired: 2, monthlyRequired: 1, mentorApprovalStatus: eligible ? 'APPROVED' : 'PENDING', finalProjectReportStatus: 'NOT_APPLICABLE', eligible, blockers: eligible ? [] : ['2 reports require mentor approval'], history: [] });
 function hooks(seed = {}, effects = []) {
   const slots = { ...seed }; let cursor = 0;
-  return { slots, reset() { cursor = 0; }, react: { useEffect(cb) { effects.push(cb); }, useRef() { return { current: null }; }, useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = typeof value === 'function' ? value() : value; return [slots[i], next => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; }]; } } };
+  return { slots, reset() { cursor = 0; }, react: { useEffect(cb) { effects.push(cb); }, useRef(initial = null) { return { current: initial }; }, useState(value) { const i = cursor++; if (!(i in slots)) slots[i] = typeof value === 'function' ? value() : value; return [slots[i], next => { slots[i] = typeof next === 'function' ? next(slots[i]) : next; }]; } } };
 }
 function panel(data, post) {
-  const h = hooks({ 0: data });
-  const { InternshipCompletionPanel } = load('components/InternshipCompletionPanel.tsx', { react: h.react, '@/lib/api': { api: { post } }, '@/lib/internship-completion': lib, '@/lib/monthly-progress': dates });
+  const h = hooks({ 0: [data], 1: data });
+  const labels = load('lib/internship-label.ts');
+  const { InternshipCompletionPanel } = load('components/InternshipCompletionPanel.tsx', { react: h.react, '@/lib/api': { api: { post } }, '@/lib/internship-completion': lib, '@/lib/monthly-progress': dates, '@/lib/internship-label': labels, '@/components/LoadingSpinner': { LoadingSpinner: ({ label }) => React.createElement('span', null, label) } });
   const render = () => { h.reset(); return InternshipCompletionPanel({ studentId: 7 }); };
   return { ...h, render, button: text => nodes(render()).find(n => n.type === 'button' && n.props.children === text) };
 }
-test('completion controls remain disabled until all backend requirements are satisfied', () => {
+test('completion controls remain hidden until all backend requirements are satisfied', () => {
   const h = panel(completion(false));
-  assert.equal(h.button('Mark Internship as Completed').props.disabled, true);
-  const html = renderToStaticMarkup(h.render()); assert.match(html, /2 reports require mentor approval/); assert.match(html, /2 weekly \+ 1 monthly/); assert.match(html, /Final project report/);
+  assert.equal(h.button('Mark Internship as Completed'), undefined);
+  const html = renderToStaticMarkup(h.render()); assert.match(html, /2 reports require mentor approval/); assert.match(html, /2 weekly \+ 1 monthly/); assert.doesNotMatch(html, /Final project report/); assert.doesNotMatch(html, /Completion date/); assert.doesNotMatch(html, /IIIC reviewer/);
+});
+test('an active internship shows only a compact in-progress completion status', () => {
+  const h = panel({ ...completion(false), status: 'IN_PROGRESS', blockers: ['The internship end date has not been reached'] });
+  const html = renderToStaticMarkup(h.render());
+  assert.match(html, /In Progress/); assert.doesNotMatch(html, /Required reports/); assert.doesNotMatch(html, /Mark Internship as Completed/); assert.doesNotMatch(html, /Completion date/);
+});
+test('a completed internship shows its recorded date and actual IIIC decision maker', () => {
+  const h = panel({ ...completion(), status: 'COMPLETED', completedAt: '2026-10-30T10:00:00Z', reviewer: 'iiic@test.edu' });
+  const html = renderToStaticMarkup(h.render());
+  assert.match(html, /Completion date/); assert.match(html, /2026-10-30/); assert.match(html, /Completed by/); assert.match(html, /iiic@test.edu/); assert.doesNotMatch(html, /Final project report/);
 });
 test('completion opens a confirmation and submits the current revision without forged status or reviewer', async () => {
   let request; const data = completion();
-  const h = panel(data, async (url, body) => { request = { url, body }; return { data: { ...data, status: 'COMPLETED', revision: 3, completedAt: '2026-10-30T10:00:00Z', reviewer: 'iiic@test.edu' } }; });
+  const h = panel(data, async (url, body, config) => { request = { url, body, config }; return { data: { ...data, status: 'COMPLETED', revision: 3, completedAt: '2026-10-30T10:00:00Z', reviewer: 'iiic@test.edu' } }; });
   h.button('Mark Internship as Completed').props.onClick();
   const confirm = nodes(h.render()).find(n => typeof n.type === 'function' && n.props.onConfirm);
   assert.ok(confirm); assert.equal(confirm.props.reopening, false); assert.equal(confirm.props.completion.studentName, 'Existing Student');
   await confirm.props.onConfirm('All reviewed');
-  assert.deepEqual(request, { url: '/admin/students/7/internship-completion/complete', body: { revision: 2, remarks: 'All reviewed' } });
-  assert.equal(h.slots[0].status, 'COMPLETED'); assert.match(renderToStaticMarkup(h.render()), /student has been notified/);
+  assert.deepEqual(request, { url: '/admin/students/7/internship-completion/complete', body: { revision: 2, remarks: 'All reviewed' }, config: { params: { internshipId: 9 } } });
+  assert.equal(h.slots[1].status, 'COMPLETED'); assert.match(renderToStaticMarkup(h.render()), /student has been notified/);
+});
+test('rapid IIIC completion confirmation emits one request for the selected internship', async () => {
+  let release; const pending = new Promise(resolve => { release = resolve; }); let requests = 0; const data = completion();
+  const h = panel(data, async () => { requests++; await pending; return { data: { ...data, status: 'COMPLETED', revision: 3 } }; });
+  h.button('Mark Internship as Completed').props.onClick();
+  const confirm = nodes(h.render()).find(n => typeof n.type === 'function' && n.props.onConfirm);
+  const first = confirm.props.onConfirm('Reviewed'); const duplicate = confirm.props.onConfirm('Reviewed');
+  assert.equal(requests, 1);
+  release(); await Promise.all([first, duplicate]);
 });
 test('reopening uses a separate confirmation and preserves the record after an API conflict', async () => {
   let request; const h = panel({ ...completion(), status: 'COMPLETED' }, async (url, body) => { request = { url, body }; throw { response: { data: { message: 'The completion record changed. Refresh.' } } }; });
   h.button('Reopen Internship').props.onClick();
   const confirm = nodes(h.render()).find(n => typeof n.type === 'function' && n.props.onConfirm); assert.equal(confirm.props.reopening, true);
   await confirm.props.onConfirm('Correction required');
-  assert.equal(request.url, '/admin/students/7/internship-completion/reopen'); assert.equal(h.slots[0].status, 'COMPLETED'); assert.match(renderToStaticMarkup(h.render()), /record changed/);
+  assert.equal(request.url, '/admin/students/7/internship-completion/reopen'); assert.equal(h.slots[1].status, 'COMPLETED'); assert.match(renderToStaticMarkup(h.render()), /record changed/);
 });
 test('student dashboard displays official completion date and reopening feedback', () => {
-  const h = hooks({ 0: { ...completion(), status: 'COMPLETED', completedAt: '2026-10-30T10:00:00Z' } });
-  const { StudentCompletionStatus } = load('components/InternshipCompletionPanel.tsx', { react: h.react, '@/lib/api': {}, '@/lib/internship-completion': lib, '@/lib/monthly-progress': dates });
+  const done = { ...completion(), status: 'COMPLETED', completedAt: '2026-10-30T10:00:00Z' }; const h = hooks({ 0: [done], 1: done });
+  const labels = load('lib/internship-label.ts');
+  const { StudentCompletionStatus } = load('components/InternshipCompletionPanel.tsx', { react: h.react, '@/lib/api': {}, '@/lib/internship-completion': lib, '@/lib/monthly-progress': dates, '@/lib/internship-label': labels, '@/components/LoadingSpinner': { LoadingSpinner: ({ label }) => React.createElement('span', null, label) } });
   assert.match(renderToStaticMarkup(StudentCompletionStatus()), /Officially completed on 2026-10-30/);
-  h.slots[0] = { ...completion(), history: [{ finalStatus: 'IN_PROGRESS', remarks: 'Review final work' }] }; h.reset();
+  h.slots[1] = { ...completion(), history: [{ finalStatus: 'IN_PROGRESS', remarks: 'Review final work' }] }; h.reset();
   assert.match(renderToStaticMarkup(StudentCompletionStatus()), /Reopened: Review final work/);
 });
 test('clickable completion card links to the selected session and safely displays zero percent', () => {

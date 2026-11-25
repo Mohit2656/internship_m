@@ -21,7 +21,7 @@ public interface DashboardAnalyticsRepository extends Repository<User, Long> {
               sum(case when o.workflowStatus = :detailsCompleteStatus and d.id is not null then 1 else 0 end) as detailsComplete,
               sum(case when o.workflowStatus = :diaryPendingStatus then 1 else 0 end) as diaryPending,
               sum(case when o.workflowStatus = :detailsPendingStatus and d.id is null then 1 else 0 end) as detailsPending
-            from User u left join u.studentProfile p left join u.internshipOnboarding o left join o.internshipDetails d
+            from User u left join u.studentProfile p left join u.internshipOnboardings o on o.internshipNumber = 1 left join o.internshipDetails d
             where u.role = :role and u.active = true and (:sessionId is null or u.academicSessionId = :sessionId)
             """)
     DashboardCountsProjection counts(Role role, Collection<WorkflowStatus> documentsPendingStatuses,

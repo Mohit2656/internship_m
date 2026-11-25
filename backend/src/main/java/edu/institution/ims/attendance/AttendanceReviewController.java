@@ -12,6 +12,10 @@ public class AttendanceReviewController {
     @PostMapping("/api/v1/mentor/attendance/{id}/review")
     public AttendanceResponse review(@PathVariable Long id,@AuthenticationPrincipal UserPrincipal principal,
             @RequestBody AttendanceReviewService.Decision request) { return service.review(id,principal,request); }
+    @PostMapping("/api/v1/mentor/attendance/{id}/acknowledgement")
+    public AttendanceResponse acknowledge(@PathVariable Long id,@AuthenticationPrincipal UserPrincipal principal) {
+        return service.acknowledge(id,principal);
+    }
     @GetMapping({"/api/v1/mentor/attendance/{id}/review/history","/api/v1/admin/attendance/{id}/review/history",
             "/api/v1/student/attendance/{id}/review/history"})
     public List<AttendanceReviewService.Audit> history(@PathVariable Long id,@AuthenticationPrincipal UserPrincipal principal) { return service.history(id,principal); }

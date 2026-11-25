@@ -50,12 +50,17 @@ public class AttendanceService {
     @Transactional
     public AttendanceResponse submitToday(UserPrincipal principal, BigDecimal latitude, BigDecimal longitude,
             BigDecimal accuracy, Instant locationCapturedAt) {
+        return submitToday(principal,null,latitude,longitude,accuracy,locationCapturedAt);
+    }
+    @Transactional
+    public AttendanceResponse submitToday(UserPrincipal principal, Long internshipId, BigDecimal latitude, BigDecimal longitude,
+            BigDecimal accuracy, Instant locationCapturedAt) {
         User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
-        InternshipDetails internship = eligibleInternship(student.getId());
-        LocalDate today = LocalDate.now(clock);
-        requireWithinInternship(internship, today);
-        policies.requireSubmissionOpen(student.getId(), today);
+        InternshipDetails internship = eligibleInternship(student.getId(),internshipId);
+        LocalDate today = InternshipLifecycle.today(clock);
+        policies.requireAttendanceActive(internship, today);
+        policies.requireSubmissionOpen(student.getId(), internship.getId(), today);
         AttendanceVerificationMethod method = policies.resolve(internship, today).verificationMethod();
         if (method == AttendanceVerificationMethod.PHYSICAL || method == AttendanceVerificationMethod.REMOTE) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_EVIDENCE_REQUIRED",
@@ -66,30 +71,44 @@ public class AttendanceService {
         AttendanceRecord record = submissions.record(student, internship, today,
                 VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC);
         locationVerification.save(new AttendanceEvidence(record, location, clock.instant()), internship,
-                location, locationCapturedAt, true, accuracy);
+                location, locationCapturedAt, false, accuracy);
+        record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
+        attendance.saveAndFlush(record);
+        submissions.notifyMentor(record);
         return response(record);
     }
 
     @Transactional(readOnly = true)
     public TodayAttendanceResponse today(UserPrincipal principal) {
-        LocalDate today = LocalDate.now(clock);
-        boolean latePermission = permissions.isEnabled(principal.id(), today);
+        return today(principal,null);
+    }
+    @Transactional(readOnly = true)
+    public TodayAttendanceResponse today(UserPrincipal principal,Long internshipId) {
+        LocalDate today = InternshipLifecycle.today(clock);
+        InternshipDetails internship=eligibleInternship(principal.id(),internshipId);
+        AttendanceLifecycleStatus lifecycle = policies.lifecycle(internship, today);
+        boolean latePermission = permissions.isEnabled(principal.id(), internship.getId(), today);
         return new TodayAttendanceResponse(today,
-                attendance.findByStudentIdAndAttendanceDate(principal.id(), today)
+                attendance.findByStudentIdAndInternshipIdAndAttendanceDate(principal.id(),internship.getId(), today)
                         .map(AttendanceService::response).orElse(null),
                 AttendanceSubmissionWindow.deadline(today, clock),
-                !AttendanceSubmissionWindow.isClosed(today, clock) || latePermission,
-                clock.getZone().getId(), latePermission);
+                lifecycle == AttendanceLifecycleStatus.ACTIVE && (!AttendanceSubmissionWindow.isClosed(today, clock) || latePermission),
+                clock.getZone().getId(), latePermission, lifecycle);
     }
 
     @Transactional(readOnly = true)
     public List<AttendanceResponse> history(UserPrincipal principal) {
-        return attendance.findAllByStudentIdOrderByAttendanceDateDescServerSubmittedAtDesc(principal.id())
+        return history(principal,null);
+    }
+    @Transactional(readOnly = true)
+    public List<AttendanceResponse> history(UserPrincipal principal,Long internshipId) {
+        InternshipDetails internship=eligibleInternship(principal.id(),internshipId);
+        return attendance.findAllByStudentIdAndInternshipIdOrderByAttendanceDateDescServerSubmittedAtDesc(principal.id(),internship.getId())
                 .stream().map(AttendanceService::response).toList();
     }
 
-    private InternshipDetails eligibleInternship(Long studentUserId) {
-        InternshipDetails internship = internships.findByOnboardingStudentId(studentUserId)
+    private InternshipDetails eligibleInternship(Long studentUserId,Long internshipId) {
+        InternshipDetails internship = (internshipId==null?internships.findByOnboardingStudentId(studentUserId):internships.findByIdAndOnboardingStudentId(internshipId,studentUserId))
                 .orElseThrow(() -> error(HttpStatus.CONFLICT, "ATTENDANCE_NOT_ELIGIBLE",
                         "Complete internship registration before submitting attendance"));
         if (internship.getOnboarding().getWorkflowStatus() != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE) {
@@ -111,7 +130,8 @@ public class AttendanceService {
                 record.getAttendanceResult(), record.getVerificationStatus(), record.getSubmissionType(),
                 record.getServerSubmittedAt(), AttendanceEvidenceResponse.from(record.getEvidence()),
                 record.getVerificationBasis(), record.getLivenessStatus(), record.isAutomaticAbsent(),
-                record.isSubmittedLate(), AttendanceReviewResponse.from(record));
+                record.isSubmittedLate(), AttendanceReviewResponse.from(record),
+                record.getMentorSeenAt() == null ? null : new AttendanceAcknowledgementResponse(record.getMentorSeenBy(), record.getMentorSeenAt()));
     }
 
     static AttendanceException error(HttpStatus status, String code, String message) {

@@ -11,10 +11,19 @@ const MIN_FACE_HEIGHT = 0.25;
 const FRAME_MARGIN = 0.02;
 const EYE_OPEN_MAX = 0.35;
 const EYE_CLOSED_MIN = 0.52;
-const FRONTAL_MIN = 0.38;
-const FRONTAL_MAX = 0.62;
-const TURN_LEFT_RATIO = 0.31;
-const TURN_RIGHT_RATIO = 0.69;
+export const FRONTAL_MIN = 0.38;
+export const FRONTAL_MAX = 0.62;
+// In an unmirrored camera frame facing the user:
+// - Landmark 234 (subject's right cheek) is on the camera's left (lower x).
+// - Landmark 454 (subject's left cheek) is on the camera's right (higher x).
+// When the student physically turns their head toward their own LEFT:
+//   Their nose moves toward the camera's right (higher x, closer to landmark 454),
+//   so the ratio (nose - minCheek) / width increases (ratio >= TURN_LEFT_THRESHOLD).
+// When the student physically turns their head toward their own RIGHT:
+//   Their nose moves toward the camera's left (lower x, closer to landmark 234),
+//   so the ratio (nose - minCheek) / width decreases (ratio <= TURN_RIGHT_THRESHOLD).
+export const TURN_LEFT_THRESHOLD = 0.69;
+export const TURN_RIGHT_THRESHOLD = 0.31;
 
 export type EdgeAiFrameState = {
   faceCount: number;
@@ -48,12 +57,70 @@ function blendshapeScore(landmarkerResult: ReturnType<FaceLandmarker["detectForV
   return landmarkerResult.faceBlendshapes[0]?.categories.find(category => category.categoryName === name)?.score ?? 0;
 }
 
-function horizontalNoseRatio(landmarks: NormalizedLandmark[]) {
+/**
+ * Intercepts harmless informational logs emitted by TensorFlow Lite / MediaPipe WASM.
+ * Emscripten routes all C++ stderr output to console.error, which Next.js development
+ * server intercepts and surfaces as an unhandled error overlay.
+ *
+ * This filter safely redirects only the specific XNNPACK CPU delegate informational messages
+ * to console.info while leaving all genuine errors, exceptions, and stack traces completely untouched.
+ */
+export function installTfLiteLogFilter(): void {
+  if (typeof window === "undefined") return;
+  const globalScope = window as unknown as { __ims_tflite_filter_installed?: boolean };
+  if (globalScope.__ims_tflite_filter_installed) return;
+  globalScope.__ims_tflite_filter_installed = true;
+
+  const originalConsoleError = console.error;
+  console.error = function (...args: unknown[]) {
+    const isTfLiteInfo = args.some(arg => {
+      if (typeof arg === "string") {
+        return (
+          arg.includes("Created TensorFlow Lite XNNPACK delegate for CPU") ||
+          arg.includes("XNNPACK delegate for CPU") ||
+          (arg.startsWith("INFO:") && arg.includes("TensorFlow Lite"))
+        );
+      }
+      return false;
+    });
+
+    if (isTfLiteInfo) {
+      // Forward to console.info so developers can inspect it without triggering Next.js dev overlay
+      console.info(...args);
+      return;
+    }
+
+    originalConsoleError.apply(console, args);
+  };
+}
+
+if (typeof window !== "undefined") {
+  installTfLiteLogFilter();
+}
+
+export function horizontalNoseRatio(landmarks: NormalizedLandmark[]) {
   const nose = landmarks[1]; const cheekA = landmarks[234]; const cheekB = landmarks[454];
   if (!nose || !cheekA || !cheekB) return 0.5;
   const minimum = Math.min(cheekA.x, cheekB.x);
   const width = Math.abs(cheekB.x - cheekA.x);
   return width < 0.01 ? 0.5 : (nose.x - minimum) / width;
+}
+
+export function evaluateHeadTurn(
+  ratio: number,
+  challenge: AiChallenge,
+  frontalSeen: boolean
+): { frontalSeen: boolean; passed: boolean } {
+  const isFrontal = ratio >= FRONTAL_MIN && ratio <= FRONTAL_MAX;
+  const nowFrontal = frontalSeen || isFrontal;
+  let passed = false;
+  if (nowFrontal && challenge === "TURN_HEAD_LEFT" && ratio >= TURN_LEFT_THRESHOLD) {
+    passed = true;
+  }
+  if (nowFrontal && challenge === "TURN_HEAD_RIGHT" && ratio <= TURN_RIGHT_THRESHOLD) {
+    passed = true;
+  }
+  return { frontalSeen: nowFrontal, passed };
 }
 
 export class EdgeAiAnalyzer {
@@ -64,51 +131,131 @@ export class EdgeAiAnalyzer {
   private closedSeen = false;
   private frontalSeen = false;
   private passed = false;
+  private initPromise: Promise<void> | null = null;
+  private isClosed = false;
 
-  async initialize() {
-    const { FilesetResolver, FaceLandmarker } = await import("@mediapipe/tasks-vision");
-    const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-    this.landmarker = await FaceLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: "/models/face_landmarker.task" },
-      runningMode: "VIDEO",
-      numFaces: 2,
-      minFaceDetectionConfidence: 0.6,
-      minFacePresenceConfidence: 0.6,
-      minTrackingConfidence: 0.6,
-      outputFaceBlendshapes: true
-    });
+  async initialize(): Promise<void> {
+    if (this.landmarker) return;
+    if (this.initPromise) return this.initPromise;
+
+    this.isClosed = false;
+    installTfLiteLogFilter();
+
+    this.initPromise = (async () => {
+      const { FilesetResolver, FaceLandmarker } = await import("@mediapipe/tasks-vision");
+      const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
+      if (this.isClosed) return;
+
+      this.landmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: "/models/face_landmarker.task" },
+        runningMode: "VIDEO",
+        numFaces: 2,
+        minFaceDetectionConfidence: 0.6,
+        minFacePresenceConfidence: 0.6,
+        minTrackingConfidence: 0.6,
+        outputFaceBlendshapes: true
+      });
+    })();
+
+    try {
+      await this.initPromise;
+    } finally {
+      this.initPromise = null;
+    }
   }
 
-  start(video: HTMLVideoElement, challenge: AiChallenge,
-      update: (state: EdgeAiFrameState) => void, failed: () => void) {
+  start(
+    video: HTMLVideoElement,
+    challenge: AiChallenge,
+    update: (state: EdgeAiFrameState) => void,
+    failed: () => void
+  ) {
     if (!this.landmarker) throw new Error("Edge AI model is not initialized");
+    installTfLiteLogFilter();
+
+    this.openSeen = false;
+    this.closedSeen = false;
+    this.frontalSeen = false;
+    this.passed = false;
+    this.lastAnalyzedAt = 0;
+
+    let consecutiveFailures = 0;
+    const MAX_CONSECUTIVE_FAILURES = 5;
+
     const analyze = (timestamp: number) => {
+      if (!this.landmarker || this.isClosed) return;
+
       try {
-        if (timestamp - this.lastAnalyzedAt >= ANALYSIS_INTERVAL_MS && video.readyState >= 2) {
-          this.lastAnalyzedAt = timestamp;
-          const result = this.landmarker!.detectForVideo(video, timestamp);
+        const isVideoReady =
+          video &&
+          video.readyState >= 2 &&
+          video.videoWidth > 0 &&
+          video.videoHeight > 0 &&
+          !video.paused &&
+          !video.ended;
+
+        if (isVideoReady && (this.lastAnalyzedAt === 0 || timestamp - this.lastAnalyzedAt >= ANALYSIS_INTERVAL_MS)) {
+          // Ensure strictly monotonically increasing timestamp for MediaPipe Tasks Vision
+          const currentTimestamp = Math.max(timestamp, this.lastAnalyzedAt + 1);
+          this.lastAnalyzedAt = currentTimestamp;
+
+          let result: ReturnType<FaceLandmarker["detectForVideo"]>;
+          try {
+            result = this.landmarker.detectForVideo(video, currentTimestamp);
+            consecutiveFailures = 0;
+          } catch (inferErr) {
+            consecutiveFailures += 1;
+            if (!this.landmarker || this.isClosed) return;
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+              failed();
+              return;
+            }
+            this.frameId = requestAnimationFrame(analyze);
+            return;
+          }
+
           const faceCount = result.faceLandmarks.length;
-          if (faceCount === 0) update({ ...initialState });
-          else if (faceCount > 1) update({ ...initialState, faceCount, faceDetected: true,
-            guidance: "Multiple faces detected. Only one person should be visible." });
-          else {
+          if (faceCount === 0) {
+            update({ ...initialState });
+          } else if (faceCount > 1) {
+            update({
+              ...initialState,
+              faceCount,
+              faceDetected: true,
+              guidance: "Multiple faces detected. Only one person should be visible."
+            });
+          } else {
             const landmarks = result.faceLandmarks[0];
             const quality = qualityPassed(landmarks);
             if (quality && !this.passed) this.observeChallenge(result, landmarks, challenge);
-            const guidance = !quality ? "Move closer and keep your entire face inside the frame."
-              : this.passed ? "Liveness confirmed. You can capture attendance."
-              : challenge === "BLINK" ? "Please blink naturally."
-              : challenge === "TURN_HEAD_LEFT" ? "Turn your head slightly to the left."
+            const guidance = !quality
+              ? "Move closer and keep your entire face inside the frame."
+              : this.passed
+              ? "Liveness confirmed. You can capture attendance."
+              : challenge === "BLINK"
+              ? "Please blink naturally."
+              : challenge === "TURN_HEAD_LEFT"
+              ? "Turn your head slightly to the left."
               : "Turn your head slightly to the right.";
-            update({ faceCount: 1, faceDetected: true, singleFace: true,
-              qualityPassed: quality, livenessPassed: this.passed, guidance });
+            update({
+              faceCount: 1,
+              faceDetected: true,
+              singleFace: true,
+              qualityPassed: quality,
+              livenessPassed: this.passed,
+              guidance
+            });
           }
         }
       } catch {
-        failed(); return;
+        if (!this.landmarker || this.isClosed) return;
+        failed();
+        return;
       }
+
       this.frameId = requestAnimationFrame(analyze);
     };
+
     this.frameId = requestAnimationFrame(analyze);
   }
 
@@ -125,15 +272,22 @@ export class EdgeAiAnalyzer {
       return;
     }
     const ratio = horizontalNoseRatio(landmarks);
-    if (ratio >= FRONTAL_MIN && ratio <= FRONTAL_MAX) this.frontalSeen = true;
-    if (this.frontalSeen && challenge === "TURN_HEAD_LEFT" && ratio <= TURN_LEFT_RATIO) this.passed = true;
-    if (this.frontalSeen && challenge === "TURN_HEAD_RIGHT" && ratio >= TURN_RIGHT_RATIO) this.passed = true;
+    const evaluation = evaluateHeadTurn(ratio, challenge, this.frontalSeen);
+    this.frontalSeen = evaluation.frontalSeen;
+    if (evaluation.passed) this.passed = true;
   }
 
   close() {
-    if (this.frameId !== null) cancelAnimationFrame(this.frameId);
-    this.frameId = null;
-    this.landmarker?.close();
+    this.isClosed = true;
+    if (this.frameId !== null) {
+      cancelAnimationFrame(this.frameId);
+      this.frameId = null;
+    }
+    try {
+      this.landmarker?.close();
+    } catch {
+      // Ignore cleanup error if already closed
+    }
     this.landmarker = null;
   }
 }

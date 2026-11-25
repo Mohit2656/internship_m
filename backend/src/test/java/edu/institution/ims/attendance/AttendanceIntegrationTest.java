@@ -136,7 +136,16 @@ class AttendanceIntegrationTest {
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_NOT_ELIGIBLE"));
         mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567")
                         .cookie(loginCookie(futureInternshipStudent.getEmail(), "StudentPassword!27")))
-                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_OUTSIDE_INTERNSHIP_PERIOD"));
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_OUTSIDE_INTERNSHIP_LIFECYCLE"));
+        mvc.perform(get("/api/v1/student/attendance/today/policy")
+                        .cookie(loginCookie(futureInternshipStudent.getEmail(), "StudentPassword!27")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.lifecycleStatus").value("NOT_STARTED"))
+                .andExpect(jsonPath("$.attendanceTrackingActive").value(false))
+                .andExpect(jsonPath("$.internshipStartDate").value(TODAY.plusDays(1).toString()));
+        mvc.perform(get("/api/v1/student/attendance/today")
+                        .cookie(loginCookie(futureInternshipStudent.getEmail(), "StudentPassword!27")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.attendance").isEmpty())
+                .andExpect(jsonPath("$.submissionOpen").value(false));
     }
 
     @Test

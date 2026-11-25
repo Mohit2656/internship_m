@@ -34,7 +34,7 @@ GPS is a location signal, not proof against spoofing. Browser timestamps and acc
 
 ## Configuration and migration
 
-Newly registered workplaces default to **100 metres** using `ATTENDANCE_DEFAULT_GEOFENCE_RADIUS_METERS`. Existing workplace radii are preserved; the III Cell's existing radius control changes a particular workplace and requires reapproval. `ATTENDANCE_MAX_GPS_ACCURACY_METERS` controls the allowed accuracy (existing default 100 metres). `ATTENDANCE_MAX_LOCATION_AGE_SECONDS` defaults to 300 seconds. Configure these through the existing Spring environment conventions.
+Newly registered workplaces default to **200 metres** using `ATTENDANCE_DEFAULT_GEOFENCE_RADIUS_METERS`. Existing workplace radii are preserved; the III Cell's existing radius control changes a particular workplace and requires reapproval. `ATTENDANCE_MAX_GPS_ACCURACY_METERS` separately controls the allowed reported GPS uncertainty (default 200 metres). `ATTENDANCE_MAX_LOCATION_AGE_SECONDS` defaults to 300 seconds. Configure these through the existing Spring environment conventions.
 
 Apply Flyway `V34__attendance_gps_location_signal.sql` with the matching backend before serving the new frontend. It adds nullable GPS status/time/revision columns and `attendance_location_verification_audit`. It does not backfill coordinates, reverify old attendance, change old migration checksums, or update existing workplace radii. Each new saved GPS decision is audited transactionally. Historical records without a GPS status remain unassessed.
 

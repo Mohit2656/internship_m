@@ -43,7 +43,7 @@ public class MentorAssignmentService {
             MentorStudentAssignment current = byStudent.get(student.getId());
             AssignmentStudentResponse response = studentResponse(student, current, mentorNames);
             if (current != null && current.getMentor().getId().equals(mentorUserId)) assigned.add(response);
-            else available.add(response);
+            else if (current == null) available.add(response);
         }
         long assignedCount = activeAssignments.size();
         return new MentorAssignmentWorkspaceResponse(mentorAccounts.response(mentor), assigned, available,
@@ -75,15 +75,17 @@ public class MentorAssignmentService {
         }
 
         if(students.stream().anyMatch(user -> !user.isActive())) throw error(HttpStatus.CONFLICT,"STUDENT_ACCOUNT_INACTIVE","Deactivated students cannot receive new mentor assignments");
-        Instant now = Instant.now();
         List<User> toAssign = new ArrayList<>();
         for (User student : students) {
             MentorStudentAssignment current = assignments.findByStudentIdAndActiveTrue(student.getId()).orElse(null);
             if (current != null && current.getMentor().getId().equals(mentorUserId)) continue;
-            if (current != null) current.end(now);
+            if (current != null) {
+                throw error(HttpStatus.CONFLICT, "STUDENT_ALREADY_ASSIGNED",
+                        "One or more students are already assigned to another active faculty mentor. Remove that assignment before assigning them here.");
+            }
             toAssign.add(student);
         }
-        assignments.flush();
+        Instant now = Instant.now();
         User mentor = mentorProfile.getUser();
         assignments.saveAll(toAssign.stream()
                 .map(student -> new MentorStudentAssignment(mentor, student, admin, now))
