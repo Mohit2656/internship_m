@@ -62,9 +62,9 @@ public class PhysicalAttendanceService {
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
         InternshipDetails internship = internshipId==null?eligibleInternship(student.getId()):internships.findByIdAndOnboardingStudentId(internshipId,student.getId())
                 .orElseThrow(() -> error(HttpStatus.CONFLICT,"ATTENDANCE_NOT_ELIGIBLE","Selected internship is unavailable"));
-        LocalDate today = LocalDate.now(clock);
-        requireWithinInternship(internship, today);
-        policies.requireSubmissionOpen(student.getId(), today);
+        LocalDate today = edu.institution.ims.internship.InternshipLifecycle.today(clock);
+        policies.requireAttendanceActive(internship, today);
+        policies.requireSubmissionOpen(student.getId(), internship.getId(), today);
         ResolvedAttendancePolicy policy = policies.resolve(internship, today);
         if (policy.verificationMethod() != AttendanceVerificationMethod.PHYSICAL) {
             throw policy.verificationMethod() == AttendanceVerificationMethod.REMOTE
@@ -72,6 +72,9 @@ public class PhysicalAttendanceService {
                     : error(HttpStatus.CONFLICT, "HYBRID_SCHEDULE_NOT_CONFIGURED",
                             "Today's hybrid work mode has not been configured");
         }
+        // Resolve the selected internship's current mentor approval before consuming
+        // liveness evidence or creating any attendance/evidence rows.
+        locationVerification.requireApprovedWorkplace(internship);
         SubmissionLocation submitted = SubmissionLocation.require(latitude, longitude, accuracyMeters);
         locationVerification.validateCaptureTime(locationCapturedAt);
         AiVerificationDecision aiDecision = aiVerification.evaluate(principal, internship, today, aiEvidence);
@@ -87,6 +90,7 @@ public class PhysicalAttendanceService {
                 internship, submitted, locationCapturedAt, true, accuracyMeters);
         record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
         attendance.saveAndFlush(record);
+        submissions.notifyMentor(record);
         return AttendanceService.response(record);
     }
 

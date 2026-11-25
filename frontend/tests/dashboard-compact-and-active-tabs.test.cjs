@@ -17,10 +17,10 @@ test("Mentor dashboard has compact descriptions, no redundant workspace cards, a
     "Old verbose welcome description must be removed"
   );
 
-  // Dynamic Action Required section
+  // Attendance remains visible as ordinary data without a fixed threshold warning.
   assert.ok(
-    content.includes("students below 75% attendance."),
-    "Action Required alert must include dynamic '{count} students below 75% attendance.'"
+    !content.includes("below 75%") && !content.includes("Low Attendance"),
+    "The dashboard must not classify attendance against a fixed 75% threshold"
   );
 
   // Redundant navigation cards removed from Home
@@ -31,7 +31,7 @@ test("Mentor dashboard has compact descriptions, no redundant workspace cards, a
 
   // Home dashboard preserves essential metrics
   assert.ok(content.includes("Assigned Students"), "Preserves Assigned Students metric");
-  assert.ok(content.includes("Attendance Attention"), "Preserves Attendance Attention metric");
+  assert.ok(content.includes("Attendance Records"), "Preserves an attendance metric without a threshold warning");
   assert.ok(content.includes("Late Attendance"), "Preserves Late Attendance metric");
   assert.ok(content.includes("Recent Workflow Notifications"), "Preserves Recent Notifications");
 });

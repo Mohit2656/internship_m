@@ -101,12 +101,30 @@ class InternshipCompletionIntegrationTest {
         assertThat(again.history()).hasSize(3); assertThat(again.revision()).isEqualTo(3);
         assertThat(jdbc.queryForObject("select count(*) from student_notifications where student_user_id=? and notification_type='INTERNSHIP_REOPENED'",Long.class,student.getId())).isEqualTo(1);
     }
+    @Test void completingAndReopeningSecondInternshipLeavesFirstInternshipActive() {
+        var onboarding2=new InternshipOnboarding(student,2); onboarding2.confirmDiary(); onboarding2.markInternshipDetailsComplete(); onboardings.saveAndFlush(onboarding2);
+        var second=new InternshipDetails(onboarding2);
+        second.apply("Second Company",CompanyType.IT,null,"Second Address","9876543210","Supervisor","Manager","9876543210",1,
+                LocalDate.of(2025,2,1),LocalDate.of(2025,2,7),1,InternshipMode.ONLINE,BigDecimal.ZERO,false);
+        internships.saveAndFlush(second); weekly.synchronize(second);
+        jdbc.queryForList("select id from weekly_internship_periods where internship_id=? and active=true",Long.class,second.getId()).forEach(id->
+                jdbc.update("insert into weekly_progress_reports(period_id,work_description,revision,review_status,submitted_at,reviewer_id,reviewed_at) values(?,'Second work',1,'APPROVED',current_timestamp,?,current_timestamp)",id,mentor.getId()));
+        var month=new MonthlyProgressReport(second,1,second.getStartDate(),second.getEndDate(),"Second outcomes","second-file","photo.jpg","image/jpeg",100,null,null,null,Instant.now());
+        month.decide(mentor,true,null,Instant.now()); monthly.saveAndFlush(month);
+
+        var completed=service.decide(actor,student.getId(),second.getId(),new InternshipCompletionService.Decision(0,"Second complete"),false);
+        assertThat(completed.internshipNumber()).isEqualTo(2); assertThat(completed.status()).isEqualTo("COMPLETED");
+        assertThat(service.forAdmin(student.getId(),internship.getId()).status()).isEqualTo("COMPLETION_PENDING");
+        service.decide(actor,student.getId(),second.getId(),new InternshipCompletionService.Decision(1,"Reopen second only"),true);
+        assertThat(service.forAdmin(student.getId(),second.getId()).status()).isEqualTo("COMPLETION_PENDING");
+        assertThat(service.forAdmin(student.getId(),internship.getId()).revision()).isZero();
+    }
     @Test void routesEnforceAdminAuthorityStudentOwnershipAndStaleRevision() throws Exception {
         approveAll();
-        mvc.perform(post("/api/v1/admin/students/{id}/internship-completion/complete",student.getId()).with(user(UserPrincipal.from(student))).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":0}")).andExpect(status().isForbidden());
-        mvc.perform(post("/api/v1/admin/students/{id}/internship-completion/complete",student.getId()).with(user(UserPrincipal.from(mentor))).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":0}")).andExpect(status().isForbidden());
-        mvc.perform(post("/api/v1/admin/students/{id}/internship-completion/complete",student.getId()).with(user(actor)).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":9}")).andExpect(status().isConflict());
-        mvc.perform(post("/api/v1/admin/students/{id}/internship-completion/complete",student.getId()).with(user(actor)).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":0,\"reviewerId\":999,\"status\":\"FORGED\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.reviewerId").value(admin.getId()));
+        mvc.perform(post("/api/v1/admin/students/{id}/internship-completion/complete",student.getId()).param("internshipId",internship.getId().toString()).with(user(UserPrincipal.from(student))).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":0}")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/admin/students/{id}/internship-completion/complete",student.getId()).param("internshipId",internship.getId().toString()).with(user(UserPrincipal.from(mentor))).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":0}")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/admin/students/{id}/internship-completion/complete",student.getId()).param("internshipId",internship.getId().toString()).with(user(actor)).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":9}")).andExpect(status().isConflict());
+        mvc.perform(post("/api/v1/admin/students/{id}/internship-completion/complete",student.getId()).param("internshipId",internship.getId().toString()).with(user(actor)).contentType(MediaType.APPLICATION_JSON).content("{\"revision\":0,\"reviewerId\":999,\"status\":\"FORGED\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.reviewerId").value(admin.getId()));
         mvc.perform(get("/api/v1/student/internship-completion").with(user(UserPrincipal.from(student)))).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("COMPLETED"));
         mvc.perform(get("/api/v1/student/internship-completion").with(user(UserPrincipal.from(account(Role.STUDENT))))).andExpect(status().isNotFound());
     }

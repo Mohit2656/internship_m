@@ -71,30 +71,55 @@ class StudentSkillIntegrationTest {
     }
 
     @Test
-    void aiSkillsBecomePendingAndAreNotAutomaticallyConfirmed() throws Exception {
+    void onlyCatalogSkillsAreSynchronizedAndOrdinaryWordsAreIgnored() throws Exception {
+        when(aiClient.analyze(any(), anyString(), anyString())).thenReturn(
+                result("is", "the", "are", "Java", "javascript", "JavaScripted", "Spring Boot"));
         analyze(studentACookie, "skills.pdf");
         mvc.perform(get("/api/v1/student/professional-profile/skills").cookie(studentACookie))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.skills").isEmpty())
-                .andExpect(jsonPath("$.suggestions.length()").value(3))
-                .andExpect(jsonPath("$.suggestions[*].displayName").value(org.hamcrest.Matchers.containsInAnyOrder("Java", "Spring Boot", "PostgreSQL")));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(3))
+                .andExpect(jsonPath("$.skills[*].displayName").value(org.hamcrest.Matchers.containsInAnyOrder("Java", "JavaScript", "Spring Boot")))
+                .andExpect(jsonPath("$.skills[*].source").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("AI_EXTRACTED"))))
+                .andExpect(jsonPath("$.suggestions").isEmpty());
     }
 
     @Test
-    void studentConfirmsAndRejectsSuggestionsWithoutMutatingRawAnalysis() throws Exception {
+    void rawAnalysisContainsOnlyCanonicalCatalogSkills() throws Exception {
+        when(aiClient.analyze(any(), anyString(), anyString())).thenReturn(result("is", "JAVA", "js", "the"));
         analyze(studentACookie, "review.pdf");
-        JsonNode state = getSkills(studentACookie);
-        long javaId = idByName(state.path("suggestions"), "Java");
-        long springId = idByName(state.path("suggestions"), "Spring Boot");
-
-        mvc.perform(post("/api/v1/student/professional-profile/skill-suggestions/{id}/confirm", javaId).cookie(studentACookie))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.skills[0].displayName").value("Java"))
-                .andExpect(jsonPath("$.skills[0].source").value("AI_EXTRACTED"));
-        mvc.perform(post("/api/v1/student/professional-profile/skill-suggestions/{id}/reject", springId).cookie(studentACookie))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.suggestions.length()").value(1));
-
         mvc.perform(get("/api/v1/student/resume/analysis").cookie(studentACookie))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(3))
-                .andExpect(jsonPath("$.skills[*]").value(org.hamcrest.Matchers.hasItems("Java", "Spring Boot", "PostgreSQL")));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(2))
+                .andExpect(jsonPath("$.skills[*]").value(org.hamcrest.Matchers.containsInAnyOrder("Java", "JavaScript")));
+    }
+
+    @Test
+    void expandedCatalogAliasesAndSourceDistinctionAreEnforced() throws Exception {
+        when(aiClient.analyze(any(), anyString(), anyString())).thenReturn(
+                result("ReactJS", "postgres", "k8s", "Python", "ml", "is", "the", "are"));
+        analyze(studentACookie, "expanded.pdf");
+        mvc.perform(get("/api/v1/student/professional-profile/skills").cookie(studentACookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(5))
+                .andExpect(jsonPath("$.skills[*].displayName").value(org.hamcrest.Matchers.containsInAnyOrder(
+                        "React", "PostgreSQL", "Kubernetes", "Python", "Machine Learning")))
+                .andExpect(jsonPath("$.skills[*].source").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("AI_EXTRACTED"))));
+
+        // Add manual skill: source must be STUDENT_ADDED
+        mvc.perform(post("/api/v1/student/professional-profile/skills").cookie(studentACookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Docker\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(6));
+
+        assertThat(skills.findByProfessionalProfileIdAndNormalizedNameAndActiveTrue(
+                profiles.findByStudentId(studentA.getId()).orElseThrow().getId(), "docker").orElseThrow().getSource())
+                .isEqualTo(StudentSkillSource.STUDENT_ADDED);
+
+        // Attempting to manually add an existing skill alias should conflict
+        mvc.perform(post("/api/v1/student/professional-profile/skills").cookie(studentACookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"react.js\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SKILL_ALREADY_EXISTS"));
+
+        // Attempting to manually add stopword should be rejected
+        mvc.perform(post("/api/v1/student/professional-profile/skills").cookie(studentACookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"is\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_SKILL"));
     }
 
     @Test
@@ -126,13 +151,7 @@ class StudentSkillIntegrationTest {
     @Test
     void studentCannotModifyAnotherStudentsSkillOrSuggestion() throws Exception {
         analyze(studentACookie, "private.pdf");
-        JsonNode state = getSkills(studentACookie);
-        long suggestionId = state.path("suggestions").get(0).path("id").asLong();
-        mvc.perform(post("/api/v1/student/professional-profile/skill-suggestions/{id}/confirm", suggestionId).cookie(studentBCookie))
-                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SKILL_SUGGESTION_NOT_FOUND"));
-        MvcResult confirmed = mvc.perform(post("/api/v1/student/professional-profile/skill-suggestions/{id}/confirm", suggestionId).cookie(studentACookie))
-                .andExpect(status().isOk()).andReturn();
-        long skillId = json.readTree(confirmed.getResponse().getContentAsString()).path("skills").get(0).path("id").asLong();
+        long skillId = getSkills(studentACookie).path("skills").get(0).path("id").asLong();
         mvc.perform(delete("/api/v1/student/professional-profile/skills/{id}", skillId).cookie(studentBCookie))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SKILL_NOT_FOUND"));
         mvc.perform(patch("/api/v1/student/professional-profile/skills/{id}", skillId).cookie(studentBCookie)
@@ -172,19 +191,23 @@ class StudentSkillIntegrationTest {
     @Test
     void confirmedSkillsSurviveReuploadAndNewAnalysisOnlySuggestsNewSkills() throws Exception {
         analyze(studentACookie, "v1.pdf");
-        mvc.perform(post("/api/v1/student/professional-profile/skill-suggestions/confirm-all").cookie(studentACookie))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(3));
+        mvc.perform(post("/api/v1/student/professional-profile/skills").cookie(studentACookie)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Docker\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(4));
 
         upload(studentACookie, "v2.pdf");
         mvc.perform(get("/api/v1/student/professional-profile/skills").cookie(studentACookie))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(3))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(4))
                 .andExpect(jsonPath("$.suggestions").isEmpty());
         when(aiClient.analyze(any(), anyString(), anyString())).thenReturn(result("JAVA", "Spring Boot", "AWS", "Kubernetes"));
         mvc.perform(post("/api/v1/student/resume/analysis").cookie(studentACookie)).andExpect(status().isOk());
         mvc.perform(get("/api/v1/student/professional-profile/skills").cookie(studentACookie))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(3))
-                .andExpect(jsonPath("$.suggestions.length()").value(2))
-                .andExpect(jsonPath("$.suggestions[*].displayName").value(org.hamcrest.Matchers.containsInAnyOrder("AWS", "Kubernetes")));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.skills.length()").value(5))
+                .andExpect(jsonPath("$.skills[*].displayName").value(org.hamcrest.Matchers.containsInAnyOrder("AWS", "Docker", "Java", "Kubernetes", "Spring Boot")))
+                .andExpect(jsonPath("$.suggestions").isEmpty());
+        assertThat(skills.findByProfessionalProfileIdAndNormalizedNameAndActiveTrue(
+                profiles.findByStudentId(studentA.getId()).orElseThrow().getId(), "docker").orElseThrow().getSource())
+                .isEqualTo(StudentSkillSource.STUDENT_ADDED);
     }
 
     @Test

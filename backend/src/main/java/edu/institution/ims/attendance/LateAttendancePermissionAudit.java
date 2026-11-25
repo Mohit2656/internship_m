@@ -1,5 +1,6 @@
 package edu.institution.ims.attendance;
 
+import edu.institution.ims.internship.InternshipDetails;
 import edu.institution.ims.mentor.MentorStudentAssignment;
 import edu.institution.ims.user.User;
 import jakarta.persistence.*;
@@ -26,6 +27,10 @@ public class LateAttendancePermissionAudit {
     @JoinColumn(name = "student_user_id", nullable = false, updatable = false)
     private User student;
 
+    @ManyToOne(optional = true, fetch = FetchType.LAZY)
+    @JoinColumn(name = "internship_id", updatable = false)
+    private InternshipDetails internship;
+
     @Column(name = "attendance_date", nullable = false, updatable = false)
     private LocalDate attendanceDate;
 
@@ -42,20 +47,27 @@ public class LateAttendancePermissionAudit {
     protected LateAttendancePermissionAudit() {}
 
     public LateAttendancePermissionAudit(LateAttendancePermission permission,
-            MentorStudentAssignment assignment, boolean enabled, Instant changedAt) {
+            MentorStudentAssignment assignment, InternshipDetails internship, boolean enabled, Instant changedAt) {
         this.permission = permission;
         this.assignment = assignment;
         this.student = assignment.getStudent();
+        this.internship = internship;
         this.attendanceDate = permission.getAttendanceDate();
         this.enabled = enabled;
         this.changedBy = assignment.getMentor();
         this.changedAt = changedAt;
     }
 
+    public LateAttendancePermissionAudit(LateAttendancePermission permission,
+            MentorStudentAssignment assignment, boolean enabled, Instant changedAt) {
+        this(permission, assignment, permission != null ? permission.getInternship() : null, enabled, changedAt);
+    }
+
     public Long getId() { return id; }
     public LateAttendancePermission getPermission() { return permission; }
     public MentorStudentAssignment getAssignment() { return assignment; }
     public User getStudent() { return student; }
+    public InternshipDetails getInternship() { return internship; }
     public LocalDate getAttendanceDate() { return attendanceDate; }
     public boolean isEnabled() { return enabled; }
     public User getChangedBy() { return changedBy; }

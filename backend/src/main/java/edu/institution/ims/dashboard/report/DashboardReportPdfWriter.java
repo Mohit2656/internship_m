@@ -40,6 +40,39 @@ final class DashboardReportPdfWriter implements AutoCloseable {
 
     void title(String title) { this.title = title; }
 
+    void subTable(String subTitle, List<DashboardReportCatalog.Field> subFields, List<Map<String, Object>> rows) throws IOException {
+        if (subFields.isEmpty() || rows.isEmpty()) return;
+        if (stream == null) newPage();
+        if (subTitle != null && !subTitle.isBlank()) heading(subTitle);
+        float[] widths = new float[subFields.size()];
+        Arrays.fill(widths, WIDTH / subFields.size());
+        List<List<String>> headers = new ArrayList<>();
+        for (var f : subFields) headers.add(ReportPdfText.wrap(f.label(), fonts.bold(), SIZE, widths[0] - PADDING * 2));
+        int hLines = headers.stream().mapToInt(List::size).max().orElse(1);
+        if (y - (hLines * LEADING + PADDING * 2) - LEADING - PADDING * 2 < BOTTOM) newPage();
+        drawCells(headers, widths, 0, hLines, fonts.bold(), new Color(233, 239, 247));
+        for (int r = 0; r < rows.size(); r++) {
+            Map<String, Object> row = rows.get(r);
+            List<List<String>> lines = new ArrayList<>();
+            for (int c = 0; c < subFields.size(); c++) {
+                Object val = row.get(subFields.get(c).id());
+                lines.add(ReportPdfText.wrap(val == null ? "—" : val.toString(), fonts.regular(), SIZE, widths[c] - PADDING * 2));
+            }
+            int totalLines = lines.stream().mapToInt(List::size).max().orElse(1);
+            float rowHeight = totalLines * LEADING + PADDING * 2;
+            if (y - rowHeight < BOTTOM) {
+                newPage();
+                drawCells(headers, widths, 0, hLines, fonts.bold(), new Color(233, 239, 247));
+            }
+            boolean isTotal = Boolean.TRUE.equals(row.get("isTotal")) || "Total".equals(row.get("category")) || "Total".equals(row.get("company")) || "Total".equals(row.get("parameter")) || "Total".equals(row.get("range"));
+            Color bg = isTotal ? new Color(233, 239, 247) : (r % 2 == 0 ? new Color(247, 249, 252) : Color.WHITE);
+            PDFont font = isTotal ? fonts.bold() : fonts.regular();
+            drawCells(lines, widths, 0, totalLines, font, bg);
+            records++;
+        }
+        y -= 14;
+    }
+
     void row(List<String> values, int record) throws IOException {
         if (stream == null) newPage();
         if (tabular) {

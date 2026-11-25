@@ -194,10 +194,11 @@ class InternshipOnboardingIntegrationTest {
         assertThat(onboardings.findByStudentId(studentA.getId()).orElseThrow().getUpdatedAt()).isEqualTo(before);
     }
 
-    @Test void diaryCannotBeConfirmedBeforeDocumentsComplete() throws Exception {
+    @Test void diaryCanBeConfirmedBeforeDocumentsComplete() throws Exception {
         startAndSelect(studentACookie, "A", "UID-A", "a@college.edu"); upload(studentACookie, DocumentType.OFFER_LETTER);
         mvc.perform(post("/api/v1/student/internship-onboarding/diary/confirm").cookie(studentACookie))
-                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DOCUMENTS_INCOMPLETE"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.workflowStatus").value("DIARY_ISSUED"))
+                .andExpect(jsonPath("$.diaryIssued").value(true)).andExpect(jsonPath("$.diaryIssuedAt").isNotEmpty());
     }
 
     @Test void diaryCanBeConfirmedAfterDocumentsCompleteAndPersists() throws Exception {

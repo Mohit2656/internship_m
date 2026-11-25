@@ -1,11 +1,12 @@
 export type WeeklyStatus = "AVAILABLE" | "UPCOMING" | "ARCHIVED" | "PENDING_MENTOR_REVIEW" | "APPROVED" | "REJECTED";
 export type WeeklyEvent = { revision: number; eventType: string; actorId: number; actorEmail: string; performedAt: string; workDescription: string; reason: string | null };
 export type InternshipWeek = {
-  id: number; internshipId: number; studentUserId: number; studentName: string; uid: string | null;
+  id: number; internshipId: number; internshipNumber: number; studentUserId: number; studentName: string; uid: string | null;
   companyName: string; weekNumber: number; periodStart: string; periodEnd: string; active: boolean;
   submissionStatus: "SUBMITTED" | "NOT_SUBMITTED"; status: WeeklyStatus; workDescription: string | null;
   revision: number; submittedAt: string | null; reviewerId: number | null; reviewerEmail: string | null;
-  reviewedAt: string | null; rejectionReason: string | null; attendanceSubmitted: number;
+  reviewedAt: string | null; rejectionReason: string | null; reportPdfOriginalName: string | null;
+  reportPdfSize: number | null; attendanceSubmitted: number;
   attendancePresent: number; attendanceGpsVerified: number; history: WeeklyEvent[];
 };
 export type WeeklyOverview = { internshipId: number; companyName: string; internshipStart: string; internshipEnd: string; totalWeeks: number; calculationRule: string; weeks: InternshipWeek[] };

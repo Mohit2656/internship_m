@@ -32,6 +32,7 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
   const [selected, setSelected] = useState<MonthlyProgressPeriod | null>(null);
   const [description, setDescription] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
+  const [reportPdf, setReportPdf] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [busy, setBusy] = useState("");
@@ -80,6 +81,7 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
     const body = new FormData();
     body.append("workDescription", description);
     body.append("photo", photo);
+    if (reportPdf) body.append("reportPdf", reportPdf);
     try {
       if (selected.report) body.append("revision", String(selected.report.revision));
       const url = selected.report
@@ -96,6 +98,7 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
       setSelected(null);
       setDescription("");
       setPhoto(null);
+      setReportPdf(null);
       load();
     } catch (cause) {
       setError(
@@ -107,19 +110,25 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
     }
   }
 
-  async function file(id: number, kind: "photo" | "pdf", uid?: string | null, month?: number) {
+  async function file(id: number, kind: "photo" | "pdf", uid?: string | null, month?: number, internshipNumber?: number) {
     setBusy(`${id}-${kind}`);
     setError("");
     try {
       await openPrivateFile(
         `/student/monthly-progress/${id}/${kind}`,
-        kind === "pdf" ? `Monthly_Progress_${uid ?? "Student"}_Month_${month}.pdf` : undefined
+        kind === "pdf" ? `Monthly_Progress_${uid ?? "Student"}_Internship_${internshipNumber ?? 1}_Month_${month}.pdf` : undefined
       );
     } catch (cause) {
       setError(privateFileErrorMessage(cause, kind));
     } finally {
       setBusy("");
     }
+  }
+  async function attachment(id: number, name: string, download: boolean) {
+    setBusy(`${id}-attachment-${download ? "download" : "view"}`); setError("");
+    try { await openPrivateFile(`/student/monthly-progress/${id}/attachment${download ? "?download=true" : ""}`,download ? name : undefined); }
+    catch(cause) { setError(privateFileErrorMessage(cause,"pdf")); }
+    finally { setBusy(""); }
   }
 
   return (
@@ -226,6 +235,7 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
                             setSelected(period);
                             setDescription(period.report!.workDescription);
                             setPhoto(null);
+                            setReportPdf(null);
                             setNotice("");
                             setError("");
                           }}
@@ -241,13 +251,14 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
                       >
                         {busy === `${period.report.id}-photo` ? "Opening…" : "View Photograph"}
                       </button>
+                      {period.report.reportPdfOriginalName && <><button data-button-variant="outline" onClick={() => void attachment(period.report!.id,period.report!.reportPdfOriginalName!,false)} className="ui-button text-sm">View Uploaded PDF</button><button data-button-variant="outline" onClick={() => void attachment(period.report!.id,period.report!.reportPdfOriginalName!,true)} className="ui-button text-sm">Download Uploaded PDF</button></>}
                       <button
                         onClick={() =>
-                          file(period.report!.id, "pdf", period.report!.uid, period.monthNumber)
+                          file(period.report!.id, "pdf", period.report!.uid, period.monthNumber, period.report!.internshipNumber)
                         }
                         className="ui-button text-sm"
                       >
-                        {busy === `${period.report.id}-pdf` ? "Preparing…" : "Download PDF"}
+                        {busy === `${period.report.id}-pdf` ? "Preparing…" : "Download Report"}
                       </button>
                     </div>
                   </div>
@@ -257,6 +268,7 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
                       setSelected(period);
                       setDescription("");
                       setPhoto(null);
+                      setReportPdf(null);
                       setNotice("");
                       setError("");
                     }}
@@ -332,6 +344,12 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
                 </span>
               </label>
               <label className="block">
+                <span className="mb-2 block text-sm font-semibold">Upload Report PDF <span className="font-normal text-slate-500">(optional)</span></span>
+                <input type="file" accept=".pdf,application/pdf" onChange={(event) => { const chosen=event.target.files?.[0]??null; if(chosen&&chosen.size>10*1024*1024){event.target.value="";setReportPdf(null);setError("Report PDFs must be 10 MiB or smaller.");}else{setReportPdf(chosen);setError("");} }} className="block w-full rounded-xl border border-slate-300 p-3 text-sm" />
+                <span className="mt-2 block text-xs text-slate-500">PDF, maximum 10 MiB.</span>
+                {selected.report?.reportPdfOriginalName && !reportPdf && <span className="mt-2 block text-xs text-slate-500">Existing PDF “{selected.report.reportPdfOriginalName}” will be kept unless you choose a replacement.</span>}
+              </label>
+              <label className="block">
                 <span className="mb-2 block text-sm font-semibold">
                   Work performed during this month
                 </span>
@@ -370,12 +388,17 @@ function ProgressReportsContent() {
   const [internships, setInternships] = useState<InternshipDetails[]>([]);
 
   useEffect(() => {
+    const requestedInternshipId = Number(searchParams.get("internshipId"));
     setInternshipTab(getSelectedInternship());
     api
       .get<InternshipDetails[]>("/student/internship/all")
-      .then(({ data }) => setInternships(data))
+      .then(({ data }) => {
+        setInternships(data);
+        const requested=data.find(item=>item.id===requestedInternshipId);
+        if(requested) { const slot=requested.internshipNumber as 1|2; setInternshipTab(slot); setSelectedInternship(slot); }
+      })
       .catch(() => {});
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     const tab = searchParams.get("tab");

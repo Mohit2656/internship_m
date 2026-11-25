@@ -27,6 +27,7 @@ final class DashboardReportWriter implements AutoCloseable {
     private String reference = "Main report ";
     private final Map<Integer,Double> totals = new HashMap<>();
     private boolean historical;
+    private boolean hasSubTables;
 
     DashboardReportWriter(Path file, DashboardReportRequest.Format format, List<DashboardReportCatalog.Field> fields, ZoneId zone, String title, String reference) throws IOException {
         this(file, format, fields, zone);
@@ -102,6 +103,69 @@ final class DashboardReportWriter implements AutoCloseable {
         }
         row.setHeightInPoints(Math.min(409, Math.max(24, lines * 17)));
     }
+    void subTable(String title, List<DashboardReportCatalog.Field> subFields, List<Map<String, Object>> rows) throws IOException {
+        hasSubTables = true;
+        if (csv != null) {
+            if (title != null && !title.isBlank()) {
+                csv.write("\r\n\"" + title.replace("\"", "\"\"") + "\"\r\n");
+            }
+            csvRow(subFields.stream().map(DashboardReportCatalog.Field::label).toList(), subFields);
+            for (var rVal : rows) {
+                List<String> cells = new ArrayList<>();
+                for (var f : subFields) cells.add(display(rVal.get(f.id())));
+                csvRow(cells, subFields);
+                count++;
+            }
+            return;
+        }
+        if (pdf != null) {
+            pdf.subTable(title, subFields, rows);
+            count += rows.size();
+            return;
+        }
+        if (workbook != null) {
+            if (title != null && !title.isBlank()) {
+                count++;
+                Row titleRow = students.createRow(count + headerRow);
+                titleRow.setHeightInPoints(26);
+                Cell tCell = titleRow.createCell(0);
+                tCell.setCellValue(title);
+                tCell.setCellStyle(bandStyle("B3CEFB"));
+                if (subFields.size() > 1) {
+                    students.addMergedRegion(new CellRangeAddress(count + headerRow, count + headerRow, 0, subFields.size() - 1));
+                }
+            }
+            count++;
+            Row hRow = students.createRow(count + headerRow);
+            hRow.setHeightInPoints(36);
+            for (int n = 0; n < subFields.size(); n++) {
+                Cell c = hRow.createCell(n);
+                c.setCellValue(subFields.get(n).label());
+                c.setCellStyle(bandStyle("FBDAD7"));
+                int width = switch (subFields.get(n).kind()) { case DATE -> 16; case DATETIME -> 24; case NUMBER -> 18; default -> Math.min(48, Math.max(22, subFields.get(n).label().length() + 3)); };
+                students.setColumnWidth(n, Math.max(students.getColumnWidth(n), width * 256));
+            }
+            for (var rVal : rows) {
+                count++;
+                Row r = students.createRow(count + headerRow);
+                boolean isTotal = Boolean.TRUE.equals(rVal.get("isTotal")) || "Total".equals(rVal.get("category")) || "Total".equals(rVal.get("company")) || "Total".equals(rVal.get("parameter")) || "Total".equals(rVal.get("range"));
+                for (int n = 0; n < subFields.size(); n++) {
+                    var f = subFields.get(n);
+                    Object val = rVal.get(f.id());
+                    Cell cell = r.createCell(n);
+                    cell.setCellStyle(isTotal ? bandStyle("E9EFF7") : style(f, count % 2 == 0));
+                    if (val != null) {
+                        if (f.kind() == DashboardReportCatalog.Kind.NUMBER && val instanceof Number num) {
+                            cell.setCellValue(num.doubleValue());
+                        } else {
+                            cell.setCellValue(display(val));
+                        }
+                    }
+                }
+                r.setHeightInPoints(24);
+            }
+        }
+    }
     private String display(Object value) {
         if (value instanceof OffsetDateTime || value instanceof Timestamp || value instanceof Instant)
             return instant(value).atZone(zone).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss XXX"));
@@ -114,12 +178,15 @@ final class DashboardReportWriter implements AutoCloseable {
         return Instant.parse(value.toString());
     }
     private void csvRow(List<String> values) throws IOException {
+        csvRow(values, this.fields);
+    }
+    private void csvRow(List<String> values, List<DashboardReportCatalog.Field> rowFields) throws IOException {
         for (int i = 0; i < values.size(); i++) {
             if (i > 0) csv.write(',');
             String value = values.get(i);
             // Neutralize formulas even when prefixed by whitespace/control characters.
             String significant = value.stripLeading();
-            boolean numeric = fields.get(i).kind() == DashboardReportCatalog.Kind.NUMBER && value.matches("-?\\d+(\\.\\d+)?");
+            boolean numeric = (rowFields != null && i < rowFields.size() && rowFields.get(i).kind() == DashboardReportCatalog.Kind.NUMBER) && value.matches("-?\\d+(\\.\\d+)?");
             if (!numeric && ((!significant.isEmpty() && "=+-@".indexOf(significant.charAt(0)) >= 0)
                     || (!value.isEmpty() && "\t\r\n".indexOf(value.charAt(0)) >= 0))) value = "'" + value;
             csv.write('"'); csv.write(value.replace("\"", "\"\"")); csv.write('"');
@@ -129,8 +196,10 @@ final class DashboardReportWriter implements AutoCloseable {
     int count() { return count; }
     void finish(Map<String, String> metadata) throws IOException {
         if (workbook != null) {
-            students.setAutoFilter(new CellRangeAddress(headerRow, count + headerRow, 0, fields.size() - 1));
-            if(historical && !reference.startsWith("Attedance") && !reportTitle.contains("Comparison") && count>0 && !totals.isEmpty() && !reportTitle.equals("Stipend Distribution")) {
+            if (!hasSubTables && fields.size() > 0 && count > 0) {
+                students.setAutoFilter(new CellRangeAddress(headerRow, count + headerRow, 0, fields.size() - 1));
+            }
+            if(historical && !hasSubTables && !reference.startsWith("Attedance") && !reportTitle.contains("Comparison") && count>0 && !totals.isEmpty() && !reportTitle.equals("Stipend Distribution")) {
                 Row total=students.createRow(count+headerRow+1);total.setHeightInPoints(28);
                 for(int n=0;n<fields.size();n++) {Cell c=total.createCell(n);c.setCellStyle(bandStyle("BFBFBF"));if(n==0 && fields.get(n).kind()!=DashboardReportCatalog.Kind.NUMBER)c.setCellValue("Total");else if(totals.containsKey(n))c.setCellValue(totals.get(n));}
             }

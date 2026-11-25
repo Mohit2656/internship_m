@@ -7,6 +7,7 @@ import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { OpportunityMatchingReport } from "@/components/OpportunityMatchingReport";
+import { SystemMatchedStudents } from "@/components/SystemMatchedStudents";
 import { api, ApiError } from "@/lib/api";
 import { AdminSkillGapAnalysis, Branch, branchLabels, OpportunitySkillMatch, TalentCandidate, TalentDiscoveryPage, TalentEligibilityFilter } from "@/lib/opportunities";
 
@@ -76,6 +77,7 @@ function TalentDiscoveryContent() {
   return <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
     <Link href="/admin/opportunities" className="text-sm font-semibold text-blue-700">← Back to opportunities</Link>
     <div className="mt-5"><p className="text-sm font-semibold text-violet-700">III Cell talent discovery</p><h1 className="mt-2 text-3xl font-bold tracking-tight">{data?.opportunity.title || "Opportunity candidates"}</h1><p className="mt-2 text-slate-600">{data ? `${data.opportunity.companyName} · ${data.opportunity.status}` : "Review eligibility and professional alignment evidence."}</p></div>
+    <SystemMatchedStudents opportunityId={opportunityId} />
     <OpportunityMatchingReport opportunityId={opportunityId} />
     <details className="mt-8"><summary className="cursor-pointer text-xl font-bold">Live professional alignment evidence and skill gaps</summary>
     <form onSubmit={submit} className="mt-4 rounded-2xl border border-slate-200 bg-white p-5"><div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">

@@ -40,13 +40,29 @@ export function getStatusBadgeClass(status: InternshipStatusBadge): string {
   }
 }
 
+export function getInstitutionalToday(): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const part = (type: string) => parts.find((v) => v.type === type)?.value;
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 export function deriveInternshipStatus(
-  details: { startDate?: string; endDate?: string } | null,
+  details: { startDate?: string | null; endDate?: string | null } | null,
   locationStatus?: string | null,
-  requestStatus?: string | null
+  requestStatus?: string | null,
+  todayStr?: string
 ): InternshipStatusBadge {
   if (details) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr ?? getInstitutionalToday();
     if (details.endDate && details.endDate < today) {
       return "Completed";
     }

@@ -89,6 +89,9 @@ export function attendanceSubmissionOpen(today: TodayAttendance | null, now = Da
 
 export type LateAttendancePermission = {
   studentUserId: number;
+  internshipId?: number;
+  internshipNumber?: number;
+  companyName?: string | null;
   studentName: string | null;
   uid: string | null;
   attendanceDate: string;
@@ -100,6 +103,8 @@ export type LateAttendancePermission = {
 
 export type MentorStudentAttendance = {
   studentUserId: number;
+  internshipId: number;
+  internshipNumber: number;
   name: string | null;
   uid: string | null;
   branchLabel: string | null;
@@ -120,8 +125,38 @@ export type AttendancePolicy = {
   verificationMethod: AttendanceVerificationMethod;
   attendanceAlreadySubmitted: boolean;
   configurationReady: boolean;
+  workplaceStatus: "NOT_REQUIRED" | "DECLARATION_REQUIRED" | "AWAITING_MENTOR_APPROVAL" | "APPROVED";
+  lifecycleStatus: "NOT_STARTED" | "ACTIVE" | "ENDED" | "COMPLETED";
+  internshipStartDate: string;
+  internshipEndDate: string;
+  attendanceTrackingActive: boolean;
   serverDate: string;
   maxGpsAccuracyMeters: number;
+  scheduledWorkingDay?: boolean;
+  scheduledDayOff?: boolean;
+  approvedHoliday?: boolean;
+  pendingHoliday?: boolean;
+  approvedExtraWorkday?: boolean;
+  workingDaysPerWeek?: number;
+  workingDays?: string[];
+};
+
+export type AttendanceException = {
+  id: number;
+  internshipId: number;
+  internshipNumber: number;
+  companyName: string | null;
+  studentUserId: number;
+  studentName: string | null;
+  uid: string | null;
+  exceptionDate: string;
+  exceptionType: "COMPANY_HOLIDAY" | "EXTRA_WORKDAY";
+  reason: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  reviewRemarks: string | null;
+  createdAt: string;
 };
 
 export type HybridScheduleEntry = { dayOfWeek: string; workMode: HybridWorkMode };

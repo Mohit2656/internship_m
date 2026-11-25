@@ -31,12 +31,6 @@ const groups: { heading: string; items: Item[] }[] = [
       { href: "/admin/accounts", label: "Accounts" },
     ],
   },
-  {
-    heading: "Account",
-    items: [
-      { href: "/admin/notifications", label: "Notifications" },
-    ],
-  },
 ];
 
 function active(item: Item, pathname: string, hash: string, activeSection?: string) {

@@ -5,6 +5,7 @@ import java.util.*;
 
 public interface StudentProfileRepository extends JpaRepository<StudentProfile, Long>, JpaSpecificationExecutor<StudentProfile> {
     Optional<StudentProfile> findByUserId(Long userId);
+    List<StudentProfile> findAllByUserIdIn(Collection<Long> userIds);
     @Query("select p from StudentProfile p join fetch p.user u where u.role = edu.institution.ims.user.Role.STUDENT and u.active = true")
     List<StudentProfile> findAllActiveStudentCandidates();
     boolean existsByUserId(Long userId);

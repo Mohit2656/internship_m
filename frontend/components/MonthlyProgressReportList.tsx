@@ -2,12 +2,13 @@
 
 import { MentorRecordDelete } from "@/components/MentorRecordDelete";
 import { LastStudentUpdate } from "@/components/LastStudentUpdate";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AxiosError } from "axios";
 import { ApiError, api } from "@/lib/api";
 import { formatDate, formatDateTime, monthlyStatusLabel, monthlyStatusClass, MonthlyProgressReport, openPrivateFile, privateFileErrorMessage } from "@/lib/monthly-progress";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 
-export function MonthlyProgressReportList({ scope }: { scope: "mentor" | "admin" }) {
+export function MonthlyProgressReportList({ scope, internshipId }: { scope: "mentor" | "admin"; internshipId?: number }) {
   const [reports, setReports] = useState<MonthlyProgressReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -15,26 +16,34 @@ export function MonthlyProgressReportList({ scope }: { scope: "mentor" | "admin"
   const [notice, setNotice] = useState("");
   const [rejecting, setRejecting] = useState<MonthlyProgressReport | null>(null);
   const [reason, setReason] = useState("");
+  const actionPending = useRef(new Set<string>());
 
   useEffect(() => {
-    api.get<MonthlyProgressReport[]>(`/${scope}/monthly-progress`).then(response => setReports(response.data))
+    api.get<MonthlyProgressReport[]>(`/${scope}/monthly-progress`).then(response => setReports(internshipId ? response.data.filter(report => report.internshipId === internshipId) : response.data))
       .catch((cause: AxiosError<ApiError>) => setError(cause.response?.data?.message ?? "Unable to load monthly progress reports."))
       .finally(() => setLoading(false));
-  }, [scope]);
+  }, [scope, internshipId]);
 
   async function file(report: MonthlyProgressReport, kind: "photo" | "pdf") {
     const key = `${report.id}-${kind}`; setBusy(key); setError("");
     try {
       await openPrivateFile(`/${scope}/monthly-progress/${report.id}/${kind}`,
-        kind === "pdf" ? `Monthly_Progress_${report.uid ?? "Student"}_Month_${report.reportMonthNumber}.pdf` : undefined);
+        kind === "pdf" ? `Monthly_Progress_${report.uid ?? "Student"}_Internship_${report.internshipNumber}_Month_${report.reportMonthNumber}.pdf` : undefined);
     } catch (cause) { setError(privateFileErrorMessage(cause, kind)); } finally { setBusy(""); }
+  }
+  async function attachment(report: MonthlyProgressReport, download: boolean) {
+    setBusy(`${report.id}-attachment-${download ? "download" : "view"}`); setError("");
+    try { await openPrivateFile(`/${scope}/monthly-progress/${report.id}/attachment${download ? "?download=true" : ""}`,download ? report.reportPdfOriginalName ?? "monthly-report.pdf" : undefined); }
+    catch(cause) { setError(privateFileErrorMessage(cause,"pdf")); }
+    finally { setBusy(""); }
   }
 
   async function review(report: MonthlyProgressReport, approved: boolean) {
-    if (busy) return;
     if (!approved && !reason.trim()) { setError("A rejection reason is required."); return; }
     if (approved && !window.confirm(`Approve Month ${report.reportMonthNumber} for ${report.studentName ?? "this student"}? This records your faculty mentor approval.`)) return;
-    setBusy(`${report.id}-review`); setError(""); setNotice("");
+    const actionKey = `monthly:${report.internshipId}:${report.id}:review`;
+    if (actionPending.current.has(actionKey)) return;
+    actionPending.current.add(actionKey); setBusy(`${report.id}-review`); setError(""); setNotice("");
     try {
       const response = await api.post<MonthlyProgressReport>(`/mentor/monthly-progress/${report.id}/${approved ? "approve" : "reject"}`,
         { revision: report.revision, ...(!approved ? { reason: reason.trim() } : {}) });
@@ -42,10 +51,10 @@ export function MonthlyProgressReportList({ scope }: { scope: "mentor" | "admin"
       setRejecting(null); setReason("");
       setNotice(approved ? "Report approved." : "Report rejected. The student can correct and resubmit it.");
     } catch (cause) { setError((cause as AxiosError<ApiError>).response?.data?.message ?? "The review could not be saved. Refresh the report and try again."); }
-    finally { setBusy(""); }
+    finally { actionPending.current.delete(actionKey); setBusy(""); }
   }
 
-  if (loading) return <p className="mt-8 text-sm text-slate-500">Loading monthly progress reports…</p>;
+  if (loading) return <p className="mt-8 text-sm text-slate-500"><LoadingSpinner label="Loading monthly progress reports…"/></p>;
   return <>
     {notice && <p role="status" className="mt-6 text-sm text-emerald-700">{notice}</p>}
     {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
@@ -56,8 +65,8 @@ export function MonthlyProgressReportList({ scope }: { scope: "mentor" | "admin"
         {report.rejectionReason && <p className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">Rejection reason: {report.rejectionReason}</p>}<dl className="report-document mt-5 grid gap-4 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3"><div><dt className="text-slate-500">Reporting period</dt><dd className="mt-1 font-semibold">{formatDate(report.periodStart)} – {formatDate(report.periodEnd)}</dd></div><div><dt className="text-slate-500">Submitted</dt><dd className="mt-1 font-semibold">{formatDateTime(report.submittedAt)}</dd></div><div><dt className="text-slate-500">Mentor decision</dt><dd className="mt-1 font-semibold">{report.reviewedAt ? `${report.reviewerEmail ?? "Faculty Mentor"} · ${formatDateTime(report.reviewedAt)}` : "Awaiting review"}</dd></div></dl>
         <LastStudentUpdate value={report.submittedAt}/>
         <div className="report-document mt-5"><h3 className="text-sm font-bold text-slate-900">Work performed during the month</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{report.workDescription}</p></div>
-        <div className="mt-6 flex flex-wrap gap-3">{scope === "mentor" && report.status === "PENDING_MENTOR_REVIEW" && <><button disabled={!!busy} onClick={() => void review(report, true)} className="text-sm">Approve</button><button data-button-variant="outline" disabled={!!busy} onClick={() => { setRejecting(report); setReason(""); setError(""); }} className="text-sm">Reject</button></>}{scope === "mentor" && <MentorRecordDelete kind="monthly-progress" id={report.id} description={`${report.studentName ?? "Student"} (${report.uid ?? report.studentUserId}) - reporting month ${report.reportMonthNumber}, ${formatDate(report.periodStart)} to ${formatDate(report.periodEnd)}`} onDeleted={async () => { setNotice("Monthly progress report deleted."); const response = await api.get<MonthlyProgressReport[]>(`/${scope}/monthly-progress`); setReports(response.data); }} />}<button data-button-variant="outline" onClick={() => file(report, "photo")} disabled={busy === `${report.id}-photo`} className="text-sm">{busy === `${report.id}-photo` ? "Opening…" : "View Photograph"}</button><button onClick={() => file(report, "pdf")} disabled={busy === `${report.id}-pdf`} className="text-sm">{busy === `${report.id}-pdf` ? "Preparing…" : "Download PDF"}</button></div>
+        <div className="mt-6 flex flex-wrap gap-3">{scope === "mentor" && report.status === "PENDING_MENTOR_REVIEW" && <><button disabled={!!busy} onClick={() => void review(report, true)} className="text-sm">Approve</button><button data-button-variant="outline" disabled={!!busy} onClick={() => { setRejecting(report); setReason(""); setError(""); }} className="text-sm">Reject</button></>}{scope === "mentor" && <MentorRecordDelete kind="monthly-progress" id={report.id} description={`${report.studentName ?? "Student"} (${report.uid ?? report.studentUserId}) - reporting month ${report.reportMonthNumber}, ${formatDate(report.periodStart)} to ${formatDate(report.periodEnd)}`} onDeleted={async () => { setNotice("Monthly progress report deleted."); const response = await api.get<MonthlyProgressReport[]>(`/${scope}/monthly-progress`); setReports(response.data); }} />}<button data-button-variant="outline" onClick={() => file(report, "photo")} disabled={busy === `${report.id}-photo`} className="text-sm">{busy === `${report.id}-photo` ? "Opening…" : "View Photograph"}</button><button onClick={() => file(report, "pdf")} disabled={busy === `${report.id}-pdf`} className="text-sm">{busy === `${report.id}-pdf` ? <LoadingSpinner label="Preparing PDF…"/> : "Download Report"}</button>{report.reportPdfOriginalName && <><button data-button-variant="outline" onClick={() => void attachment(report,false)} disabled={busy === `${report.id}-attachment-view`} className="text-sm">{busy === `${report.id}-attachment-view` ? "Opening…" : "View Uploaded PDF"}</button><button data-button-variant="outline" onClick={() => void attachment(report,true)} disabled={busy === `${report.id}-attachment-download`} className="text-sm">{busy === `${report.id}-attachment-download` ? "Preparing…" : "Download Uploaded PDF"}</button></>}</div>
       </article>)}</div>}
-    {rejecting && <div className="fixed inset-0 z-50 bg-slate-950/50 p-4"><form onSubmit={event => { event.preventDefault(); void review(rejecting, false); }} className="mx-auto my-8 max-w-xl rounded-2xl bg-white p-6 shadow-2xl"><h2 className="text-xl font-bold">Reject Month {rejecting.reportMonthNumber} — {rejecting.studentName ?? "Student"}</h2><p className="mt-2 text-sm text-slate-600">Explain the required corrections. The student will see this reason.</p><label className="mt-5 block text-sm font-semibold">Rejection reason<textarea required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} rows={4} className="mt-2 w-full rounded-xl border border-slate-300 p-3" /></label>{error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}<div className="mt-5 flex gap-3"><button disabled={!!busy || !reason.trim()} className="text-sm">{busy ? "Saving…" : "Confirm Rejection"}</button><button data-button-variant="outline" type="button" disabled={!!busy} onClick={() => setRejecting(null)} className="text-sm">Cancel</button></div></form></div>}
+    {rejecting && <div className="fixed inset-0 z-50 bg-slate-950/50 p-4"><form onSubmit={event => { event.preventDefault(); void review(rejecting, false); }} className="mx-auto my-8 max-w-xl rounded-2xl bg-white p-6 shadow-2xl"><h2 className="text-xl font-bold">Reject Month {rejecting.reportMonthNumber} — {rejecting.studentName ?? "Student"}</h2><p className="mt-2 text-sm text-slate-600">Explain the required corrections. The student will see this reason.</p><label className="mt-5 block text-sm font-semibold">Rejection reason<textarea required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} rows={4} className="mt-2 w-full rounded-xl border border-slate-300 p-3" /></label>{error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}<div className="mt-5 flex gap-3"><button disabled={!!busy || !reason.trim()} className="text-sm">{busy ? <LoadingSpinner label="Saving…"/> : "Confirm Rejection"}</button><button data-button-variant="outline" type="button" disabled={!!busy} onClick={() => setRejecting(null)} className="text-sm">Cancel</button></div></form></div>}
   </>;
 }

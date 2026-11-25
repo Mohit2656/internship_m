@@ -372,11 +372,12 @@ public class CustomReportQueryBuilder {
                 left join internship_locations loc on loc.internship_id = i.id
                 left join (
                     select student_user_id, internship_id,
-                           count(case when attendance_result = 'PRESENT' then 1 end) as present_days,
-                           count(case when attendance_result = 'ABSENT' then 1 end) as absent_days,
-                           count(case when attendance_result in ('PRESENT', 'ABSENT') then 1 end) as total_days,
-                           round(count(case when attendance_result = 'PRESENT' then 1 end) * 100.0 / nullif(count(case when attendance_result in ('PRESENT', 'ABSENT') then 1 end), 0), 1) as attendance_percentage,
-                           count(case when submitted_late = true then 1 end) as late_submissions
+                           count(distinct case when submission_type <> 'AUTO_ABSENT' then attendance_date end) as submitted_days,
+                           count(distinct case when attendance_result = 'PRESENT' then attendance_date end) as present_days,
+                           count(distinct case when attendance_result = 'ABSENT' then attendance_date end) as absent_days,
+                           count(distinct case when attendance_result in ('PRESENT', 'ABSENT') then attendance_date end) as total_days,
+                           round(count(distinct case when attendance_result = 'PRESENT' then attendance_date end) * 100.0 / nullif(count(distinct case when attendance_result in ('PRESENT', 'ABSENT') then attendance_date end), 0), 1) as attendance_percentage,
+                           count(distinct case when submitted_late = true then attendance_date end) as late_submissions
                     from attendance_records
                     where deleted_at is null
                     group by student_user_id, internship_id
@@ -416,11 +417,12 @@ public class CustomReportQueryBuilder {
                 left join internship_locations loc on loc.internship_id = i.id
                 left join (
                     select student_user_id,
-                           count(case when attendance_result = 'PRESENT' then 1 end) as present_days,
-                           count(case when attendance_result = 'ABSENT' then 1 end) as absent_days,
-                           count(case when attendance_result in ('PRESENT', 'ABSENT') then 1 end) as total_days,
-                           round(count(case when attendance_result = 'PRESENT' then 1 end) * 100.0 / nullif(count(case when attendance_result in ('PRESENT', 'ABSENT') then 1 end), 0), 1) as attendance_percentage,
-                           count(case when submitted_late = true then 1 end) as late_submissions
+                           count(distinct case when submission_type <> 'AUTO_ABSENT' then attendance_date end) as submitted_days,
+                           count(distinct case when attendance_result = 'PRESENT' then attendance_date end) as present_days,
+                           count(distinct case when attendance_result = 'ABSENT' then attendance_date end) as absent_days,
+                           count(distinct case when attendance_result in ('PRESENT', 'ABSENT') then attendance_date end) as total_days,
+                           round(count(distinct case when attendance_result = 'PRESENT' then attendance_date end) * 100.0 / nullif(count(distinct case when attendance_result in ('PRESENT', 'ABSENT') then attendance_date end), 0), 1) as attendance_percentage,
+                           count(distinct case when submitted_late = true then attendance_date end) as late_submissions
                     from attendance_records
                     where deleted_at is null
                     group by student_user_id

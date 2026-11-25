@@ -8,6 +8,15 @@ const values = { skills: ["Java"], certifications: ["Cloud fundamentals"], exper
 const original = { resumeId: 42, status: "PARSED", completedAt: "2026-10-30T07:00:00Z", ...values };
 const response = { resumeId: 42, revision: 0, source: "AI_EXTRACTED", original, values, editedAt: null, editorId: null, editorName: null, history: [] };
 
+test("student profile keeps upload-triggered skill sync without a separate analyzer interface", () => {
+  const page = fs.readFileSync(path.join(__dirname, "../app/student/professional-profile/page.tsx"), "utf8");
+  assert.ok(page.includes('api.post<ResumeAnalysis>("/student/resume/analysis")'));
+  assert.ok(page.includes("<SkillProfileCard"));
+  assert.ok(!page.includes("<ResumeAnalysisCard"));
+  assert.ok(!page.includes("<ResumeCorrectionEditor"));
+  assert.ok(!page.includes("Analyze Resume"));
+});
+
 function findAll(node, predicate) {
   if (Array.isArray(node)) return node.flatMap(child => findAll(child, predicate));
   if (!React.isValidElement(node)) return [];

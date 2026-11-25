@@ -80,6 +80,6 @@ test("calculates accurate percentage and lists missing fields when partially com
   assert.equal(result.remainingPercentage, 100 - result.percentage);
   assert.equal(result.isComplete, false);
   const personalSection = result.sections.find(s => s.id === "personal");
-  assert.ok(personalSection.missingFields.includes("Roll Number"));
+  assert.ok(personalSection.missingFields.includes("UID / Roll Number"));
   assert.ok(personalSection.missingFields.includes("Emergency Contact"));
 });

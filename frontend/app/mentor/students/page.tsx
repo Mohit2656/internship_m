@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { formatNumericUid } from "@/lib/uid-formatter";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { api } from "@/lib/api";
-import { StudentAttendanceSummary, formatAttendancePercentage } from "@/components/AttendanceAbsenceOverview";
+import { StudentAttendanceSummary, formatAttendancePercentage, formatAttendanceDays } from "@/components/AttendanceAbsenceOverview";
+import { AssignedStudent, buildMentorStudentRoster } from "@/lib/mentor-student-roster";
 
 type SortField = "uid" | "name" | "branch" | "company" | "attendance";
 type SortDirection = "asc" | "desc";
@@ -18,7 +20,6 @@ export default function MentorAssignedStudentsPage() {
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBranch, setSelectedBranch] = useState("ALL");
-  const [attendanceFilter, setAttendanceFilter] = useState<"ALL" | "LOW" | "NORMAL">("ALL");
 
   // Sorting state
   const [sortField, setSortField] = useState<SortField>("uid");
@@ -29,10 +30,12 @@ export default function MentorAssignedStudentsPage() {
   const [pageSize, setPageSize] = useState(15);
 
   useEffect(() => {
-    api
-      .get<StudentAttendanceSummary[]>("/mentor/attendance/students")
-      .then((res) => {
-        setStudents(res.data);
+    Promise.all([
+      api.get<AssignedStudent[]>("/mentor/students"),
+      api.get<StudentAttendanceSummary[]>("/mentor/attendance/students"),
+    ])
+      .then(([assigned, attendance]) => {
+        setStudents(buildMentorStudentRoster(assigned.data, attendance.data));
       })
       .catch(() => setError("Unable to load assigned students."))
       .finally(() => setLoading(false));
@@ -67,17 +70,9 @@ export default function MentorAssignedStudentsPage() {
         return false;
       }
 
-      // Attendance filter
-      const pct = s.attendance?.percentage;
-      if (attendanceFilter === "LOW") {
-        if (pct === null || pct === undefined || pct >= 75) return false;
-      } else if (attendanceFilter === "NORMAL") {
-        if (pct === null || pct === undefined || pct < 75) return false;
-      }
-
       return true;
     });
-  }, [students, searchTerm, selectedBranch, attendanceFilter]);
+  }, [students, searchTerm, selectedBranch]);
 
   const sortedStudents = useMemo(() => {
     const list = [...filteredStudents];
@@ -189,27 +184,13 @@ export default function MentorAssignedStudentsPage() {
                     </select>
                   )}
 
-                  <select
-                    value={attendanceFilter}
-                    onChange={(e) => {
-                      setAttendanceFilter(e.target.value as any);
-                      setCurrentPage(1);
-                    }}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-blue-600 focus:outline-none"
-                  >
-                    <option value="ALL">All Attendance</option>
-                    <option value="LOW">Attendance &lt; 75%</option>
-                    <option value="NORMAL">Attendance ≥ 75%</option>
-                  </select>
-
-                  {(searchTerm || selectedBranch !== "ALL" || attendanceFilter !== "ALL") && (
+                  {(searchTerm || selectedBranch !== "ALL") && (
                     <button
                       type="button"
                       data-button-variant="text"
                       onClick={() => {
                         setSearchTerm("");
                         setSelectedBranch("ALL");
-                        setAttendanceFilter("ALL");
                         setCurrentPage(1);
                       }}
                       className="text-xs font-semibold text-blue-700 hover:underline"
@@ -271,20 +252,19 @@ export default function MentorAssignedStudentsPage() {
                         className="cursor-pointer p-3.5 hover:text-blue-700 select-none"
                         onClick={() => handleSort("attendance")}
                       >
-                        Attendance % {renderSortIndicator("attendance")}
+                        Attendance {renderSortIndicator("attendance")}
                       </th>
                       <th className="p-3.5 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {paginatedStudents.map((student) => {
-                      const isLowAttendance = (student.attendance?.percentage ?? 0) < 75;
                       return (
                         <tr
                           key={student.studentUserId}
                           className="border-b border-slate-100 transition-colors hover:bg-slate-50/70"
                         >
-                          <td className="p-3.5 font-medium text-slate-900">{student.uid || "—"}</td>
+                          <td className="p-3.5 font-medium text-slate-900">{formatNumericUid(student.uid)}</td>
                           <td className="p-3.5 font-semibold">
                             <Link
                               href={`/mentor/students/${student.studentUserId}`}
@@ -296,18 +276,9 @@ export default function MentorAssignedStudentsPage() {
                           <td className="p-3.5 text-slate-600">{student.branch || "—"}</td>
                           <td className="p-3.5 text-slate-600">{student.company || "—"}</td>
                           <td className="p-3.5">
-                            <span
-                              className={`font-semibold ${
-                                isLowAttendance ? "text-amber-700" : "text-blue-700"
-                              }`}
-                            >
-                              {formatAttendancePercentage(student.attendance.percentage)}
+                            <span className="font-semibold text-blue-700">
+                              {formatAttendanceDays(student.attendance)}
                             </span>
-                            {isLowAttendance && (
-                              <span className="ml-2 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 border border-amber-200">
-                                Low
-                              </span>
-                            )}
                           </td>
                           <td className="p-3.5 text-right">
                             <Link
@@ -325,7 +296,7 @@ export default function MentorAssignedStudentsPage() {
 
                 {paginatedStudents.length === 0 && (
                   <div className="py-12 text-center text-sm text-slate-500">
-                    {searchTerm || selectedBranch !== "ALL" || attendanceFilter !== "ALL"
+                    {searchTerm || selectedBranch !== "ALL"
                       ? "No students match your search or filter criteria."
                       : "No students are currently assigned to you."}
                   </div>

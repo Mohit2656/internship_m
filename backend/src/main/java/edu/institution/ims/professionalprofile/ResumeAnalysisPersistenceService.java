@@ -10,12 +10,14 @@ public class ResumeAnalysisPersistenceService {
     private final StudentResumeRepository resumes;
     private final ResumeAnalysisRepository analyses;
     private final SkillSuggestionGenerator suggestionGenerator;
+    private final SkillNormalizer skillNormalizer;
     private final edu.institution.ims.notification.NotificationService notifications;
 
     public ResumeAnalysisPersistenceService(StudentProfessionalProfileRepository profiles, StudentResumeRepository resumes,
-            ResumeAnalysisRepository analyses, SkillSuggestionGenerator suggestionGenerator,
+            ResumeAnalysisRepository analyses, SkillSuggestionGenerator suggestionGenerator, SkillNormalizer skillNormalizer,
             edu.institution.ims.notification.NotificationService notifications) {
         this.profiles = profiles; this.resumes = resumes; this.analyses = analyses; this.suggestionGenerator = suggestionGenerator;
+        this.skillNormalizer = skillNormalizer;
         this.notifications = notifications;
     }
 
@@ -42,15 +44,22 @@ public class ResumeAnalysisPersistenceService {
         StudentResume resume = resumes.findById(resumeId).orElseThrow();
         ResumeAnalysis analysis = analyses.findByResumeId(resumeId).orElseThrow();
         if (analysis.getStatus() != ResumeParsingStatus.PENDING) throw new IllegalStateException("Resume analysis is not pending");
-        analysis.complete(result);
+        var recognizedSkills = result.skills().stream()
+                .map(skillNormalizer::recognize)
+                .flatMap(java.util.Optional::stream)
+                .collect(java.util.stream.Collectors.toMap(NormalizedSkill::normalizedName, NormalizedSkill::displayName,
+                        (first, ignored) -> first, java.util.LinkedHashMap::new));
+        AiResumeResult recognizedResult = new AiResumeResult(result.modelName(), result.modelVersion(),
+                java.util.List.copyOf(recognizedSkills.values()), result.experience(), result.education(), result.certifications());
+        analysis.complete(recognizedResult);
         resume.markAnalysisParsed();
         resumes.save(resume);
         ResumeAnalysis saved = analyses.saveAndFlush(analysis);
         suggestionGenerator.generate(saved);
         if(resume.isActive()) notifications.create(resume.getProfessionalProfile().getStudent().getId(),
                 "resume-parsed:"+resumeId,"RESUME_PARSED","Resume analysis complete",
-                "Review and correct your extracted resume information before using it for opportunity matching.",null,null,
-                "/student/professional-profile#resume-analysis",saved.getCompletedAt());
+                "Recognized resume skills were synchronized with your professional profile.",null,null,
+                "/student/professional-profile#skills",saved.getCompletedAt());
         return ResumeAnalysisResponse.from(saved);
     }
 

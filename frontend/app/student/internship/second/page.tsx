@@ -43,15 +43,27 @@ export default function SecondInternshipPage() {
     setError("");
     const payload = {
       ...data,
-      otherCompanyType: data.companyType === "OTHER" ? data.otherCompanyType : null,
-      durationMonths: Number(data.durationMonths),
-      totalWeeks: Number(data.totalWeeks),
-      stipendPerMonth: Number(data.stipendPerMonth),
-      fullTimeEmploymentOffered: data.fullTimeEmploymentOffered === "true",
+      companyName: data.companyName ? data.companyName.trim() : null,
+      companyType: data.companyType || null,
+      otherCompanyType: data.companyType === "OTHER" ? (data.otherCompanyType?.trim() || null) : null,
+      companyAddress: data.companyAddress ? data.companyAddress.trim() : null,
+      companyPhone: data.companyPhone ? data.companyPhone.trim() : null,
+      industrySupervisorName: data.industrySupervisorName ? data.industrySupervisorName.trim() : null,
+      industrySupervisorDesignation: data.industrySupervisorDesignation ? data.industrySupervisorDesignation.trim() : null,
+      industrySupervisorContact: data.industrySupervisorContact ? data.industrySupervisorContact.trim() : null,
+      durationMonths: data.durationMonths ? Number(data.durationMonths) : null,
+      startDate: data.startDate || null,
+      endDate: data.endDate || null,
+      totalWeeks: data.totalWeeks ? Number(data.totalWeeks) : null,
+      internshipMode: data.internshipMode || null,
+      stipendPerMonth: data.stipendPerMonth !== "" ? Number(data.stipendPerMonth) : null,
+      fullTimeEmploymentOffered: data.fullTimeEmploymentOffered === "true" ? true : data.fullTimeEmploymentOffered === "false" ? false : null,
+      workplace: data.workplace || null,
     };
     try {
       const r = await api.post<InternshipDetails>("/student/internship/second", payload);
       setExisting(r.data);
+      api.get<InternshipOnboarding>("/student/internship-onboarding?internshipNumber=2").then(ob => setOnboarding(ob.data)).catch(() => {});
     } catch (c) {
       if (axios.isAxiosError<ApiError>(c)) {
         setError(c.response?.data?.message ?? "Internship 2 could not be saved.");

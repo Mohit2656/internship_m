@@ -66,7 +66,7 @@ function calculateDashboardProfileCompletion(params: {
     { label: "Personal Email", done: hasDashboardValue(profile?.personalEmail) },
     { label: "Phone Number", done: hasDashboardValue(profile?.phoneNumber) },
     { label: "Blood Group", done: hasDashboardValue(profile?.bloodGroup) },
-    { label: "Roll Number", done: hasDashboardValue(profile?.rollNumber) },
+    { label: "UID / Roll Number", done: hasDashboardValue(profile?.uid) || hasDashboardValue(profile?.rollNumber) },
     { label: "Academic Year", done: hasDashboardValue(profile?.academicYear) },
     { label: "Semester", done: hasDashboardValue(profile?.semester) },
     { label: "Permanent Address", done: hasDashboardValue(profile?.permanentAddress) },
@@ -307,8 +307,10 @@ export default function StudentDashboard() {
   }
 
   const latestSecondRequest = secondRequests[0] ?? null;
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const isInternshipStarted = Boolean(details && details.startDate && details.startDate <= todayStr);
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const selectedDetails = activeTab === 2 ? secondDetails : details;
+  const isInternshipStarted = Boolean(selectedDetails?.startDate && selectedDetails.startDate <= todayStr);
   const studentFirstName = profile?.studentName?.trim().split(/\s+/)[0] || "Student";
 
   // Actionable items
@@ -425,7 +427,7 @@ export default function StudentDashboard() {
               </h1>
               <p className="mt-1 text-sm text-slate-600">
                 {isInternshipStarted
-                  ? `Active internship at ${details?.companyName}. Track attendance and reports.`
+                  ? `Active internship at ${selectedDetails?.companyName}. Track attendance and reports.`
                   : "Institutional internship registration and preparation portal."}
               </p>
             </div>
@@ -512,22 +514,27 @@ export default function StudentDashboard() {
 
             const activeInternshipId =
               activeTab === 2 && secondDetails ? secondDetails.id : details ? details.id : undefined;
+            const attendanceDetails = activeTab === 2 ? secondDetails : details;
+            const attendanceUnavailable = !attendanceDetails;
+            const isCompleted = Boolean(attendanceDetails?.endDate && attendanceDetails.endDate < todayStr);
+            const futureStart = Boolean(attendanceDetails?.startDate && attendanceDetails.startDate > todayStr);
+            const isOngoing = Boolean(attendanceDetails?.startDate && attendanceDetails.startDate <= todayStr && !isCompleted);
 
-            return !isInternshipStarted ? (
-              /* PRE-COMMENCEMENT: REGISTRATION & ONBOARDING PROMINENT */
-              <div className="mt-6 space-y-6">
-                {renderRecentNotifications()}
-                {!loading && availableInternships.length > 0 && (
-                  <div className="mt-6">
-                    <InternshipLocationManager
-                      scope="student"
-                      internships={availableInternships}
-                      initialInternshipId={activeInternshipId}
-                    />
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <TodayAttendanceCard />
+            if (isCompleted) {
+              return (
+                /* POST-COMPLETION: INTERNSHIP COMPLETED & HISTORICAL ATTENDANCE */
+                <div className="mt-6 space-y-6">
+                  <section className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-6">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white font-bold text-sm">✓</span>
+                      <div>
+                        <h2 className="text-lg font-bold text-emerald-950">Internship Completed</h2>
+                        <p className="mt-1 text-sm text-emerald-800">
+                          Your internship at {attendanceDetails?.companyName} ended on {attendanceDetails?.endDate}.
+                        </p>
+                      </div>
+                    </div>
+                  </section>
                   <div className="flex justify-end">
                     <Link
                       href="/student/attendance"
@@ -537,9 +544,51 @@ export default function StudentDashboard() {
                       <span aria-hidden="true">→</span>
                     </Link>
                   </div>
+                  {renderRecentNotifications()}
+                  {!loading && availableInternships.length > 0 && (
+                    <div className="mt-6">
+                      <InternshipLocationManager
+                        scope="student"
+                        internships={availableInternships}
+                        initialInternshipId={activeInternshipId}
+                      />
+                    </div>
+                  )}
                 </div>
-              </div>
-            ) : (
+              );
+            }
+
+            if (!isOngoing) {
+              /* PRE-COMMENCEMENT: REGISTRATION & ONBOARDING PROMINENT */
+              return (
+                <div className="mt-6 space-y-6">
+                  {renderRecentNotifications()}
+                  {!loading && availableInternships.length > 0 && (
+                    <div className="mt-6">
+                      <InternshipLocationManager
+                        scope="student"
+                        internships={availableInternships}
+                        initialInternshipId={activeInternshipId}
+                      />
+                    </div>
+                  )}
+                  {futureStart && (
+                    <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-sm text-blue-900">
+                      Your internship starts on {attendanceDetails?.startDate}. Attendance will become available when your internship begins.
+                    </section>
+                  )}
+                  {!attendanceUnavailable && (
+                    <div className="flex justify-end">
+                      <Link href="/student/attendance" className="text-xs font-semibold text-blue-700 hover:underline">
+                        View attendance history →
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
               /* POST-COMMENCEMENT: ATTENDANCE PROMINENT AT TOP */
               <div className="mt-6 space-y-6">
                 <div className="space-y-2">

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import axios from "axios";
 import { api } from "@/lib/api";
 import { useAcademicSessions } from "@/lib/academic-sessions";
 import { SavedReportDto } from "./SavedReportsList";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 
 export type FieldKind = "TEXT" | "NUMBER" | "DATE" | "DATETIME" | "BOOLEAN" | "CATEGORICAL";
 
@@ -218,7 +219,7 @@ const OPERATOR_LABELS: Record<string, string> = {
 };
 
 const STEPS = [
-  { id: 1, title: "Report Details", subtitle: "Title, Session & Scope" },
+  { id: 1, title: "Title, Session & Scope", subtitle: "Report Details" },
   { id: 2, title: "Select Columns", subtitle: "Choose Display Fields" },
   { id: 3, title: "Apply Filters", subtitle: "Rules & Conditions" },
   { id: 4, title: "Group & Sort", subtitle: "Layout & Ordering" },
@@ -227,7 +228,6 @@ const STEPS = [
 
 const PRESETS = [
   { id: "COMPANY_ALL", label: "All Students by Company", title: "All Students Grouped by Company" },
-  { id: "ATTENDANCE_LOW", label: "Attendance Below 75%", title: "Students with Attendance Below 75%" },
   { id: "HIGH_CTC", label: "CTC Above 6 LPA", title: "Students with Annual CTC Above 6 LPA" },
   { id: "REMOTE", label: "Remote Internships", title: "Students in Remote Internships" },
   { id: "HYBRID", label: "Hybrid Internships", title: "Students in Hybrid Internships" },
@@ -272,6 +272,7 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
   const [previewPage, setPreviewPage] = useState(0);
   const [tableSearch, setTableSearch] = useState("");
   const [exportingFormat, setExportingFormat] = useState<string | null>(null);
+  const exportPending = useRef(new Set<string>());
   const [error, setError] = useState("");
   const [exportError, setExportError] = useState("");
   const [savedSuccessNotice, setSavedSuccessNotice] = useState("");
@@ -584,19 +585,6 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
         setSortDirection("ASC");
         setFilterGroup({ conjunction: "AND", rules: [], groups: [] });
         break;
-      case "ATTENDANCE_LOW":
-        setReportTitle("Students with Attendance Below 75%");
-        setScope("INTERNSHIP");
-        setSelectedColumns(DEFAULT_COLUMNS);
-        setGroupBy("companyName");
-        setSortBy("attendancePercentage");
-        setSortDirection("ASC");
-        setFilterGroup({
-          conjunction: "AND",
-          rules: [{ field: "attendancePercentage", operator: "LESS_THAN", value: "75" }],
-          groups: [],
-        });
-        break;
       case "HIGH_CTC":
         setReportTitle("Students with Annual CTC Above 6 LPA");
         setScope("INTERNSHIP");
@@ -714,6 +702,8 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
 
   // Exports
   async function triggerExport(format: "PDF" | "EXCEL" | "CSV") {
+    const actionKey = `custom-report-export:${format}`;
+    if (exportPending.current.has(actionKey)) return;
     if (!reportTitle.trim()) {
       const msg = "Please enter a report title before exporting.";
       setError(msg);
@@ -733,7 +723,7 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
       return;
     }
 
-    setExportingFormat(format);
+    exportPending.current.add(actionKey); setExportingFormat(format);
     setError("");
     setExportError("");
 
@@ -815,7 +805,7 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
       setError(errorMsg);
       setExportError(errorMsg);
     } finally {
-      setExportingFormat(null);
+      exportPending.current.delete(actionKey); setExportingFormat(null);
     }
   }
 
@@ -1482,53 +1472,65 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
       </div>
 
       {/* 5-Step Stepper Navigation */}
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-xs">
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 sm:p-4 shadow-xs">
         <nav aria-label="Report Builder Steps">
-          <ol className="flex flex-wrap items-center justify-between gap-2">
+          <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
             {STEPS.map(step => {
               const isActive = currentStep === step.id;
               const isCompleted = step.id < currentStep;
               const isAccessible = step.id <= maxStepReached;
 
               return (
-                <li key={step.id} className="flex-1 min-w-[135px]">
+                <li key={step.id} className="w-full">
                   <button
                     type="button"
                     disabled={!isAccessible}
                     onClick={() => goToStep(step.id)}
                     aria-current={isActive ? "step" : undefined}
-                    className={`w-full text-left p-2 rounded-xl transition flex items-center gap-2.5 ${
+                    className={`report-nav-item w-full min-h-[3.25rem] text-left py-2.5 px-3 sm:px-3.5 rounded-xl transition flex items-center gap-3 border ${
                       isActive
-                        ? "bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 shadow-2xs"
+                        ? "bg-blue-600 dark:bg-blue-600 border-blue-600 dark:border-blue-500 text-white shadow-sm ring-1 ring-blue-500"
                         : isCompleted
-                        ? "bg-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60 border border-transparent"
-                        : "bg-transparent opacity-50 cursor-not-allowed border border-transparent"
+                        ? "bg-blue-50/70 dark:bg-slate-800/90 border-blue-200 dark:border-blue-900/60 hover:bg-blue-100/70 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-200"
+                        : isAccessible
+                        ? "bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
+                        : "bg-slate-50/80 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/60 opacity-60 cursor-not-allowed text-slate-600 dark:text-slate-400"
                     }`}
                   >
                     <span
-                      className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                      className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition ${
                         isActive
-                          ? "bg-blue-600 text-white shadow-2xs"
+                          ? "bg-white dark:bg-white text-blue-700 font-extrabold shadow-xs ring-2 ring-blue-300 dark:ring-blue-400"
                           : isCompleted
-                          ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
-                          : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+                          ? "bg-blue-600 dark:bg-blue-500 text-white shadow-2xs"
+                          : isAccessible
+                          ? "bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600"
+                          : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
                       }`}
                     >
                       {isCompleted ? "✓" : step.id}
                     </span>
-                    <div className="truncate">
+                    <div className="min-w-0 flex-1">
                       <span
-                        className={`block text-xs truncate ${
+                        className={`block text-xs sm:text-sm truncate leading-tight ${
                           isActive
-                            ? "font-bold text-blue-950 dark:text-blue-100"
+                            ? "font-bold text-white"
                             : isCompleted
-                            ? "font-semibold text-slate-800 dark:text-slate-200"
-                            : "font-medium text-slate-500 dark:text-slate-400"
+                            ? "font-semibold text-slate-900 dark:text-slate-100"
+                            : "font-medium text-slate-800 dark:text-slate-200"
                         }`}
                       >
                         {step.title}
                       </span>
-                      <span className="block text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                      <span
+                        className={`block text-[11px] truncate mt-0.5 leading-snug ${
+                          isActive
+                            ? "text-blue-100 font-medium"
+                            : isCompleted
+                            ? "text-blue-800/80 dark:text-blue-300/80"
+                            : "text-slate-500 dark:text-slate-400"
+                        }`}
+                      >
                         {step.subtitle}
                       </span>
                     </div>
@@ -1618,7 +1620,7 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
                   setReportTitle(e.target.value);
                   markCustomized();
                 }}
-                placeholder="e.g. Low Attendance Student Summary - Fall 2026"
+                placeholder="e.g. Internship Attendance Summary - Fall 2026"
                 className="mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2 text-sm text-slate-800 dark:text-slate-100 font-semibold focus:ring-2 focus:ring-blue-500"
               />
               <p className="mt-1 text-[11px] text-slate-400">
@@ -2150,7 +2152,7 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
                 aria-label="Export report as official PDF"
                 className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-2xs transition disabled:opacity-50"
               >
-                {exportingFormat === "PDF" ? "Generating PDF…" : "Export Official PDF"}
+                {exportingFormat === "PDF" ? <LoadingSpinner label="Exporting PDF…"/> : "Export Official PDF"}
               </button>
 
               <button
@@ -2160,7 +2162,7 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
                 aria-label="Export report as Excel spreadsheet"
                 className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-2xs transition disabled:opacity-50"
               >
-                {exportingFormat === "EXCEL" ? "Generating Excel…" : "Export Excel (.xlsx)"}
+                {exportingFormat === "EXCEL" ? <LoadingSpinner label="Exporting Excel…"/> : "Export Excel (.xlsx)"}
               </button>
 
               <button
@@ -2170,7 +2172,7 @@ export function CustomReportBuilder({ initialReport, onSaved }: CustomReportBuil
                 aria-label="Export report as CSV file"
                 className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-2xs transition disabled:opacity-50"
               >
-                {exportingFormat === "CSV" ? "Generating CSV…" : "Export CSV"}
+                {exportingFormat === "CSV" ? <LoadingSpinner label="Exporting CSV…"/> : "Export CSV"}
               </button>
             </div>
 

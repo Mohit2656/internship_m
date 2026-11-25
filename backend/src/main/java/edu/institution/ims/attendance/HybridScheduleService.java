@@ -44,7 +44,12 @@ public class HybridScheduleService {
     }
 
     @Transactional(readOnly = true)
-    public HybridScheduleResponse getOwn(UserPrincipal principal) { return response(hybridInternship(principal.id())); }
+    public HybridScheduleResponse getOwn(UserPrincipal principal) { return getOwn(principal, null); }
+
+    @Transactional(readOnly = true)
+    public HybridScheduleResponse getOwn(UserPrincipal principal, Long internshipId) {
+        return response(hybridInternship(principal.id(), internshipId));
+    }
 
     @Transactional(readOnly = true)
     public HybridScheduleResponse getForMentor(Long studentId, UserPrincipal principal) {
@@ -56,7 +61,13 @@ public class HybridScheduleService {
     }
 
     private InternshipDetails hybridInternship(Long studentId) {
-        InternshipDetails internship = internships.findByOnboardingStudentId(studentId)
+        return hybridInternship(studentId, null);
+    }
+
+    private InternshipDetails hybridInternship(Long studentId, Long internshipId) {
+        InternshipDetails internship = (internshipId == null
+                ? internships.findByOnboardingStudentId(studentId)
+                : internships.findByIdAndOnboardingStudentId(internshipId, studentId))
                 .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "INTERNSHIP_DETAILS_NOT_FOUND",
                         "Internship details were not found"));
         if (internship.getInternshipMode() != InternshipMode.HYBRID) {

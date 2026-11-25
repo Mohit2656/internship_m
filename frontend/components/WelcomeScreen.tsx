@@ -9,8 +9,12 @@ export function WelcomeScreen() {
   useEffect(() => {
     // The root layout persists during internal navigation; full reloads mount it anew.
     // Authentication and page initialization run immediately behind this overlay.
+    try {
+      if (sessionStorage.getItem("ims:welcome-shown")) return;
+      sessionStorage.setItem("ims:welcome-shown", "true");
+    } catch {}
     setVisible(true);
-    const timer = window.setTimeout(() => setVisible(false), 3_000);
+    const timer = window.setTimeout(() => setVisible(false), 1_500);
     return () => window.clearTimeout(timer);
   }, []);
 

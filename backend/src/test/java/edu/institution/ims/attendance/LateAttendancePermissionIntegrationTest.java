@@ -56,6 +56,7 @@ class LateAttendancePermissionIntegrationTest {
     @Autowired MentorStudentAssignmentRepository assignments;
     @Autowired InternshipOnboardingRepository onboardings;
     @Autowired InternshipDetailsRepository internships;
+    @Autowired InternshipLocationRepository locations;
     @Autowired AttendanceRepository attendance;
     @Autowired AttendanceEvidenceRepository evidence;
     @Autowired AttendanceVerificationSessionRepository verificationSessions;
@@ -103,6 +104,7 @@ class LateAttendancePermissionIntegrationTest {
         evidence.deleteAll();
         attendance.deleteAll();
         verificationSessions.deleteAll();
+        locations.deleteAll();
         assignments.deleteAll();
         internships.deleteAll();
         onboardings.deleteAll();
@@ -281,7 +283,21 @@ class LateAttendancePermissionIntegrationTest {
 
         AttendanceRecord original2 = attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), int2.getId(), TODAY).orElseThrow();
         clock.setInstant(AFTER_NOON.plusSeconds(600));
-        change(mentorSession, student, true).andExpect(status().isOk());
+
+        // 1. Granting permission for Internship 1 must NOT enable Internship 2
+        change(mentorSession, student, internship.getId(), true).andExpect(status().isOk());
+        assertThat(permissions.isEnabled(student.getId(), internship.getId(), TODAY)).isTrue();
+        assertThat(permissions.isEnabled(student.getId(), int2.getId(), TODAY)).isFalse();
+
+        // Submitting for Internship 2 should fail because permission is only on Internship 1
+        mvc.perform(post("/api/v1/student/attendance/verification-session")
+                .queryParam("internshipId", String.valueOf(int2.getId()))
+                .cookie(studentSession))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_WINDOW_CLOSED"));
+
+        // 2. Granting permission for Internship 2 independently allows submission for Internship 2
+        change(mentorSession, student, int2.getId(), true).andExpect(status().isOk());
+        assertThat(permissions.isEnabled(student.getId(), int2.getId(), TODAY)).isTrue();
 
         String sessionRes = mvc.perform(post("/api/v1/student/attendance/verification-session")
                 .queryParam("internshipId", String.valueOf(int2.getId()))
@@ -312,9 +328,97 @@ class LateAttendancePermissionIntegrationTest {
         assertThat(result.getResponse().getStatus()).isEqualTo(201);
     }
 
+    @Test
+    void latePermissionDoesNotBypassSelectedInternshipWorkplaceApproval() throws Exception {
+        InternshipDetails physical = internship(student, (short) 2, InternshipMode.OFFICE_REPORTING, "Physical Company");
+        change(mentorSession, student, physical.getId(), true).andExpect(status().isOk());
+
+        mvc.perform(multipart("/api/v1/student/attendance/today/physical")
+                        .file(photo())
+                        .queryParam("internshipId", String.valueOf(physical.getId()))
+                        .param("latitude", "18.5204").param("longitude", "73.8567").param("accuracy", "10")
+                        .cookie(studentSession))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("WORKPLACE_NOT_APPROVED"));
+
+        assertThat(attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), physical.getId(), TODAY)).isEmpty();
+        assertThat(evidence.findAll()).isEmpty();
+    }
+
+    @Test
+    void dualInternshipSeparatePermissionsAndSubmissionsWhenBothMissed() throws Exception {
+        InternshipDetails int2 = internship(student, (short) 2, InternshipMode.ONLINE, "Company Two");
+        assertThat(absenceWriter.createIfMissing(internship.getId(), TODAY)).isTrue();
+        assertThat(absenceWriter.createIfMissing(int2.getId(), TODAY)).isTrue();
+
+        clock.setInstant(AFTER_NOON.plusSeconds(300));
+
+        // Mentor list shows separate options: 1 for secondStudent, 2 for student (Internship 1 and 2) -> total 3
+        mvc.perform(get(PERMISSIONS).cookie(mentorSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[?(@.studentUserId == " + student.getId() + ")].internshipNumber")
+                        .value(org.hamcrest.Matchers.containsInAnyOrder(1, 2)));
+
+        // 1. Grant permission only to Internship 1
+        change(mentorSession, student, internship.getId(), true).andExpect(status().isOk());
+        assertThat(permissions.isEnabled(student.getId(), internship.getId(), TODAY)).isTrue();
+        assertThat(permissions.isEnabled(student.getId(), int2.getId(), TODAY)).isFalse();
+
+        // 2. Student submits Internship 1 late
+        MockMultipartFile ai1 = aiEvidence(studentSession, true);
+        mvc.perform(remote(studentSession).file(ai1).queryParam("internshipId", String.valueOf(internship.getId())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.submittedLate").value(true));
+
+        // Internship 2 is still closed
+        mvc.perform(post("/api/v1/student/attendance/verification-session")
+                .queryParam("internshipId", String.valueOf(int2.getId()))
+                .cookie(studentSession))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_WINDOW_CLOSED"));
+
+        // 3. Mentor now grants permission to Internship 2 as well
+        change(mentorSession, student, int2.getId(), true).andExpect(status().isOk());
+        assertThat(permissions.isEnabled(student.getId(), int2.getId(), TODAY)).isTrue();
+
+        // 4. Student submits Internship 2 late
+        String sessionRes = mvc.perform(post("/api/v1/student/attendance/verification-session")
+                .queryParam("internshipId", String.valueOf(int2.getId()))
+                .cookie(studentSession))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        var issued = json.readTree(sessionRes);
+        String payload = json.writeValueAsString(Map.of(
+                "sessionId", issued.get("sessionId").asText(),
+                "challenge", issued.get("challenge").asText(),
+                "faceCount", 1, "qualityPassed", true, "livenessPassed", true,
+                "modelVersion", "mediapipe-face-landmarker@1.0.1/test"));
+        MockMultipartFile ai2 = new MockMultipartFile("aiEvidence", "ai-evidence.json", "application/json", payload.getBytes(StandardCharsets.UTF_8));
+        mvc.perform(remote(studentSession).file(ai2).queryParam("internshipId", String.valueOf(int2.getId())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.submittedLate").value(true));
+
+        // Both attendance records are now PRESENT and submitted late independently
+        AttendanceRecord rec1 = attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), internship.getId(), TODAY).orElseThrow();
+        AttendanceRecord rec2 = attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), int2.getId(), TODAY).orElseThrow();
+        assertThat(rec1.isSubmittedLate()).isTrue();
+        assertThat(rec2.isSubmittedLate()).isTrue();
+        assertThat(rec1.getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+        assertThat(rec2.getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+    }
+
     private ResultActions change(Cookie session, User target, boolean enabled) throws Exception {
-        return mvc.perform(put(PERMISSIONS + "/{id}", target.getId()).cookie(session)
-                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("enabled", enabled))));
+        return change(session, target, null, enabled);
+    }
+
+    private ResultActions change(Cookie session, User target, Long internshipId, boolean enabled) throws Exception {
+        var req = put(PERMISSIONS + "/{id}", target.getId()).cookie(session)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (internshipId != null) {
+            req.queryParam("internshipId", String.valueOf(internshipId));
+            req.content(json.writeValueAsString(Map.of("enabled", enabled, "internshipId", internshipId)));
+        } else {
+            req.content(json.writeValueAsString(Map.of("enabled", enabled)));
+        }
+        return mvc.perform(req);
     }
 
     private MockMultipartHttpServletRequestBuilder remote(Cookie session) throws Exception {
@@ -335,6 +439,12 @@ class LateAttendancePermissionIntegrationTest {
                 "challenge", issued.get("challenge").asText(), "faceCount", 1, "qualityPassed", true,
                 "livenessPassed", livenessPassed, "modelVersion", "mediapipe-face-landmarker@1.0.1/test"));
         return new MockMultipartFile("aiEvidence", "ai-evidence.json", "application/json", payload.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private MockMultipartFile photo() throws Exception {
+        var bytes = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB), "png", bytes);
+        return new MockMultipartFile("photo", "capture.png", "image/png", bytes.toByteArray());
     }
 
     private Cookie login(User user) throws Exception {

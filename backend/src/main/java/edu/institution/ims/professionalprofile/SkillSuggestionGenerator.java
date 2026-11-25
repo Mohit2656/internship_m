@@ -1,6 +1,7 @@
 package edu.institution.ims.professionalprofile;
 
 import org.springframework.stereotype.Component;
+import java.util.List;
 
 @Component
 public class SkillSuggestionGenerator {
@@ -14,14 +15,21 @@ public class SkillSuggestionGenerator {
 
     public void generate(ResumeAnalysis analysis) {
         StudentProfessionalProfile profile = analysis.getResume().getProfessionalProfile();
+        List<StudentSkill> previousResumeSkills = skills.findAllByProfessionalProfileIdAndSourceAndActiveTrue(
+                profile.getId(), StudentSkillSource.AI_EXTRACTED);
+        previousResumeSkills.stream()
+                .filter(skill -> skill.getSourceResumeAnalysis() == null
+                        || !skill.getSourceResumeAnalysis().getId().equals(analysis.getId()))
+                .forEach(StudentSkill::deactivate);
+        skills.saveAll(previousResumeSkills);
+        skills.flush();
+
         for (ResumeExtractedSkill extracted : analysis.getSkills()) {
-            if (suggestions.existsByExtractedSkillId(extracted.getId())) continue;
-            NormalizedSkill value;
-            try { value = normalizer.normalize(extracted.getName()); }
-            catch (ResumeException ignored) { continue; }
+            NormalizedSkill value = normalizer.recognize(extracted.getName()).orElse(null);
+            if (value == null) continue;
             StudentSkill existing = skills.findByProfessionalProfileIdAndNormalizedNameAndActiveTrue(profile.getId(), value.normalizedName()).orElse(null);
-            suggestions.save(new StudentSkillSuggestion(profile, analysis, extracted, value, existing));
+            if (existing == null) skills.save(new StudentSkill(profile, value, StudentSkillSource.AI_EXTRACTED, analysis));
         }
-        suggestions.flush();
+        skills.flush();
     }
 }

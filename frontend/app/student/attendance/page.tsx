@@ -12,6 +12,7 @@ import {
   isAutomaticAbsence,
   livenessLabel,
 } from "@/lib/attendance";
+import type { AttendanceTotals } from "@/components/AttendanceAbsenceOverview";
 import { LocationVerificationResult } from "@/components/LocationVerificationResult";
 import { AttendanceReviewFeedback } from "@/components/AttendanceReviewPanel";
 import { AttendanceLocations } from "@/components/AttendanceLocations";
@@ -28,6 +29,7 @@ export default function StudentAttendancePage() {
   const [activeTab, setActiveTab] = useState<1 | 2>(1);
   const [internships, setInternships] = useState<InternshipDetails[]>([]);
   const [records, setRecords] = useState<Attendance[]>([]);
+  const [summary, setSummary] = useState<AttendanceTotals | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"ALL" | "PRESENT" | "ABSENT" | "PENDING">("ALL");
@@ -58,9 +60,18 @@ export default function StudentAttendancePage() {
 
     if (!targetInternship) {
       setRecords([]);
+      setSummary(null);
       setLoading(false);
       return;
     }
+
+    api
+      .get<{ totals: AttendanceTotals }>("/student/attendance/summary", {
+        params: { internshipId: targetInternship.id },
+        signal: abort.signal,
+      })
+      .then(({ data }) => setSummary(data.totals))
+      .catch(() => {});
 
     api
       .get<Attendance[]>("/student/attendance", {
@@ -95,16 +106,28 @@ export default function StudentAttendancePage() {
     setDateSearch("");
   }
 
-  const total = records.length;
-  const absentCount = records.filter(
-    (r) => r.attendanceResult === "ABSENT" || isAutomaticAbsence(r)
-  ).length;
-  const presentCount = records.filter((r) => r.attendanceResult === "PRESENT").length;
-  const pendingCount = records.filter(
-    (r) => r.attendanceResult === "PENDING_MENTOR_REVIEW"
-  ).length;
-  const attendancePercentage =
-    total > 0 ? ((presentCount / total) * 100).toFixed(1) : "—";
+  const totalRecordedDays = records.length;
+  // Attendance counts - count distinct days to prevent duplicate counts
+  // Total submitted days = all student-submitted days (excluding automatic absences)
+  const submittedDates = new Set(
+    records.filter((r) => !isAutomaticAbsence(r)).map((r) => r.attendanceDate)
+  );
+  const totalSubmittedDays = summary?.submittedDays ?? submittedDates.size;
+
+  const presentDates = new Set(
+    records.filter((r) => r.attendanceResult === "PRESENT").map((r) => r.attendanceDate)
+  );
+  const presentCount = summary?.presentDays ?? presentDates.size;
+
+  const absentDates = new Set(
+    records.filter((r) => r.attendanceResult === "ABSENT" || isAutomaticAbsence(r)).map((r) => r.attendanceDate)
+  );
+  const absentCount = summary?.absentDays ?? absentDates.size;
+
+  const pendingDates = new Set(
+    records.filter((r) => r.attendanceResult === "PENDING_MENTOR_REVIEW").map((r) => r.attendanceDate)
+  );
+  const pendingCount = summary?.pendingDays ?? pendingDates.size;
 
   const filtered = records.filter((record) => {
     if (filter === "PRESENT" && record.attendanceResult !== "PRESENT") return false;
@@ -223,35 +246,35 @@ export default function StudentAttendancePage() {
 
           {/* Attendance Stats Cards */}
           <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Total Days
+            <div className="rounded-2xl border border-blue-200/80 bg-blue-50/40 p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-blue-800">
+                Total Submitted Days
               </p>
-              <p className="mt-2 text-2xl font-bold text-slate-900">{total}</p>
-              <p className="mt-1 text-xs text-slate-500">Recorded working days</p>
+              <p className="mt-2 text-2xl font-bold text-blue-700">
+                {totalSubmittedDays === 1 ? "1 Submitted Day" : `${totalSubmittedDays} Days`}
+              </p>
+              <p className="mt-1 text-xs text-blue-600">Student submissions</p>
             </div>
             <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-5">
               <p className="text-xs font-semibold uppercase tracking-wider text-emerald-800">
-                Present
+                Present Days
               </p>
               <p className="mt-2 text-2xl font-bold text-emerald-700">{presentCount}</p>
               <p className="mt-1 text-xs text-emerald-600">Verified attendances</p>
             </div>
             <div className="rounded-2xl border border-red-200/80 bg-red-50/40 p-5">
               <p className="text-xs font-semibold uppercase tracking-wider text-red-800">
-                Absent
+                Absent Days
               </p>
               <p className="mt-2 text-2xl font-bold text-red-700">{absentCount}</p>
               <p className="mt-1 text-xs text-red-600">Unsubmitted or absent</p>
             </div>
-            <div className="rounded-2xl border border-blue-200/80 bg-blue-50/40 p-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-blue-800">
-                Attendance %
+            <div className="rounded-2xl border border-amber-200/80 bg-amber-50/40 p-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-amber-800">
+                Pending Review
               </p>
-              <p className="mt-2 text-2xl font-bold text-blue-700">
-                {attendancePercentage === "—" ? "—" : `${attendancePercentage}%`}
-              </p>
-              <p className="mt-1 text-xs text-blue-600">Cumulative rate</p>
+              <p className="mt-2 text-2xl font-bold text-amber-700">{pendingCount}</p>
+              <p className="mt-1 text-xs text-amber-600">Awaiting mentor</p>
             </div>
           </div>
 
@@ -272,7 +295,7 @@ export default function StudentAttendancePage() {
                       : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                   }`}
                 >
-                  All ({total})
+                  All ({totalRecordedDays})
                 </button>
                 <button
                   type="button"

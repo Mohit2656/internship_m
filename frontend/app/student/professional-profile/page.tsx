@@ -4,13 +4,11 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { ResumeAnalysisCard } from "@/components/ResumeAnalysisCard";
-import { ResumeCorrectionEditor } from "@/components/ResumeCorrectionEditor";
 import { SkillProfileCard } from "@/components/SkillProfileCard";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/monthly-progress";
 import {
-  downloadResume, notParsedAnalysis, ProfessionalProfile, readableFileSize, ResumeAnalysis, resumeAccept, resumeError, resumeMaxBytes,
+  downloadResume, ProfessionalProfile, readableFileSize, ResumeAnalysis, resumeAccept, resumeError, resumeMaxBytes,
 } from "@/lib/professional-profile";
 
 export default function ProfessionalProfilePage() {
@@ -22,10 +20,7 @@ export default function ProfessionalProfilePage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
   const [skillRefreshKey, setSkillRefreshKey] = useState(0);
-  const currentAnalysis = analysis?.resumeId === profile?.resume?.id ? analysis : null;
 
   useEffect(() => {
     api.get<ProfessionalProfile>("/student/professional-profile")
@@ -34,12 +29,6 @@ export default function ProfessionalProfilePage() {
         setHeadline(data.headline ?? "");
         setCareerInterests(data.careerInterests ?? "");
         setEditing(!data.id);
-        if (data.resume) {
-          setAnalysisLoading(true);
-          api.get<ResumeAnalysis>("/student/resume/analysis").then(response => setAnalysis(response.data))
-            .catch(() => setError("Your resume analysis could not be loaded."))
-            .finally(() => setAnalysisLoading(false));
-        }
       })
       .catch(() => setError("Your professional profile could not be loaded."))
       .finally(() => setLoading(false));
@@ -71,7 +60,7 @@ export default function ProfessionalProfilePage() {
       const { data } = await api.post<ProfessionalProfile>("/student/resume", body,
         { headers: { "Content-Type": "multipart/form-data" } });
       setProfile(data);
-      if(data.resume){setAnalysis({...notParsedAnalysis(data.resume.id),status:"PENDING"});setAnalysisLoading(true);try{const analyzed=await api.post<ResumeAnalysis>("/student/resume/analysis");setAnalysis(analyzed.data);setSkillRefreshKey(value=>value+1);setNotice(replacing?"Resume updated and skills extracted for your review.":"Resume uploaded and skills extracted for your review.")}catch(cause){setAnalysis({...notParsedAnalysis(data.resume.id),status:"FAILED"});setError(resumeError(cause,"Resume uploaded, but skills could not be extracted. Retry analysis when ready."))}finally{setAnalysisLoading(false)}}
+      if(data.resume){try{await api.post<ResumeAnalysis>("/student/resume/analysis");setSkillRefreshKey(value=>value+1);setNotice(replacing?"Resume updated and recognized skills synchronized.":"Resume uploaded and recognized skills synchronized.")}catch(cause){setError(resumeError(cause,"Resume uploaded, but recognized skills could not be synchronized. Re-upload the resume to retry."))}}
     } catch (cause) {
       setError(resumeError(cause, "Your resume could not be uploaded."));
     } finally { setBusy(""); }
@@ -85,24 +74,8 @@ export default function ProfessionalProfilePage() {
     finally { setBusy(""); }
   }
 
-  async function analyze() {
-    if (!profile?.resume || analysisLoading || analysis?.status === "PENDING") return;
-    setAnalysis({ ...(analysis ?? notParsedAnalysis(profile.resume.id)), status: "PENDING" });
-    setAnalysisLoading(true); setError(""); setNotice("");
-    try {
-      const { data } = await api.post<ResumeAnalysis>("/student/resume/analysis");
-      setAnalysis(data); setSkillRefreshKey(value => value + 1); setNotice("Resume analysis completed.");
-    } catch (cause) {
-      try {
-        const { data } = await api.get<ResumeAnalysis>("/student/resume/analysis");
-        setAnalysis(data);
-      } catch { setAnalysis(current => current ? { ...current, status: "FAILED" } : current); }
-      setError(resumeError(cause, "We couldn't analyze this resume. Please try again."));
-    } finally { setAnalysisLoading(false); }
-  }
-
   return <ProtectedRoute role="STUDENT"><AppFrame><main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
-    <div className="flex flex-wrap items-center justify-between gap-3"><Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">← Back to dashboard</Link><Link data-button-variant="outline" href="/student/skill-gaps" className="ui-button text-sm">Skill Gap Intelligence</Link></div>
+    <div><Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">← Back to dashboard</Link></div>
     <div className="mt-5"><p className="text-sm font-semibold text-blue-700">Career workspace</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Professional Profile</h1><p className="mt-2 text-slate-600">Add a career summary and keep one current resume ready for future opportunity matching.</p></div>
     {loading ? <p className="py-20 text-center text-sm text-slate-500">Loading professional profile…</p> : <div className="mt-8 space-y-6">
       {(error || notice) && <p role={error ? "alert" : "status"} className={`rounded-xl px-4 py-3 text-sm ${error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"}`}>{error || notice}</p>}
@@ -117,8 +90,6 @@ export default function ProfessionalProfilePage() {
       <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Resume</p><div className="mt-2 flex flex-wrap items-start justify-between gap-5"><div><h2 className="text-xl font-bold">{profile?.resume ? "Current Resume" : "No resume uploaded"}</h2>{profile?.resume ? <><p className="mt-2 text-sm font-semibold text-slate-900">{profile.resume.originalFilename}</p><p className="mt-1 text-sm text-slate-600">Uploaded {formatDateTime(profile.resume.uploadedAt)} · {readableFileSize(profile.resume.fileSize)}</p></> : <p className="mt-2 text-sm text-slate-600">Upload a PDF or DOCX resume. Maximum file size: 5 MB.</p>}</div><div className="flex flex-wrap gap-3">{profile?.resume && <button data-button-variant="outline" disabled={!!busy} onClick={download} className="text-sm">{busy === "download" ? "Downloading…" : "View / Download"}</button>}<label className={`cursor-pointer rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white ${busy ? "pointer-events-none opacity-50" : ""}`}>{busy === "resume" ? "Uploading…" : profile?.resume ? "Re-upload Resume" : "Upload Resume"}<input type="file" accept={resumeAccept} onChange={upload} className="sr-only" /></label></div></div>
       </section>
-      {profile?.resume && currentAnalysis?.status === "PARSED" ? <ResumeCorrectionEditor key={profile.resume.id} endpoint="/student/resume/analysis/corrections" resumeId={profile.resume.id} onSaved={() => setSkillRefreshKey(value => value + 1)} />
-        : <ResumeAnalysisCard hasResume={Boolean(profile?.resume)} loading={analysisLoading} analysis={currentAnalysis} onAnalyze={analyze} />}
       <SkillProfileCard refreshKey={skillRefreshKey} />
     </div>}
   </main></AppFrame></ProtectedRoute>;

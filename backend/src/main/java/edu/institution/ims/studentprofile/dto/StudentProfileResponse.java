@@ -8,6 +8,5 @@ public record StudentProfileResponse(Long id, String studentName, String branch,
         String permanentAddress, String currentAddress, String personalEmail, String instituteEmail, String phoneNumber,
         String guardianName, String guardianContact, String emergencyContact, String bloodGroup, String maskedAadhaar,
         String facultyMentorName, String facultyMentorContact, String internshipCoordinatorName, String internshipCoordinatorContact,
-        String cdcCoordinatorName, String cdcCoordinatorContact, String academicYear, int semester, BigDecimal currentCgpa, ProfileStatus profileStatus,
+        String cdcCoordinatorName, String cdcCoordinatorContact, String academicYear, Integer semester, BigDecimal currentCgpa, ProfileStatus profileStatus,
         Instant createdAt, Instant updatedAt) {}
-

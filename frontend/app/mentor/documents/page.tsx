@@ -7,6 +7,7 @@ import { InternshipOnboardingDetails } from "@/components/InternshipOnboardingDe
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { api } from "@/lib/api";
 import { InternshipOnboarding } from "@/lib/internship-onboarding";
+import { internshipDisplayLabel } from "@/lib/internship-label";
 
 type AssignedStudent = { userId: number; name: string | null; uid: string | null };
 
@@ -56,7 +57,7 @@ function MentorDocumentsContent() {
       setStudentInternships(intersRes.data || []);
       setOnboarding(onbRes.data);
     } catch {
-      setError("The student's Internship 1 documents could not be loaded.");
+      setError("The student's internship documents could not be loaded.");
     }
   }
 
@@ -180,7 +181,7 @@ function MentorDocumentsContent() {
                 ) : (
                   <div className="inline-flex items-center gap-2 rounded-lg bg-slate-100/80 px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-200">
                     <span className="h-2 w-2 rounded-full bg-blue-600" />
-                    Internship 1 Documents
+                    Internship Documents
                   </div>
                 )}
               </div>
@@ -188,7 +189,7 @@ function MentorDocumentsContent() {
 
             {selected && !onboarding ? (
               <p className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500">
-                Loading Internship {internshipTab} documents…
+                Loading {internshipDisplayLabel(internshipTab, studentInternships.length > 1)} documents…
               </p>
             ) : onboarding && selected ? (
               <InternshipOnboardingDetails

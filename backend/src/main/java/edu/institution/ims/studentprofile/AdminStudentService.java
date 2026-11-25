@@ -14,11 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AdminStudentService {
-    private final UserRepository users; private final StudentProfileRepository profiles; private final InternshipOnboardingService onboardingService; private final InternshipDetailsService detailsService; private final AadhaarEncryptionService encryption;
+    private final UserRepository users; private final StudentProfileRepository profiles; private final InternshipOnboardingService onboardingService; private final InternshipDetailsService detailsService; private final AadhaarEncryptionService encryption; private final StudentProfileService profileService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
-    public AdminStudentService(UserRepository users, StudentProfileRepository profiles, InternshipOnboardingService onboardingService, InternshipDetailsService detailsService, AadhaarEncryptionService encryption, org.springframework.jdbc.core.JdbcTemplate jdbc) {
+    public AdminStudentService(UserRepository users, StudentProfileRepository profiles, InternshipOnboardingService onboardingService, InternshipDetailsService detailsService, AadhaarEncryptionService encryption, org.springframework.jdbc.core.JdbcTemplate jdbc, StudentProfileService profileService) {
         this.users = users; this.profiles = profiles; this.onboardingService = onboardingService; this.detailsService = detailsService; this.encryption = encryption;
         this.jdbc=jdbc;
+        this.profileService=profileService;
     }
 
     @Transactional(readOnly = true) public PagedResponse<AdminStudentSummaryResponse> list(String search, Branch branch, String academicYear, Integer semester,
@@ -111,7 +112,7 @@ public class AdminStudentService {
             }
         }
         return new AdminStudentDetailResponse(user.getId(), user.getEmail(), profile == null ? ProfileStatus.INCOMPLETE : ProfileStatus.COMPLETE,
-                profile == null ? null : StudentProfileService.response(profile), aadhaar,
+                profile == null ? null : profileService.responseWithMentor(profile), aadhaar,
                 onboardingService.getForStudent(userId), detailsService.findForStudentOrNull(userId));
     }
     private AdminStudentSummaryResponse summary(User user, java.time.Instant[] activity) {

@@ -46,7 +46,7 @@ export function calculateProfileCompletion(params: {
     { label: "Personal Email", done: hasValue(profile?.personalEmail) },
     { label: "Phone Number", done: hasValue(profile?.phoneNumber) },
     { label: "Blood Group", done: hasValue(profile?.bloodGroup) },
-    { label: "Roll Number", done: hasValue(profile?.rollNumber) },
+    { label: "UID / Roll Number", done: hasValue(profile?.uid) || hasValue(profile?.rollNumber) },
     { label: "Academic Year", done: hasValue(profile?.academicYear) },
     { label: "Semester", done: hasValue(profile?.semester) },
     { label: "Permanent Address", done: hasValue(profile?.permanentAddress) },

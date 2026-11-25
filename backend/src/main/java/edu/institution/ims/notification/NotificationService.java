@@ -96,7 +96,8 @@ public class NotificationService {
                 "report-rejected:"+report.getId()+":"+report.getRevision(), "REPORT_REJECTED",
                 "Monthly Progress Report - Month "+report.getReportMonthNumber()+" rejected",
                 "Your faculty mentor rejected this report. Please correct the items in the rejection reason and resubmit.",
-                report.getRejectionReason(), mentor, "/student/monthly-progress#report-"+report.getId(), report.getReviewedAt());
+                report.getRejectionReason(), mentor, "/student/progress-reports?tab=monthly&internshipId="
+                        +report.getStudentInternship().getId()+"#report-"+report.getId(), report.getReviewedAt());
     }
 
     @Transactional

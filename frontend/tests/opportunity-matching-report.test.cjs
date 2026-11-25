@@ -48,6 +48,25 @@ test("saved report presents scores, eligibility, profile links and authorized re
   assert.deepEqual(h.downloads, [["/admin/students/7/resume/download", "student.docx"]]); h.unmount();
 });
 
+test("system-matched list shows live required-skill matches without calling them applicants", async () => {
+  const response = { available: true, message: null, students: [{ studentId: 7, studentName: "First Student", uid: "UID7", matchedSkills: ["Java"], missingRequiredSkills: ["SQL"], matchPercentage: 50 }] };
+  const interests = { students: [{ studentId: 8, studentName: "Interested Student", uid: "UID8", matchPercentage: 25 }] };
+  const calls = [];
+  const h = harness("components/SystemMatchedStudents.tsx", "SystemMatchedStudents", { async get(url) { calls.push(url); return { data: url.endsWith("interested-students") ? interests : response }; } }, { opportunityId: "42" });
+  await h.mount();
+  assert.deepEqual(calls, ["/admin/opportunities/42/system-matched-students", "/admin/opportunities/42/interested-students"]);
+  assert.match(h.html(), /System-Matched Students/); assert.match(h.html(), /First Student/);
+  assert.match(h.html(), /UID7/); assert.match(h.html(), /Java/); assert.match(h.html(), /SQL/); assert.match(h.html(), /50\.0%/);
+  assert.match(h.html(), /not applicants/); assert.match(h.html(), /href="\/admin\/students\/7"/);
+  h.button("Interested Students").props.onClick();
+  assert.match(h.html(), /Interested Student/); assert.match(h.html(), /UID8/); assert.match(h.html(), /25\.0%/);
+  assert.doesNotMatch(h.html(), /First Student/);
+  h.unmount();
+
+  const unavailable = harness("components/SystemMatchedStudents.tsx", "SystemMatchedStudents", { async get(url) { return { data: url.endsWith("interested-students") ? { students: [] } : { available: false, message: "Skill match unavailable", students: [] } }; } }, { opportunityId: "43" });
+  await unavailable.mount(); assert.match(unavailable.html(), /Skill match unavailable/); unavailable.unmount();
+});
+
 test("matching table filters candidates and reverses score order without new API requests", async () => {
   let requests = 0;
   const h = harness("components/OpportunityMatchingReport.tsx", "OpportunityMatchingReport", { async get(url) { requests++; return { data: url.endsWith("matching-runs") ? [summary] : run }; } }, { opportunityId: "42" });

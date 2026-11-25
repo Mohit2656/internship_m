@@ -10,4 +10,5 @@ public interface StudentSkillRepository extends JpaRepository<StudentSkill, Long
     List<StudentSkill> findAllByProfessionalProfileIdInAndActiveTrue(Collection<Long> profileIds);
     Optional<StudentSkill> findByProfessionalProfileIdAndNormalizedNameAndActiveTrue(Long profileId, String normalizedName);
     Optional<StudentSkill> findByIdAndProfessionalProfileStudentIdAndActiveTrue(Long id, Long studentId);
+    List<StudentSkill> findAllByProfessionalProfileIdAndSourceAndActiveTrue(Long profileId, StudentSkillSource source);
 }

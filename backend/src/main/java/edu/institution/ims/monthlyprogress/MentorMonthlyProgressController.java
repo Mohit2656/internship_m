@@ -28,4 +28,6 @@ public class MentorMonthlyProgressController {
     @GetMapping("/{reportId}") public MonthlyProgressReportResponse report(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long reportId) { return service.mentorReport(principal, reportId); }
     @GetMapping("/{reportId}/photo") public ResponseEntity<?> photo(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long reportId) { return MonthlyProgressDownloads.response(service.mentorPhoto(principal, reportId), true); }
     @GetMapping("/{reportId}/pdf") public ResponseEntity<?> pdf(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long reportId) { return MonthlyProgressDownloads.response(service.mentorPdf(principal, reportId), false); }
+    @GetMapping("/{reportId}/attachment") public ResponseEntity<?> attachment(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long reportId,
+            @RequestParam(defaultValue="false") boolean download) { return MonthlyProgressDownloads.response(service.mentorAttachment(principal,reportId),!download); }
 }

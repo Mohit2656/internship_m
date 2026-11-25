@@ -22,8 +22,10 @@ public class MentorLateAttendancePermissionController {
 
     @PutMapping("/{studentUserId}")
     public LateAttendancePermissionResponse update(@PathVariable Long studentUserId,
+            @RequestParam(required = false) Long internshipId,
             @Valid @RequestBody LateAttendancePermissionRequest request,
             @AuthenticationPrincipal UserPrincipal principal) {
-        return service.setForMentor(studentUserId, request.enabled(), principal);
+        Long targetInternshipId = internshipId != null ? internshipId : request.internshipId();
+        return service.setForMentor(studentUserId, targetInternshipId, request.enabled(), principal);
     }
 }

@@ -19,15 +19,18 @@ public class StudentAttendanceController {
     private final RemoteAttendanceService remoteService;
     private final AttendancePolicyService policyService;
     private final AiVerificationService aiVerificationService;
+    private final StudentAttendanceDirectoryService directoryService;
 
     public StudentAttendanceController(AttendanceService service, PhysicalAttendanceService physicalService,
             RemoteAttendanceService remoteService, AttendancePolicyService policyService,
-            AiVerificationService aiVerificationService) {
+            AiVerificationService aiVerificationService,
+            StudentAttendanceDirectoryService directoryService) {
         this.service = service;
         this.physicalService = physicalService;
         this.remoteService = remoteService;
         this.policyService = policyService;
         this.aiVerificationService = aiVerificationService;
+        this.directoryService = directoryService;
     }
 
     @PostMapping("/today")
@@ -148,6 +151,13 @@ public class StudentAttendanceController {
     @GetMapping("/today")
     public TodayAttendanceResponse today(@AuthenticationPrincipal UserPrincipal principal,@RequestParam(required=false) Long internshipId) {
         return service.today(principal,internshipId);
+    }
+
+    @GetMapping("/summary")
+    public StudentAttendanceDirectoryService.History summary(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) Long internshipId) {
+        return directoryService.history(principal, principal.id(), internshipId);
     }
 
     @GetMapping

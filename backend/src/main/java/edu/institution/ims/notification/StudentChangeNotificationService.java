@@ -121,6 +121,8 @@ public class StudentChangeNotificationService {
         check(changes, "Internship Mode", before.getInternshipMode(), after.getInternshipMode());
         check(changes, "Stipend", before.getStipendPerMonth(), after.getStipendPerMonth());
         check(changes, "Full-Time Offer", before.isFullTimeEmploymentOffered(), after.isFullTimeEmploymentOffered());
+        check(changes, "Working Days Per Week", before.getWorkingDaysPerWeek(), after.getWorkingDaysPerWeek());
+        check(changes, "Working Days", before.getWorkingDays(), after.getWorkingDays());
 
         if (oldWorkplace != null || newWorkplace != null) {
             String oldCoords = oldWorkplace != null && oldWorkplace.latitude() != null && oldWorkplace.longitude() != null

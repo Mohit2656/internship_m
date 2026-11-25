@@ -34,13 +34,13 @@ test("mentor sidebar contains consolidated mentor destinations", () => {
     "Attendance",
     "Progress",
     "Documents",
-    "Reports",
     "Notifications",
     "Change Password",
   ]) {
     assert.ok(html.includes(`>${label}<`), label);
   }
-  // Confirms redundant sidebar items are removed
+  // Confirms redundant sidebar items and removed reports tab are absent
+  assert.doesNotMatch(html, />Reports</);
   assert.doesNotMatch(html, />Late Attendance Permissions</);
   assert.doesNotMatch(html, />Weekly Progress</);
   assert.doesNotMatch(html, />Monthly Progress</);
@@ -55,7 +55,7 @@ test("mentor nested and consolidated navigation highlight correctly", () => {
 
 test("assigned students table is moved to /mentor/students and removed from dashboard", () => {
   const studentsSource = fs.readFileSync(path.join(__dirname, "../app/mentor/students/page.tsx"), "utf8");
-  for (const heading of ["UID", "Student Name", "Branch", "Company", "Attendance %"]) {
+  for (const heading of ["UID", "Student Name", "Branch", "Company", "Attendance"]) {
     assert.ok(studentsSource.includes(heading), heading);
   }
   assert.match(studentsSource, /localeCompare\(right\.uid[^\n]+numeric: true/);

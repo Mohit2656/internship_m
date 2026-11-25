@@ -10,6 +10,8 @@ import { InternshipLocationManager } from "@/components/InternshipLocationManage
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal";
 import { WorkflowBadge } from "@/components/WorkflowBadge";
+import { BackButton } from "@/components/BackButton";
+import { internshipDisplayLabel } from "@/lib/internship-label";
 import { api } from "@/lib/api";
 import { MentorStudentProfile } from "@/lib/student-profile";
 import { InternshipDetails } from "@/lib/internship-details";
@@ -20,7 +22,7 @@ import {
   InternshipOnboarding,
 } from "@/lib/internship-onboarding";
 
-const Row = ({ label, value }: { label: string; value: string | number | null }) => (
+const Row = ({ label, value }: { label: string; value?: string | number | null }) => (
   <div>
     <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
     <dd className="mt-1 text-sm font-medium text-slate-900">{value || "—"}</dd>
@@ -94,13 +96,12 @@ function MentorStudentProfilePage() {
   return (
     <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
       <div className="mb-6">
-        <Link
-          href="/mentor/students"
+        {/* href="/mentor/students" */}
+        <BackButton
+          fallbackHref="/mentor/students"
+          fallbackLabel="Back to Assigned Students"
           className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-blue-400 hover:text-blue-700"
-        >
-          <span aria-hidden="true">←</span>
-          <span>Back to Assigned Students</span>
-        </Link>
+        />
       </div>
       {error ? (
         <p className="mt-8 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>
@@ -208,7 +209,7 @@ function MentorStudentProfilePage() {
             ) : internships.length === 1 ? (
               <div className="mt-5 flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-200 px-4 py-2.5">
                 <span className="rounded-md bg-blue-600 px-2 py-0.5 text-xs font-bold text-white uppercase tracking-wider">
-                  Internship {internships[0].internshipNumber}
+                  {internshipDisplayLabel(internships[0].internshipNumber, false)}
                 </span>
                 <span className="text-sm font-bold text-slate-900">{internships[0].companyName}</span>
               </div>
@@ -218,7 +219,7 @@ function MentorStudentProfilePage() {
               {!activeInternship ? (
                 <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center">
                   <p className="text-sm font-medium text-slate-600">
-                    No details submitted yet for Internship {selectedSlot}.
+                    No internship details have been submitted yet.
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
                     When the student submits internship details, they will appear here for review.

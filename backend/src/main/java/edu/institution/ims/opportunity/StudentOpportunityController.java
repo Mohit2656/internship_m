@@ -10,7 +10,9 @@ import edu.institution.ims.security.UserPrincipal;
 public class StudentOpportunityController {
     private final StudentOpportunityService service;
     private final OpportunityMatchService matchService;
-    public StudentOpportunityController(StudentOpportunityService service, OpportunityMatchService matchService) { this.service = service; this.matchService = matchService; }
+    private final OpportunityInterestService interests;
+    public StudentOpportunityController(StudentOpportunityService service, OpportunityMatchService matchService,
+            OpportunityInterestService interests) { this.service = service; this.matchService = matchService; this.interests = interests; }
 
     @GetMapping
     public PagedResponse<StudentOpportunitySummary> list(@RequestParam(required = false) String search,
@@ -27,4 +29,13 @@ public class StudentOpportunityController {
     public StudentOpportunityMatchResponse match(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
         return matchService.match(principal, id);
     }
+
+    @GetMapping("/interests")
+    public java.util.Set<Long> interests(@AuthenticationPrincipal UserPrincipal principal) {
+        return interests.ownInterests(principal);
+    }
+
+    @PostMapping("/{id}/interest")
+    public OpportunityInterestService.InterestStatus interest(@AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long id) { return interests.express(principal, id); }
 }

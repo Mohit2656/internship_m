@@ -1,15 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { ReportsCenter } from "@/components/ReportsCenter";
 import { AttendanceAbsenceOverview } from "@/components/AttendanceAbsenceOverview";
 import { LateAttendancePermissions } from "@/components/LateAttendancePermissions";
+import { AttendanceHolidayExceptions } from "@/components/AttendanceHolidayExceptions";
 
 export default function MentorAttendancePage() {
-  const [reports, setReports] = useState(false);
-
   return (
     <ProtectedRoute role="MENTOR">
       <AppFrame>
@@ -31,20 +28,6 @@ export default function MentorAttendancePage() {
               </p>
             </div>
             <AttendanceAbsenceOverview role="MENTOR" />
-
-            <details
-              className="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-              onToggle={(event) => setReports(event.currentTarget.open)}
-            >
-              <summary className="cursor-pointer font-semibold text-blue-700 hover:underline">
-                Attendance reports and export
-              </summary>
-              {reports && (
-                <div className="mt-4 border-t border-slate-100 pt-4">
-                  <ReportsCenter role="MENTOR" attendanceOnly={true} />
-                </div>
-              )}
-            </details>
           </section>
 
           {/* SECTION 2: LATE ATTENDANCE */}
@@ -56,6 +39,17 @@ export default function MentorAttendancePage() {
               </p>
             </div>
             <LateAttendancePermissions />
+          </section>
+
+          {/* SECTION 3: COMPANY HOLIDAY REQUESTS */}
+          <section id="company-holiday-exceptions" className="mt-12 scroll-mt-24 border-t border-slate-200 pt-8 space-y-4">
+            <div className="border-b border-slate-200 pb-3">
+              <h2 className="text-xl font-bold text-slate-900">Company Holiday Exceptions</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Review, approve, or reject company-specific holiday declarations submitted by students.
+              </p>
+            </div>
+            <AttendanceHolidayExceptions />
           </section>
         </main>
       </AppFrame>

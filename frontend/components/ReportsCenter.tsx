@@ -15,7 +15,8 @@ type Field = { id: string; label: string; category: string; kind?: string; defau
 type Filter = { id: string; label: string; type: string; choices: { value: string; label: string }[]; description: string };
 type Report = { id: string; title: string; description: string; available: boolean; fields: Field[] };
 type Options = { types: Report[]; filters: Filter[]; scope: string; date: string };
-type Table = { fields: Field[]; rows: Record<string, unknown>[]; totalRows: number; page: number; summary: Record<string, unknown>; title: string };
+type SubTable = { id?: string; title: string; fields: Field[]; rows: Record<string, unknown>[]; summary?: Record<string, unknown> };
+type Table = { fields: Field[]; rows: Record<string, unknown>[]; totalRows: number; page: number; summary: Record<string, unknown>; title: string; subTables?: SubTable[] };
 const control = "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm";
 const button = "rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50";
 function display(value: unknown): string { return value == null ? "—" : typeof value === "boolean" ? value ? "Yes" : "No" : String(value); }
@@ -38,7 +39,20 @@ function summaryLabel(key: string): string {
     verified: "Liveness verified", unverified: "Liveness not confirmed",
     historical: "Historical attendance — liveness not reassessed", notPerformed: "Liveness not performed",
     verifiedCount: "Liveness verified", unverifiedCount: "Liveness not confirmed",
-    historicalCount: "Historical attendance — liveness not reassessed", notPerformedCount: "Liveness not performed"
+    historicalCount: "Historical attendance — liveness not reassessed", notPerformedCount: "Liveness not performed",
+    department: "Department Internship",
+    cdc: "CDC Internship",
+    self: "Self Internship",
+    stipendStudents: "Stipend Students",
+    nonStipendStudents: "Non-Stipend Students",
+    placementOffers: "Placement Offers",
+    noPlacementOffers: "No Placement Offer",
+    ongoing: "Ongoing Internships",
+    completed: "Completed Internships",
+    activeInterns: "Active Internships",
+    regularlyAttending: "Regularly Attending",
+    defaulters: "Attendance Defaulters",
+    notUpdated: "Attendance Not Updated"
   };
   return labels[key] || key;
 }
@@ -104,8 +118,14 @@ export function ReportsCenter({ role, attendanceOnly = false }: { role: "ADMIN" 
     setBusy(true); setError("");
     try {
       const response = await api.post<Blob>(`${base}/generate`, { ...JSON.parse(config), format, page: 0 }, { responseType: "blob", timeout: 180_000 });
+      const disposition = (response.headers as Record<string, string> | undefined)?.["content-disposition"] || (response.headers as Record<string, string> | undefined)?.["Content-Disposition"];
+      let filename = `${type.toLowerCase()}-${options?.date}.${format.toLowerCase()}`;
+      if (typeof disposition === "string" && disposition.includes("filename=")) {
+        const match = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)["']?/i);
+        if (match?.[1]) filename = match[1].trim();
+      }
       const url = URL.createObjectURL(response.data); const link = document.createElement("a"); link.href = url;
-      link.download = `${type.toLowerCase()}-${options?.date}.${format.toLowerCase()}`;
+      link.download = filename;
       document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (e) { setError(await message(e)); } finally { setBusy(false); }
   }
@@ -197,7 +217,81 @@ export function ReportsCenter({ role, attendanceOnly = false }: { role: "ADMIN" 
             {report?.available && <><fieldset disabled={busy} className="mt-5"><legend className="font-semibold">Filters</legend><div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{availableFilters.map(filter => <label key={filter.id} className="text-sm">{filter.label}{filter.type === "select" ? <select className={control} value={filters[filter.id] || ""} onChange={e => { setFilters({ ...filters, [filter.id]: e.target.value }); setPage(0); }}><option value="">All</option>{filter.choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select> : <input className={control} type={filter.type} value={filters[filter.id] || ""} onChange={e => { setFilters({ ...filters, [filter.id]: e.target.value }); setPage(0); }} />}<span className="mt-1 block text-xs text-slate-500">{filter.description}</span></label>)}<label className="text-sm">Selected student account IDs<input className={control} value={ids} onChange={e => { setIds(e.target.value); setPage(0); }} placeholder="e.g. 12, 18, 24" /><span className="mt-1 block text-xs text-slate-500">Leave blank for all authorized students. Every selected ID is checked by the server.</span></label></div><button data-button-variant="text" type="button" className="mt-3 text-sm" onClick={() => { setFilters({}); setIds(""); setPage(0); }}>Clear filters</button></fieldset>
             <details className="mt-5 rounded-lg border border-slate-200 p-3"><summary className="cursor-pointer font-semibold">Report columns ({selected.length}/{report.fields.length})</summary><div className="mt-3 flex gap-4"><button data-button-variant="text" type="button" disabled={busy} onClick={() => setSelected(report.fields.filter(field => report.id !== "MONTHLY_PROGRESS" || field.defaultSelected).map(field => field.id))} className="text-sm">Select All</button><button data-button-variant="text" type="button" disabled={busy} onClick={() => setSelected([])} className="text-sm">Deselect All</button></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{report.fields.map(field => <label key={field.id} className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={busy} checked={selected.includes(field.id)} onChange={e => setSelected(report.fields.filter(item => item.id === field.id ? e.target.checked : selected.includes(item.id)).map(item => item.id))} />{field.label}</label>)}</div></details>
             <div className="mt-5 flex flex-wrap items-center gap-3"><button type="button" className={button} disabled={busy || previewBusy || !current || !selected.length} onClick={() => void download("XLSX")}>Export Excel</button><button type="button" className={button} disabled={busy || previewBusy || !current || !selected.length} onClick={() => void download("CSV")}>Export CSV</button><button type="button" className={button} disabled={busy || previewBusy || !current || !selected.length} onClick={() => void download("PDF")}>Export PDF</button><span aria-live="polite" className="text-sm text-slate-600">{busy ? "Generating report…" : previewBusy ? "Loading preview…" : current ? `${current.totalRows} records match. Export includes all matching records.` : "Select at least one column."}</span></div>
-            {current && <><div className="mt-5 flex flex-wrap gap-4">{Object.entries(current.summary).map(([key, value]) => <div key={key} className="rounded-lg bg-slate-50 p-3"><span className="block text-xs text-slate-600">{summaryLabel(key)}</span><strong>{typeof value === "number" ? Number(value.toFixed(1)) : display(value)}</strong></div>)}</div><div className="mt-5 overflow-x-auto"><table className="report-document w-full text-left text-sm"><thead className="bg-slate-100"><tr>{current.fields.map(field => <th key={field.id} className="whitespace-nowrap p-3">{field.label}</th>)}{role === "MENTOR" && type === "ATTENDANCE" && <th className="p-3">Actions</th>}</tr></thead><tbody>{current.rows.map((row, index) => <tr key={`report-row-${row.recordId ?? row.studentId ?? "r"}-${row.internshipId ?? row.monthNumber ?? row.date ?? ""}-${index}`} className="border-b border-slate-200">{current.fields.map(field => <td key={field.id} className="whitespace-pre-wrap p-3">{field.id === "attendanceLatitude" ? <AttendanceLocations evidence={{ latitude: row.attendanceLatitude as number | null, longitude: row.attendanceLongitude as number | null, gpsAccuracyMeters: row.gpsAccuracyMeters as number | null }} /> : displayCell(field, row[field.id])}{attendanceOnly && field.id === "studentId" && <button data-button-variant="text" type="button" className="ml-2 underline" onClick={() => { setIds(String(row[field.id])); setPage(0); }}>View student</button>}</td>)}{role === "MENTOR" && type === "ATTENDANCE" && typeof row.recordId === "number" && <td className="p-3"><MentorRecordDelete kind="attendance" id={row.recordId} description={`${display(row.studentName)} (${display(row.uid)}) - attendance date ${display(row.date)}`} onDeleted={() => { setNotice("Attendance record deleted."); setRequestKey(n => n + 1); }} /></td>}</tr>)}</tbody></table>{!current.rows.length && <p className="p-4 text-slate-600">No records match these filters.</p>}</div><div className="mt-4 flex items-center gap-4"><button type="button" className={button} disabled={busy || page === 0} onClick={() => setPage(n => n - 1)}>Previous</button><span>Page {page + 1}</span><button type="button" className={button} disabled={busy || (page + 1) * 50 >= current.totalRows} onClick={() => setPage(n => n + 1)}>Next</button></div></>}
+            {current && <><div className="mt-5 flex flex-wrap gap-4">{Object.entries(current.summary).map(([key, value]) => <div key={key} className="rounded-lg bg-slate-50 p-3 border border-slate-200"><span className="block text-xs text-slate-600">{summaryLabel(key)}</span><strong className="text-sm font-bold text-slate-900">{typeof value === "number" ? Number(value.toFixed(1)) : display(value)}</strong></div>)}</div>
+            {current.subTables && current.subTables.length > 0 ? (
+              <div className="mt-6 space-y-8">
+                {current.subTables.map((st, sIdx) => (
+                  <div key={st.id || `subtable-${sIdx}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+                    <h3 className="text-base font-bold text-slate-800 mb-3">{st.title}</h3>
+                    {st.summary && Object.keys(st.summary).length > 0 && (
+                      <div className="mb-3 flex flex-wrap gap-3">
+                        {Object.entries(st.summary).map(([sk, sv]) => (
+                          <div key={sk} className="rounded bg-slate-50 px-2.5 py-1 text-xs border border-slate-100">
+                            <span className="text-slate-500 mr-1.5">{summaryLabel(sk)}:</span>
+                            <strong className="font-semibold text-slate-900">{display(sv)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="overflow-x-auto">
+                      <table className="report-document w-full text-left text-sm">
+                        <thead className="bg-slate-100">
+                          <tr>
+                            {st.fields.map(field => (
+                              <th key={field.id} className="whitespace-nowrap p-3 font-semibold text-slate-700">
+                                {field.label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {st.rows.map((row, rIdx) => {
+                            const isTotal = row.isTotal === true || row.category === "Total" || row.company === "Total" || row.parameter === "Total" || row.range === "Total" || row.metric === "Total";
+                            return (
+                              <tr
+                                key={`sub-row-${sIdx}-${rIdx}`}
+                                className={`border-b border-slate-200 ${isTotal ? "bg-slate-100/90 font-bold text-slate-900" : "hover:bg-slate-50/50"}`}
+                              >
+                                {st.fields.map(field => (
+                                  <td key={field.id} className="whitespace-pre-wrap p-3">
+                                    {displayCell(field, row[field.id])}
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {!st.rows.length && <p className="p-4 text-slate-600">No records match these filters.</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-5 overflow-x-auto">
+                <table className="report-document w-full text-left text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      {current.fields.map(field => <th key={field.id} className="whitespace-nowrap p-3 font-semibold text-slate-700">{field.label}</th>)}
+                      {role === "MENTOR" && type === "ATTENDANCE" && <th className="p-3">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {current.rows.map((row, index) => {
+                      const isTotal = row.isTotal === true || row.category === "Total" || row.company === "Total" || row.parameter === "Total" || row.range === "Total" || row.metric === "Total";
+                      return (
+                        <tr key={`report-row-${row.recordId ?? row.studentId ?? "r"}-${row.internshipId ?? row.monthNumber ?? row.date ?? ""}-${index}`} className={`border-b border-slate-200 ${isTotal ? "bg-slate-100/90 font-bold text-slate-900" : "hover:bg-slate-50/50"}`}>
+                          {current.fields.map(field => <td key={field.id} className="whitespace-pre-wrap p-3">{field.id === "attendanceLatitude" ? <AttendanceLocations evidence={{ latitude: row.attendanceLatitude as number | null, longitude: row.attendanceLongitude as number | null, gpsAccuracyMeters: row.gpsAccuracyMeters as number | null }} /> : displayCell(field, row[field.id])}{attendanceOnly && field.id === "studentId" && <button data-button-variant="text" type="button" className="ml-2 underline" onClick={() => { setIds(String(row[field.id])); setPage(0); }}>View student</button>}</td>)}
+                          {role === "MENTOR" && type === "ATTENDANCE" && typeof row.recordId === "number" && <td className="p-3"><MentorRecordDelete kind="attendance" id={row.recordId} description={`${display(row.studentName)} (${display(row.uid)}) - attendance date ${display(row.date)}`} onDeleted={() => { setNotice("Attendance record deleted."); setRequestKey(n => n + 1); }} /></td>}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {!current.rows.length && <p className="p-4 text-slate-600">No records match these filters.</p>}
+              </div>
+            )}
+            <div className="mt-4 flex items-center gap-4"><button type="button" className={button} disabled={busy || page === 0} onClick={() => setPage(n => n - 1)}>Previous</button><span>Page {page + 1}</span><button type="button" className={button} disabled={busy || (page + 1) * 50 >= current.totalRows} onClick={() => setPage(n => n + 1)}>Next</button></div></>}
             </>}
           </section>
         </div>

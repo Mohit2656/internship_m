@@ -6,6 +6,7 @@ import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
 import { InternshipSlotsSection } from "@/components/InternshipSlotsSection";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { BackButton } from "@/components/BackButton";
 import { WorkflowBadge } from "@/components/WorkflowBadge";
 import { ApiError, api } from "@/lib/api";
 import {
@@ -22,6 +23,7 @@ import {
   getStatusBadgeClass,
   InternshipStatusBadge,
 } from "@/lib/internship-selection";
+import { internshipDisplayLabel } from "@/lib/internship-label";
 
 type SecondRequest = {
   id: number;
@@ -187,14 +189,14 @@ export default function InternshipOnboardingPage() {
     activeTab === 2 &&
     (!secondRequest || secondRequest.status !== "APPROVED") &&
     onboarding?.workflowStatus === "NOT_SECURED";
+  const hasApprovedSecondInternship = secondRequest?.status === "APPROVED";
+  const activeInternshipLabel = internshipDisplayLabel(activeTab, hasApprovedSecondInternship);
 
   return (
     <ProtectedRoute role="STUDENT">
       <AppFrame>
         <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
-          <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">
-            ← Back to dashboard
-          </Link>
+          <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to dashboard" />
           <div className="mt-5">
             <p className="text-sm font-semibold text-blue-700">Internship registration</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Internship Onboarding &amp; Documents</h1>
@@ -235,7 +237,7 @@ export default function InternshipOnboardingPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                      Internship {activeTab} Status
+                      {activeInternshipLabel} Status
                     </p>
                     <h2 className="mt-2 text-xl font-bold">Preparation &amp; Document Verification</h2>
                   </div>
@@ -244,7 +246,7 @@ export default function InternshipOnboardingPage() {
                 {onboarding.workflowStatus === "NOT_SECURED" && (
                   <div className="mt-6">
                     <p className="text-sm text-slate-600">
-                      Once you have secured an offer for Internship {activeTab}, begin the registration workflow here.
+                      Once you have secured an offer for {activeInternshipLabel.toLowerCase()}, begin the registration workflow here.
                     </p>
                     <button
                       disabled={!!busy}
@@ -365,10 +367,6 @@ export default function InternshipOnboardingPage() {
                           : "Continue to Internship Details"}
                       </Link>
                     </div>
-                  ) : onboarding.workflowStatus !== "DOCUMENTS_COMPLETE" ? (
-                    <p className="mt-3 text-sm text-slate-600">
-                      Available after required documents are completed.
-                    </p>
                   ) : (
                     <div className="mt-4">
                       <label className="flex items-start gap-3 text-sm font-medium">
@@ -378,7 +376,7 @@ export default function InternshipOnboardingPage() {
                           onChange={(event) => setDiaryConfirmed(event.target.checked)}
                           className="mt-0.5 h-4 w-4"
                         />
-                        I confirm that I have received my Internship Diary for Internship {activeTab}.
+                        I confirm that I have received my Internship Diary for {activeInternshipLabel}.
                       </label>
                       <button
                         disabled={!diaryConfirmed || !!busy}

@@ -58,9 +58,9 @@ public class AttendanceService {
         User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
         InternshipDetails internship = eligibleInternship(student.getId(),internshipId);
-        LocalDate today = LocalDate.now(clock);
-        requireWithinInternship(internship, today);
-        policies.requireSubmissionOpen(student.getId(), today);
+        LocalDate today = InternshipLifecycle.today(clock);
+        policies.requireAttendanceActive(internship, today);
+        policies.requireSubmissionOpen(student.getId(), internship.getId(), today);
         AttendanceVerificationMethod method = policies.resolve(internship, today).verificationMethod();
         if (method == AttendanceVerificationMethod.PHYSICAL || method == AttendanceVerificationMethod.REMOTE) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_EVIDENCE_REQUIRED",
@@ -74,6 +74,7 @@ public class AttendanceService {
                 location, locationCapturedAt, false, accuracy);
         record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
         attendance.saveAndFlush(record);
+        submissions.notifyMentor(record);
         return response(record);
     }
 
@@ -83,15 +84,16 @@ public class AttendanceService {
     }
     @Transactional(readOnly = true)
     public TodayAttendanceResponse today(UserPrincipal principal,Long internshipId) {
-        LocalDate today = LocalDate.now(clock);
+        LocalDate today = InternshipLifecycle.today(clock);
         InternshipDetails internship=eligibleInternship(principal.id(),internshipId);
-        boolean latePermission = permissions.isEnabled(principal.id(), today);
+        AttendanceLifecycleStatus lifecycle = policies.lifecycle(internship, today);
+        boolean latePermission = permissions.isEnabled(principal.id(), internship.getId(), today);
         return new TodayAttendanceResponse(today,
                 attendance.findByStudentIdAndInternshipIdAndAttendanceDate(principal.id(),internship.getId(), today)
                         .map(AttendanceService::response).orElse(null),
                 AttendanceSubmissionWindow.deadline(today, clock),
-                !AttendanceSubmissionWindow.isClosed(today, clock) || latePermission,
-                clock.getZone().getId(), latePermission);
+                lifecycle == AttendanceLifecycleStatus.ACTIVE && (!AttendanceSubmissionWindow.isClosed(today, clock) || latePermission),
+                clock.getZone().getId(), latePermission, lifecycle);
     }
 
     @Transactional(readOnly = true)

@@ -138,6 +138,8 @@ public class CustomReportCatalog {
                 null, false, false, BOOLEAN_OPERATORS, "i.full_time_employment_offered");
 
         // --- D. Attendance Information ---
+        add("submittedDays", "Submitted Days", "Attendance Information", Kind.NUMBER,
+                null, false, true, NUMBER_OPERATORS, "coalesce(att.submitted_days, 0)");
         add("presentDays", "Present Days", "Attendance Information", Kind.NUMBER,
                 null, false, true, NUMBER_OPERATORS, "coalesce(att.present_days, 0)");
         add("absentDays", "Absent Days", "Attendance Information", Kind.NUMBER,

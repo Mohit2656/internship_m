@@ -193,7 +193,7 @@ public class StudentChangeNotificationIntegrationTest {
     }
 
     @Test
-    void workplaceCoordinateChangeInvalidatesApprovalAndRequiresFreshMentorVerification() throws Exception {
+    void approvedWorkplaceCoordinatesCannotBeChangedByStudent() throws Exception {
         readyAndCreate(studentACookie, "A", "23001022", "a@college.edu", "Acme Systems");
         var internship = details.findByOnboardingStudentId(studentA.getId()).orElseThrow();
 
@@ -206,6 +206,11 @@ public class StudentChangeNotificationIntegrationTest {
         locations.saveAndFlush(location);
 
         assertThat(location.getStatus()).isEqualTo(InternshipLocationStatus.APPROVED);
+        var originalConfirmedAt = location.getConfirmedAt();
+        var originalConfirmedBy = location.getConfirmedBy();
+        Integer originalNotificationCount = jdbc.queryForObject(
+                "select count(*) from mentor_notifications where mentor_user_id=?",
+                Integer.class, mentor.getId());
 
         // Student updates workplace coordinates
         Map<String, Object> update = internship("Acme Systems");
@@ -220,20 +225,22 @@ public class StudentChangeNotificationIntegrationTest {
                 .cookie(studentACookie)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(update)))
-                .andExpect(status().isOk());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WORKPLACE_COORDINATES_LOCKED"));
 
-        // Verify workplace approval was invalidated and status set to PENDING_MENTOR_APPROVAL
+        // The rejected update must leave the approved workplace untouched.
         var updatedLocation = locations.findById(location.getId()).orElseThrow();
-        assertThat(updatedLocation.getStatus()).isEqualTo(InternshipLocationStatus.PENDING_MENTOR_APPROVAL);
-        assertThat(updatedLocation.getConfirmedAt()).isNull();
-        assertThat(updatedLocation.getConfirmedBy()).isNull();
-        assertThat(updatedLocation.getLatitude()).isEqualByComparingTo("30.750000");
-        assertThat(updatedLocation.getLongitude()).isEqualByComparingTo("76.780000");
+        assertThat(updatedLocation.getStatus()).isEqualTo(InternshipLocationStatus.APPROVED);
+        assertThat(updatedLocation.getConfirmedAt()).isEqualTo(originalConfirmedAt);
+        assertThat(updatedLocation.getConfirmedBy()).isEqualTo(originalConfirmedBy);
+        assertThat(updatedLocation.getLatitude()).isEqualByComparingTo("30.733315");
+        assertThat(updatedLocation.getLongitude()).isEqualByComparingTo("76.779419");
 
-        // Verify mentor is notified about coordinate change
-        mvc.perform(get("/api/v1/mentor/notifications").cookie(mentorCookie))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].message").value(org.hamcrest.Matchers.containsString("Workplace Coordinates")));
+        // A rejected update does not create a change notification.
+        Integer updatedNotificationCount = jdbc.queryForObject(
+                "select count(*) from mentor_notifications where mentor_user_id=?",
+                Integer.class, mentor.getId());
+        assertThat(updatedNotificationCount).isEqualTo(originalNotificationCount);
     }
 
     @Test

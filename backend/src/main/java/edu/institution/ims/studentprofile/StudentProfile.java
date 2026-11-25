@@ -20,29 +20,29 @@ import java.math.BigDecimal;
 public class StudentProfile {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     @OneToOne(optional = false, fetch = FetchType.LAZY) @JoinColumn(name = "user_id", nullable = false, foreignKey = @ForeignKey(name = "fk_student_profiles_user")) private User user;
-    @Column(name = "student_name", nullable = false, length = 150) private String studentName;
-    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 40) private Branch branch;
-    @Column(nullable = false, length = 50) private String uid;
-    @Column(name = "roll_number", nullable = false, length = 50) private String rollNumber;
-    @Column(name = "permanent_address", nullable = false, length = 1000) private String permanentAddress;
+    @Column(name = "student_name", length = 150) private String studentName;
+    @Enumerated(EnumType.STRING) @Column(length = 40) private Branch branch;
+    @Column(length = 50) private String uid;
+    @Column(name = "roll_number", length = 50) private String rollNumber;
+    @Column(name = "permanent_address", length = 1000) private String permanentAddress;
     @Column(name = "current_address", length = 1000) private String currentAddress;
-    @Column(name = "personal_email", nullable = false, length = 254) private String personalEmail;
-    @Column(name = "institute_email", nullable = false, length = 254) private String instituteEmail;
-    @Column(name = "phone_number", nullable = false, length = 25) private String phoneNumber;
-    @Column(name = "guardian_name", nullable = false, length = 150) private String guardianName;
-    @Column(name = "guardian_contact", nullable = false, length = 25) private String guardianContact;
-    @Column(name = "emergency_contact", nullable = false, length = 25) private String emergencyContact;
-    @Column(name = "blood_group", nullable = false, length = 5) private String bloodGroup;
-    @Column(name = "aadhaar_encrypted", nullable = false, length = 255) private String aadhaarEncrypted;
-    @Column(name = "aadhaar_last_four", nullable = false, length = 4) private String aadhaarLastFour;
-    @Column(name = "faculty_mentor_name", nullable = false, length = 150) private String facultyMentorName;
-    @Column(name = "faculty_mentor_contact", nullable = false, length = 25) private String facultyMentorContact;
-    @Column(name = "internship_coordinator_name", nullable = false, length = 150) private String internshipCoordinatorName;
-    @Column(name = "internship_coordinator_contact", nullable = false, length = 25) private String internshipCoordinatorContact;
-    @Column(name = "cdc_coordinator_name", nullable = false, length = 150) private String cdcCoordinatorName;
-    @Column(name = "cdc_coordinator_contact", nullable = false, length = 25) private String cdcCoordinatorContact;
-    @Column(name = "academic_year", nullable = false, length = 9) private String academicYear;
-    @Column(nullable = false) private int semester;
+    @Column(name = "personal_email", length = 254) private String personalEmail;
+    @Column(name = "institute_email", length = 254) private String instituteEmail;
+    @Column(name = "phone_number", length = 25) private String phoneNumber;
+    @Column(name = "guardian_name", length = 150) private String guardianName;
+    @Column(name = "guardian_contact", length = 25) private String guardianContact;
+    @Column(name = "emergency_contact", length = 25) private String emergencyContact;
+    @Column(name = "blood_group", length = 5) private String bloodGroup;
+    @Column(name = "aadhaar_encrypted", length = 255) private String aadhaarEncrypted;
+    @Column(name = "aadhaar_last_four", length = 4) private String aadhaarLastFour;
+    @Column(name = "faculty_mentor_name", length = 150) private String facultyMentorName;
+    @Column(name = "faculty_mentor_contact", length = 25) private String facultyMentorContact;
+    @Column(name = "internship_coordinator_name", length = 150) private String internshipCoordinatorName;
+    @Column(name = "internship_coordinator_contact", length = 25) private String internshipCoordinatorContact;
+    @Column(name = "cdc_coordinator_name", length = 150) private String cdcCoordinatorName;
+    @Column(name = "cdc_coordinator_contact", length = 25) private String cdcCoordinatorContact;
+    @Column(name = "academic_year", length = 9) private String academicYear;
+    @Column private Integer semester;
     @Column(name = "current_cgpa", precision = 4, scale = 2) private BigDecimal currentCgpa;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
@@ -60,7 +60,7 @@ public class StudentProfile {
     public String getFacultyMentorName() { return facultyMentorName; } public String getFacultyMentorContact() { return facultyMentorContact; }
     public String getInternshipCoordinatorName() { return internshipCoordinatorName; } public String getInternshipCoordinatorContact() { return internshipCoordinatorContact; }
     public String getCdcCoordinatorName() { return cdcCoordinatorName; } public String getCdcCoordinatorContact() { return cdcCoordinatorContact; }
-    public String getAcademicYear() { return academicYear; } public int getSemester() { return semester; }
+    public String getAcademicYear() { return academicYear; } public Integer getSemester() { return semester; }
     public BigDecimal getCurrentCgpa() { return currentCgpa; }
     public Instant getCreatedAt() { return createdAt; } public Instant getUpdatedAt() { return updatedAt; }
     public String getAadhaarEncrypted() { return aadhaarEncrypted; }
@@ -68,7 +68,7 @@ public class StudentProfile {
     public void apply(String studentName, Branch branch, String uid, String rollNumber, String permanentAddress, String currentAddress,
             String personalEmail, String instituteEmail, String phoneNumber, String guardianName, String guardianContact, String emergencyContact,
             String bloodGroup, String facultyMentorName, String facultyMentorContact, String internshipCoordinatorName,
-            String internshipCoordinatorContact, String cdcCoordinatorName, String cdcCoordinatorContact, String academicYear, int semester) {
+            String internshipCoordinatorContact, String cdcCoordinatorName, String cdcCoordinatorContact, String academicYear, Integer semester) {
         this.studentName = studentName; this.branch = branch; this.uid = uid; this.rollNumber = rollNumber; this.permanentAddress = permanentAddress;
         this.currentAddress = currentAddress; this.personalEmail = personalEmail; this.instituteEmail = instituteEmail; this.phoneNumber = phoneNumber;
         this.guardianName = guardianName; this.guardianContact = guardianContact; this.emergencyContact = emergencyContact; this.bloodGroup = bloodGroup;

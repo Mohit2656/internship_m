@@ -22,8 +22,8 @@ import java.util.*;
 @Service
 public class OpportunityMatchingService {
     public static final String VERSION = "exact-skills-v1";
-    public static final String SCORING = "Required skills 80%, preferred skills 20%; exact normalized matches only. "
-            + "Weights for unspecified skill groups are redistributed. Eligibility is evaluated separately. "
+    public static final String SCORING = "Required-skill coverage (matched required skills / total required skills * 100); exact normalized matches only. "
+            + "Eligibility is evaluated separately. "
             + "Resume education, experience and certification references are supporting evidence, not inferred skills. "
             + "Only configured branch, semester, CGPA and skill criteria are evaluated; review other listed requirements manually. "
             + "Rankings cover active students with completed institutional profiles; missing profiles cannot verify eligibility and are not notified. "
@@ -204,10 +204,15 @@ public class OpportunityMatchingService {
     }
 
     static double score(int requiredCount, int requiredMatched, int preferredCount, int preferredMatched) {
-        int weight=(requiredCount>0?80:0)+(preferredCount>0?20:0);
-        if(weight==0) return 0;
-        double earned=(requiredCount>0?80.0*requiredMatched/requiredCount:0)+(preferredCount>0?20.0*preferredMatched/preferredCount:0);
-        return Math.round(earned/weight*10000.0)/100.0;
+        if (requiredCount > 0) {
+            double earned = (double) requiredMatched / requiredCount * 100.0;
+            return Math.round(earned * 100.0) / 100.0;
+        }
+        if (preferredCount > 0) {
+            double earned = (double) preferredMatched / preferredCount * 100.0;
+            return Math.round(earned * 100.0) / 100.0;
+        }
+        return 0;
     }
     private static List<String> context(ResumeCorrectionService.Values values) {
         if(values==null) return List.of();

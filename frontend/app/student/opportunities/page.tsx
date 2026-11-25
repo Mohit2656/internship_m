@@ -6,6 +6,7 @@ import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { api, ApiError } from "@/lib/api";
+import { useActionGuard } from "@/lib/action-guard";
 import { formatOpportunityDate, formatOpportunityStipend, OpportunityMode, StudentOpportunityPage } from "@/lib/opportunities";
 
 function OpportunitiesContent() {
@@ -17,12 +18,18 @@ function OpportunitiesContent() {
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [interested, setInterested] = useState<ReadonlySet<number>>(() => new Set());
+  const [interestErrors, setInterestErrors] = useState<Record<number, string>>({});
+  const actions = useActionGuard();
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const { data } = await api.get<StudentOpportunityPage>("/student/opportunities", { params: { search: search || undefined, mode: mode || undefined, sort, page, size: 12 } });
-      setResult(data);
+      const [opportunities, interests] = await Promise.all([
+        api.get<StudentOpportunityPage>("/student/opportunities", { params: { search: search || undefined, mode: mode || undefined, sort, page, size: 12 } }),
+        api.get<number[]>("/student/opportunities/interests"),
+      ]);
+      setResult(opportunities.data); setInterested(new Set(interests.data));
     } catch (cause) {
       setError((cause as AxiosError<ApiError>).response?.data?.message || "Internship opportunities could not be loaded.");
     } finally { setLoading(false); }
@@ -30,6 +37,18 @@ function OpportunitiesContent() {
   useEffect(() => { void load(); }, [load]);
 
   function submitSearch(event: FormEvent) { event.preventDefault(); setPage(0); setSearch(searchDraft.trim()); }
+  async function expressInterest(opportunityId: number) {
+    const key = `opportunity-interest:${opportunityId}`;
+    await actions.run(key, async () => {
+      setInterestErrors(current => { const next = { ...current }; delete next[opportunityId]; return next; });
+      try {
+        await api.post(`/student/opportunities/${opportunityId}/interest`);
+        setInterested(current => new Set(current).add(opportunityId));
+      } catch (cause) {
+        setInterestErrors(current => ({ ...current, [opportunityId]: (cause as AxiosError<ApiError>).response?.data?.message || "Interest could not be saved." }));
+      }
+    });
+  }
 
   return <main className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
     <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">← Back to dashboard</Link>
@@ -71,9 +90,15 @@ function OpportunitiesContent() {
                 </div>
               </div>
             )}
-            <Link href={`/student/opportunities/${opportunity.id}`} className="mt-auto pt-6 text-sm font-bold text-blue-700">
-              View Details →
-            </Link>
+            <div className="mt-auto flex items-center justify-between gap-3 pt-6">
+              <Link href={`/student/opportunities/${opportunity.id}`} className="text-sm font-bold text-blue-700">View Details →</Link>
+              <button type="button" data-button-variant={interested.has(opportunity.id) ? "outline" : undefined}
+                disabled={interested.has(opportunity.id) || actions.isPending(`opportunity-interest:${opportunity.id}`)}
+                onClick={() => void expressInterest(opportunity.id)} className="px-3 py-2 text-xs">
+                {actions.isPending(`opportunity-interest:${opportunity.id}`) ? "Saving…" : interested.has(opportunity.id) ? "Interested" : "I'm Interested"}
+              </button>
+            </div>
+            {interestErrors[opportunity.id] && <p role="alert" className="mt-2 text-xs text-red-700">{interestErrors[opportunity.id]}</p>}
           </article>
         ))}
       </div>

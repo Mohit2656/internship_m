@@ -114,6 +114,8 @@ public class AttendanceRecord {
     public User getLateAuthorizedBy() { return lateAuthorizedBy; }
     public Instant getLateAuthorizedAt() { return lateAuthorizedAt; }
     public Instant getAutomaticAbsentAt() { return automaticAbsentAt; }
+    public Instant getDeletedAt() { return deletedAt; }
+    public boolean isDeleted() { return deletedAt != null; }
     public Long getMentorSeenBy() { return mentorSeenBy; }
     public Instant getMentorSeenAt() { return mentorSeenAt; }
     void acknowledge(Long mentorId, Instant seenAt) {
@@ -134,7 +136,7 @@ public class AttendanceRecord {
         if (isAutomaticAbsent()) throw new IllegalStateException("Automatic absence is not a student submission");
         attendanceResult = verificationPassed ? AttendanceResult.PRESENT : AttendanceResult.PENDING_MENTOR_REVIEW;
     }
-    void applyMentorDecision(AttendanceReviewStatus status) {
+    public void applyMentorDecision(AttendanceReviewStatus status) {
         if (status == AttendanceReviewStatus.APPROVED) attendanceResult = AttendanceResult.PRESENT;
         else if (status == AttendanceReviewStatus.REJECTED) attendanceResult = AttendanceResult.ABSENT;
     }

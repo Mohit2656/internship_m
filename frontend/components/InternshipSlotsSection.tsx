@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { WorkflowBadge } from "@/components/WorkflowBadge";
 import { api } from "@/lib/api";
 import { InternshipDetails } from "@/lib/internship-details";
 import { InternshipOnboarding } from "@/lib/internship-onboarding";
 import { getSelectedInternship, setSelectedInternship } from "@/lib/internship-selection";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { internshipDisplayLabel } from "@/lib/internship-label";
 
 type StudentProfile = {
   id: number;
@@ -66,6 +68,7 @@ export function InternshipSlotsSection({
   const [secondStarting, setSecondStarting] = useState(false);
   const [error, setError] = useState("");
   const [secondError, setSecondError] = useState("");
+  const actionPending = useRef(new Set<string>());
 
   const refreshData = useCallback(async () => {
     try {
@@ -121,6 +124,8 @@ export function InternshipSlotsSection({
   }
 
   async function secureInternship() {
+    if (actionPending.current.has("secure:1")) return;
+    actionPending.current.add("secure:1");
     setStarting(true);
     setError("");
     try {
@@ -131,11 +136,13 @@ export function InternshipSlotsSection({
     } catch {
       setError("Complete your student profile before registering an internship.");
     } finally {
-      setStarting(false);
+      actionPending.current.delete("secure:1"); setStarting(false);
     }
   }
 
   async function raiseSecondRequest() {
+    if (actionPending.current.has("request:2")) return;
+    actionPending.current.add("request:2");
     setSecondStarting(true);
     setSecondError("");
     try {
@@ -147,13 +154,20 @@ export function InternshipSlotsSection({
     } catch (cause: any) {
       setSecondError(cause.response?.data?.message ?? "Request could not be submitted.");
     } finally {
-      setSecondStarting(false);
+      actionPending.current.delete("request:2"); setSecondStarting(false);
     }
   }
 
   const latestSecondRequest = secondRequests[0] ?? null;
+  const hasApprovedSecondInternship = latestSecondRequest?.status === "APPROVED";
   const todayStr = new Date().toISOString().slice(0, 10);
   const isInternshipStarted = Boolean(details && details.startDate && details.startDate <= todayStr);
+
+  useEffect(() => {
+    if (!loading && !hasApprovedSecondInternship && activeTab === 2) {
+      handleSelectTab(1);
+    }
+  }, [activeTab, hasApprovedSecondInternship, loading]);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7">
@@ -162,9 +176,11 @@ export function InternshipSlotsSection({
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
             {isInternshipStarted ? "Active Internship" : "Internship Registration"}
           </p>
-          <h2 className="mt-1 text-2xl font-bold text-slate-950">Internship Slots &amp; Requests</h2>
+          <h2 className="mt-1 text-2xl font-bold text-slate-950">My Internships</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Switch between your internship slots to view details or raise requests.
+            {hasApprovedSecondInternship
+              ? "Switch between your approved internships to view their registration details."
+              : "Register your mandatory internship or apply separately for a second internship."}
           </p>
         </div>
       </div>
@@ -176,7 +192,7 @@ export function InternshipSlotsSection({
       )}
 
       <div className="mt-6">
-        <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100/90 p-1 border border-slate-200/80 shadow-xs" role="tablist" aria-label="Internship slots">
+        {hasApprovedSecondInternship && <div className="inline-flex items-center gap-1 rounded-lg bg-slate-100/90 p-1 border border-slate-200/80 shadow-xs" role="tablist" aria-label="Internship slots">
           <button
             type="button"
             role="tab"
@@ -190,7 +206,7 @@ export function InternshipSlotsSection({
                 : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
             }`}
           >
-            Internship 1 {details ? `(${details.companyName})` : "(Slot 1)"}
+            {internshipDisplayLabel(1, hasApprovedSecondInternship)} {details ? `(${details.companyName})` : ""}
           </button>
           <button
             type="button"
@@ -205,16 +221,21 @@ export function InternshipSlotsSection({
                 : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
             }`}
           >
-            Internship 2 {secondDetails ? `(${secondDetails.companyName})` : "(Slot 2)"}
+            Internship 2 {secondDetails ? `(${secondDetails.companyName})` : ""}
           </button>
-        </div>
+        </div>}
 
         {/* TAB 1: FIRST INTERNSHIP */}
-        {activeTab === 1 && (
-          <div id="panel-slot-1" role="tabpanel" aria-labelledby="tab-slot-1" className="mt-6">
+        {(activeTab === 1 || !hasApprovedSecondInternship) && (
+          <div
+            id={hasApprovedSecondInternship ? "panel-slot-1" : "mandatory-internship"}
+            role={hasApprovedSecondInternship ? "tabpanel" : undefined}
+            aria-labelledby={hasApprovedSecondInternship ? "tab-slot-1" : undefined}
+            className="mt-6"
+          >
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">First Internship Slot</p>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">{internshipDisplayLabel(1, hasApprovedSecondInternship)}</p>
                 <h3 className="mt-1 text-xl font-bold text-slate-900">
                   {loading
                     ? "Checking status…"
@@ -303,7 +324,7 @@ export function InternshipSlotsSection({
                       onClick={secureInternship}
                       className="ui-button text-sm"
                     >
-                      {starting ? "Starting…" : "Raise Internship Request"}
+                      {starting ? <LoadingSpinner label="Starting…"/> : "Internship Secured"}
                     </button>
                   ) : onboarding.workflowStatus === "DIARY_ISSUED" ? (
                     <Link href="/student/internship/details" className="ui-button text-sm">
@@ -321,17 +342,24 @@ export function InternshipSlotsSection({
         )}
 
         {/* TAB 2: SECOND INTERNSHIP */}
-        {activeTab === 2 && (
-          <div id="panel-slot-2" role="tabpanel" aria-labelledby="tab-slot-2" className="mt-6">
+        {(activeTab === 2 || !hasApprovedSecondInternship) && (
+          <div
+            id={hasApprovedSecondInternship ? "panel-slot-2" : "second-internship-request"}
+            role={hasApprovedSecondInternship ? "tabpanel" : undefined}
+            aria-labelledby={hasApprovedSecondInternship ? "tab-slot-2" : undefined}
+            className={`${hasApprovedSecondInternship ? "mt-6" : "mt-8 border-t border-slate-200 pt-6"}`}
+          >
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Second Internship Slot</p>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                  {hasApprovedSecondInternship ? "Internship 2" : "Optional"}
+                </p>
                 <h3 className="mt-1 text-xl font-bold text-slate-900">
-                  {secondDetails
+                  {!hasApprovedSecondInternship
+                    ? "Second Internship Request"
+                    : secondDetails
                     ? secondDetails.companyName
-                    : latestSecondRequest
-                    ? `Request: ${latestSecondRequest.status.replace("_", " ")}`
-                    : "Second Internship"}
+                    : "Internship 2 Registration"}
                 </h3>
               </div>
               {latestSecondRequest && (
@@ -363,7 +391,7 @@ export function InternshipSlotsSection({
               <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
                 <p className="font-semibold">Prerequisite required</p>
                 <p className="mt-1 text-amber-800">
-                  Complete your primary internship (Internship 1) before requesting permission for a second internship.
+                  Complete your mandatory internship before requesting permission for a second internship.
                 </p>
               </div>
             ) : secondDetails ? (
@@ -387,7 +415,7 @@ export function InternshipSlotsSection({
                   </div>
                   <div>
                     <p className="text-xs text-slate-500">Faculty Mentor</p>
-                    <p className="mt-1 font-semibold">{mentorInfo?.internship2MentorName ?? "Not assigned yet"}</p>
+                    <p className="mt-1 font-semibold">{mentorInfo?.internship2MentorName ?? mentorInfo?.internship1MentorName ?? "Not assigned yet"}</p>
                   </div>
                 </div>
                 <div className="mt-5 flex gap-3">
@@ -432,7 +460,7 @@ export function InternshipSlotsSection({
                     </div>
                     <div>
                       <p className="text-xs text-slate-500">Faculty Mentor</p>
-                      <p className="mt-1 font-semibold">{mentorInfo?.internship2MentorName ?? "Not assigned yet"}</p>
+                      <p className="mt-1 font-semibold">{mentorInfo?.internship2MentorName ?? mentorInfo?.internship1MentorName ?? "Not assigned yet"}</p>
                     </div>
                   </div>
                 )}
@@ -483,7 +511,7 @@ export function InternshipSlotsSection({
                     onClick={raiseSecondRequest}
                     className="ui-button text-sm"
                   >
-                    {secondStarting ? "Submitting…" : "Raise Internship Request"}
+                    {secondStarting ? <LoadingSpinner label="Submitting…"/> : "Apply for Second Internship"}
                   </button>
                 </div>
               </div>

@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -133,6 +134,42 @@ class WeeklyProgressIntegrationTest {
         mvc.perform(post("/api/v1/mentor/weekly-progress/{id}/approve",first.id()).with(user(UserPrincipal.from(admin)))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"revision\":1}")).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/student/weekly-progress").with(user(principal))).andExpect(status().isOk()).andExpect(jsonPath("$.totalWeeks").value(9));
+    }
+
+    @Test void optionalPdfIsScopedToReportAndAssignedMentorAndCanBeReplacedOnlyOnRejectedResubmission() throws Exception {
+        var first=first(); byte[] original="%PDF-1.4\nweekly original".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        mvc.perform(multipart("/api/v1/student/weekly-progress/{id}",first.id())
+                .file(new MockMultipartFile("workDescription","","text/plain","Weekly work".getBytes()))
+                .file(new MockMultipartFile("reportPdf","weekly.pdf","application/pdf",original)).with(user(principal)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.reportPdfOriginalName").value("weekly.pdf"));
+        mvc.perform(get("/api/v1/student/weekly-progress/{id}/attachment",first.id()).with(user(principal)))
+                .andExpect(status().isOk()).andExpect(content().bytes(original));
+        mvc.perform(get("/api/v1/mentor/weekly-progress/{id}/attachment",first.id()).with(user(reviewer)))
+                .andExpect(status().isOk()).andExpect(content().bytes(original));
+        mvc.perform(get("/api/v1/mentor/weekly-progress/{id}/attachment",first.id()).with(user(UserPrincipal.from(otherMentor))))
+                .andExpect(status().isNotFound());
+        var studentGenerated=mvc.perform(get("/api/v1/student/weekly-progress/{id}/pdf",first.id()).with(user(principal)))
+                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF)).andReturn().getResponse();
+        var mentorGenerated=mvc.perform(get("/api/v1/mentor/weekly-progress/{id}/pdf",first.id()).with(user(reviewer)))
+                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF)).andReturn().getResponse();
+        assertThat(studentGenerated.getHeader("Content-Disposition")).contains("attachment","Weekly_Progress_",".pdf");
+        assertThat(studentGenerated.getContentAsByteArray()).startsWith("%PDF".getBytes());
+        try(var studentDocument=org.apache.pdfbox.pdmodel.PDDocument.load(studentGenerated.getContentAsByteArray());
+                var mentorDocument=org.apache.pdfbox.pdmodel.PDDocument.load(mentorGenerated.getContentAsByteArray())) {
+            assertThat(new org.apache.pdfbox.text.PDFTextStripper().getText(studentDocument))
+                    .isEqualTo(new org.apache.pdfbox.text.PDFTextStripper().getText(mentorDocument));
+        }
+        mvc.perform(get("/api/v1/mentor/weekly-progress/{id}/pdf",first.id()).with(user(UserPrincipal.from(otherMentor))))
+                .andExpect(status().isNotFound());
+        service.review(reviewer,first.id(),1,false,"Replace the report");
+        byte[] replacement="%PDF-1.4\nweekly replacement".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        mvc.perform(multipart("/api/v1/student/weekly-progress/{id}",first.id())
+                .file(new MockMultipartFile("workDescription","","text/plain","Corrected weekly work".getBytes()))
+                .file(new MockMultipartFile("reportPdf","corrected.pdf","application/pdf",replacement)).param("revision","1").with(user(principal)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.revision").value(2))
+                .andExpect(jsonPath("$.reportPdfOriginalName").value("corrected.pdf"));
+        mvc.perform(get("/api/v1/student/weekly-progress/{id}/attachment",first.id()).with(user(principal)))
+                .andExpect(status().isOk()).andExpect(content().bytes(replacement));
     }
 
     @Test void futureWeeksRejectSubmissionWithoutEventsOrNotifications() {

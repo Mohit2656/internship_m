@@ -76,11 +76,11 @@ class OpportunityMatchingReportIntegrationTest {
         opportunitySkills.saveAndFlush(new OpportunitySkill(opportunity,new NormalizedSkill("SQL","sql"),OpportunitySkillType.REQUIRED));
         var run=matching.rerun(opportunity.getId());
         var first=run.report().candidates().get(0);
-        assertThat(first.matchScore()).isEqualTo(60);
+        assertThat(first.matchScore()).isEqualTo(50);
         assertThat(first.matchedSkills()).containsExactly("Java");
         assertThat(first.missingRequiredSkills()).containsExactly("SQL");
         assertThat(first.strongMatch()).isFalse();
-        assertThat(run.report().candidates().get(1).matchScore()).isEqualTo(60);
+        assertThat(run.report().candidates().get(1).matchScore()).isEqualTo(50);
         assertThat(run.report().candidates().get(1).eligibility()).isEqualTo("INELIGIBLE");
         assertThat(notices(student)).isZero(); // Draft review never sends student alerts.
     }
@@ -173,6 +173,66 @@ class OpportunityMatchingReportIntegrationTest {
         mvc.perform(get(endpoint+"/"+runId).cookie(administrator)).andExpect(status().isOk());
         mvc.perform(post(endpoint).cookie(administrator)).andExpect(status().isConflict());
         mvc.perform(get("/api/v1/student/opportunities/{id}/matching-score",opportunity.getId()).cookie(own)).andExpect(status().isNotFound());
+    }
+
+    @Test void systemMatchedStudentsUseLiveRequiredSkillPercentageAndAreNotApplicants() throws Exception {
+        opportunitySkills.saveAndFlush(new OpportunitySkill(opportunity,
+                new NormalizedSkill("SQL", "sql"), OpportunitySkillType.REQUIRED));
+        Cookie administrator = login(admin);
+        String endpoint = "/api/v1/admin/opportunities/" + opportunity.getId() + "/system-matched-students";
+
+        mvc.perform(get(endpoint).cookie(administrator)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.available").value(true))
+                .andExpect(jsonPath("$.students.length()").value(2))
+                .andExpect(jsonPath("$.students[0].matchedSkills").value(org.hamcrest.Matchers.contains("Java")))
+                .andExpect(jsonPath("$.students[0].missingRequiredSkills").value(org.hamcrest.Matchers.contains("SQL")))
+                .andExpect(jsonPath("$.students[0].matchPercentage").value(50.0));
+
+        studentSkills.addOwn(UserPrincipal.from(student), new SkillNameRequest("SQL"));
+        mvc.perform(get(endpoint).cookie(administrator)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.students[0].studentId").value(student.getId()))
+                .andExpect(jsonPath("$.students[0].matchPercentage").value(100.0))
+                .andExpect(jsonPath("$.students[0].missingRequiredSkills").isEmpty());
+
+        Opportunity noRequirements = opportunity(null, List.of());
+        opportunitySkills.deleteAllByOpportunityId(noRequirements.getId()); opportunitySkills.flush();
+        mvc.perform(get("/api/v1/admin/opportunities/{id}/system-matched-students", noRequirements.getId()).cookie(administrator))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.available").value(false))
+                .andExpect(jsonPath("$.message").value("Skill match unavailable"))
+                .andExpect(jsonPath("$.students").isEmpty());
+        mvc.perform(get(endpoint).cookie(login(student))).andExpect(status().isForbidden());
+    }
+
+    @Test void studentInterestIsIndependentOfSkillMatchAndDuplicateSafe() throws Exception {
+        opportunitySkills.saveAllAndFlush(List.of(
+                new OpportunitySkill(opportunity, new NormalizedSkill("SQL", "sql"), OpportunitySkillType.REQUIRED),
+                new OpportunitySkill(opportunity, new NormalizedSkill("Kubernetes", "kubernetes"), OpportunitySkillType.REQUIRED)));
+        service.publish(opportunity.getId());
+        Cookie own = login(student); Cookie administrator = login(admin);
+        String interest = "/api/v1/student/opportunities/" + opportunity.getId() + "/interest";
+
+        mvc.perform(post(interest).cookie(own)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.interested").value(true));
+        mvc.perform(post(interest).cookie(own)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.interested").value(true));
+        assertThat(jdbc.queryForObject("select count(*) from opportunity_interests where opportunity_id=? and student_user_id=?",
+                Long.class, opportunity.getId(), student.getId())).isEqualTo(1);
+        mvc.perform(get("/api/v1/student/opportunities/interests").cookie(own)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0]").value(opportunity.getId()));
+
+        mvc.perform(get("/api/v1/admin/opportunities/{id}/interested-students", opportunity.getId()).cookie(administrator))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.students.length()").value(1))
+                .andExpect(jsonPath("$.students[0].studentId").value(student.getId()))
+                .andExpect(jsonPath("$.students[0].studentName").value("First Student"))
+                .andExpect(jsonPath("$.students[0].uid").value("M" + student.getId()))
+                .andExpect(jsonPath("$.students[0].matchPercentage").value(org.hamcrest.Matchers.closeTo(33.333, .01)));
+        mvc.perform(get("/api/v1/admin/opportunities/{id}/interested-students", opportunity.getId()).cookie(own))
+                .andExpect(status().isForbidden());
+        mvc.perform(post(interest).cookie(administrator)).andExpect(status().isForbidden());
+
+        Opportunity draft = opportunity(null, List.of());
+        mvc.perform(post("/api/v1/student/opportunities/{id}/interest", draft.getId()).cookie(own))
+                .andExpect(status().isNotFound());
     }
 
     @Test void aliasesRankExactlyMissingResumeIsUnavailableAndAdminNotifyIsDeduplicated() throws Exception {

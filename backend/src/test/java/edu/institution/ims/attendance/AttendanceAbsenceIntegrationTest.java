@@ -158,6 +158,18 @@ class AttendanceAbsenceIntegrationTest {
     }
 
     @Test
+    void completedInternshipNeverReceivesNewAutomaticAbsences() {
+        InternshipDetails completed = internship(TODAY.minusDays(2), TODAY.plusDays(2));
+        jdbc.update("update internship_details set completion_status='COMPLETED',completed_at=?,completion_reviewer_id=? where id=?",
+                Timestamp.from(NOW.minusSeconds(60)), completed.getOnboarding().getStudent().getId(), completed.getId());
+        internships.flush();
+
+        assertThat(service.processOverdueAttendance()).isZero();
+        assertThat(writer.createIfMissing(completed.getId(), TODAY)).isFalse();
+        assertThat(records(completed)).isEmpty();
+    }
+
+    @Test
     void concurrentWritersPersistOnlyOneDailyRecord() throws Exception {
         InternshipDetails internship = internship(TODAY, TODAY.plusDays(1));
         CountDownLatch ready = new CountDownLatch(2);

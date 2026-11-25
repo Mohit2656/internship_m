@@ -98,12 +98,8 @@ public class InternshipLocationService {
         var current = existing.get();
         if (place != null && (current.getLatitude().compareTo(normalizeLatitude(place.latitude())) != 0
                 || current.getLongitude().compareTo(normalizeLongitude(place.longitude())) != 0)) {
-            current.updateProposal(normalizeLatitude(place.latitude()), normalizeLongitude(place.longitude()),
-                    current.getGeofenceRadiusMeters(), clock.instant());
-            if (place.address() != null) current.selectedPlace(place.placeId(), place.address());
-            if (place.name() != null) current.name(place.name());
-            locations.saveAndFlush(current);
-            return false;
+            throw error(HttpStatus.CONFLICT, "WORKPLACE_COORDINATES_LOCKED",
+                    "The approved workplace coordinates are locked. Ask the III Cell to use the audited correction workflow.");
         }
         return true;
     }

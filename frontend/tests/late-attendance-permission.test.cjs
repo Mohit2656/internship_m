@@ -71,3 +71,27 @@ test("a rejected permission change keeps the server status and displays the auth
   assert.equal(h.switches()[0].props.checked, false);
   assert.match(h.html(), /role="alert"/); assert.match(h.html(), /Student is no longer assigned to you/);
 });
+
+test("dual-internship students show separate options and allow independent toggles", async () => {
+  const dualAssigned = [
+    { studentUserId: 21, internshipId: 201, internshipNumber: 1, companyName: "Alpha Corp", studentName: "Dual Student", uid: "DUAL001", attendanceDate: "2026-10-22", attendanceZone: "Asia/Kolkata", enabled: false, authorizedBy: null, authorizedAt: null },
+    { studentUserId: 21, internshipId: 202, internshipNumber: 2, companyName: "Beta Systems", studentName: "Dual Student", uid: "DUAL001", attendanceDate: "2026-10-22", attendanceZone: "Asia/Kolkata", enabled: false, authorizedBy: null, authorizedAt: null }
+  ];
+  const calls = [];
+  const h = harness({
+    async get(url) { calls.push({ url }); return { data: dualAssigned }; },
+    async put(url, body) { calls.push({ url, body }); return { data: { ...dualAssigned[0], enabled: body.enabled, authorizedBy: 3 } }; }
+  });
+  await h.mount();
+  assert.match(h.html(), /Internship 1 — Alpha Corp/);
+  assert.match(h.html(), /Internship 2 — Beta Systems/);
+  assert.equal(h.switches().length, 2);
+  assert.equal(h.switches()[0].props.checked, false);
+  assert.equal(h.switches()[1].props.checked, false);
+
+  await h.toggle(0, true);
+  assert.deepEqual(calls[1], { url: "/mentor/attendance/late-permissions/21", body: { enabled: true, internshipId: 201 } });
+  assert.equal(h.switches()[0].props.checked, true);
+  assert.equal(h.switches()[1].props.checked, false);
+  assert.match(h.html(), /permission enabled for Dual Student \(Internship 1\) on 2026-10-22/);
+});

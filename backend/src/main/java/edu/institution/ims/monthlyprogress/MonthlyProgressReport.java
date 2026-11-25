@@ -28,6 +28,9 @@ public class MonthlyProgressReport {
     @Column(name = "photo_original_name", nullable = false, length = 255) private String photoOriginalName;
     @Column(name = "photo_mime_type", nullable = false, length = 50) private String photoMimeType;
     @Column(name = "photo_size", nullable = false) private long photoSize;
+    @Column(name = "report_pdf_storage_key", length = 80) private String reportPdfStorageKey;
+    @Column(name = "report_pdf_original_name", length = 255) private String reportPdfOriginalName;
+    @Column(name = "report_pdf_size") private Long reportPdfSize;
     @Column(name = "exif_captured_at") private Instant exifCapturedAt;
     @Column(name = "exif_latitude", precision = 12, scale = 9) private BigDecimal exifLatitude;
     @Column(name = "exif_longitude", precision = 12, scale = 9) private BigDecimal exifLongitude;
@@ -88,6 +91,9 @@ public class MonthlyProgressReport {
         reviewer=null; reviewedAt=null; rejectionReason=null; applyImageIntegrity(image);
         // Original legacy GPS/workplace columns remain historical and are never used or exposed.
     }
+    public void attachReportPdf(String key, String originalName, long size) {
+        reportPdfStorageKey=key; reportPdfOriginalName=originalName; reportPdfSize=size;
+    }
     public void applyImageIntegrity(ValidatedProgressPhoto image) {
         imageWidth=image.imageWidth(); imageHeight=image.imageHeight(); imageSha256=image.imageSha256();
     }
@@ -123,6 +129,9 @@ public class MonthlyProgressReport {
     public String getPhotoOriginalName() { return photoOriginalName; }
     public String getPhotoMimeType() { return photoMimeType; }
     public long getPhotoSize() { return photoSize; }
+    public String getReportPdfStorageKey() { return reportPdfStorageKey; }
+    public String getReportPdfOriginalName() { return reportPdfOriginalName; }
+    public Long getReportPdfSize() { return reportPdfSize; }
     public Instant getExifCapturedAt() { return exifCapturedAt; }
     public BigDecimal getExifLatitude() { return exifLatitude; }
     public BigDecimal getExifLongitude() { return exifLongitude; }

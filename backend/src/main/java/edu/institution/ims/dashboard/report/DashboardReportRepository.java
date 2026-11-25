@@ -62,9 +62,10 @@ public class DashboardReportRepository {
         });
         if (filters.containsKey("historyFrom") && filters.containsKey("historyTo") && date(filters.get("historyFrom")).isAfter(date(filters.get("historyTo"))))
             throw new IllegalArgumentException("History from must be on or before history through");
-        LocalDate attendanceDate = filters.containsKey("attendanceDate") ? date(filters.get("attendanceDate")) : LocalDate.now(clock);
+        LocalDate institutionalToday = edu.institution.ims.internship.InternshipLifecycle.today(clock);
+        LocalDate attendanceDate = filters.containsKey("attendanceDate") ? date(filters.get("attendanceDate")) : institutionalToday;
         MapSqlParameterSource params = new MapSqlParameterSource().addValue("attendanceDate", java.sql.Date.valueOf(attendanceDate))
-                .addValue("completionToday", java.sql.Date.valueOf(LocalDate.now(clock))).addValue("dayOfWeek", attendanceDate.getDayOfWeek().name()).addValue("viewerId", user.id());
+                .addValue("completionToday", java.sql.Date.valueOf(institutionalToday)).addValue("dayOfWeek", attendanceDate.getDayOfWeek().name()).addValue("viewerId", user.id());
         StringBuilder where = new StringBuilder(" where u.role = 'STUDENT'");
         if (!admin) where.append(" and a.mentor_user_id = :viewerId");
         // Reject guessed / out-of-scope IDs even if another filter would produce an empty result.

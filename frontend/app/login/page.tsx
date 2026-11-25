@@ -21,7 +21,7 @@ function RoleIcon({ type }: { type: (typeof loginOptions)[number]["icon"] }) {
 }
 
 export default function LoginPage() {
-  return <Suspense><LoginContent /></Suspense>;
+  return <Suspense fallback={<main className="grid min-h-screen place-items-center bg-[#f4f8ff]"><p className="text-sm font-semibold text-slate-500">Loading…</p></main>}><LoginContent /></Suspense>;
 }
 
 function LoginContent() {
@@ -29,7 +29,7 @@ function LoginContent() {
   const selectedRole = useSearchParams().get("role");
   const selectedOption = loginOptions.find(option => option.role === selectedRole);
   const router = useRouter();
-  const { user, loading, refresh } = useAuth();
+  const { user, loading, setUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -60,7 +60,8 @@ function LoginContent() {
     setError(""); setSubmitting(true);
     try {
       const { data } = await api.post<AuthUser>("/auth/login", { email, password, role: selectedOption.role });
-      await refresh(); router.replace(destination(data));
+      setUser(data);
+      router.replace(destination(data));
     } catch (cause) {
       const response = (cause as AxiosError<ApiError>).response;
       setError(response?.status === 403 ? "This account cannot sign in here. Check that it is active and choose the correct login option." : response?.data?.message ?? "Unable to sign in. Please try again.");
@@ -133,8 +134,8 @@ function LoginContent() {
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="login-role-chevron"><path d="m9 5 7 7-7 7" /></svg>
             </Link>)}
           </nav> : <form onSubmit={submit} className="mt-5 space-y-3.5 sm:mt-8 sm:space-y-5">
-            <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-900 sm:mb-2 sm:text-sm">Email address</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-slate-500 sm:left-4" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 sm:h-5 sm:w-5" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><input autoComplete="email" type="email" required value={email} onChange={event => setEmail(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-2.5 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 sm:py-3.5 sm:pl-12 sm:text-base" placeholder="you@institution.edu" /></span></label>
-            <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-900 sm:mb-2 sm:text-sm">Password</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-slate-500 sm:left-4" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 sm:h-5 sm:w-5" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg></span><input autoComplete="current-password" type={showPassword ? "text" : "password"} required minLength={1} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-2.5 pl-10 pr-11 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 sm:py-3.5 sm:pl-12 sm:pr-12 sm:text-base" placeholder="Enter your password" /><button data-button-variant="icon" type="button" onClick={() => setShowPassword(value => !value)} className="absolute inset-y-0 right-2 grid w-8 place-items-center sm:right-3 sm:w-9" aria-label={showPassword ? "Hide password" : "Show password"}><svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 sm:h-5 sm:w-5" stroke="currentColor" strokeWidth="1.8"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/>{showPassword && <path d="m4 4 16 16"/>}</svg></button></span></label>
+            <label htmlFor="login-email" className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-900 sm:mb-2 sm:text-sm">Email address</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-slate-500 sm:left-4" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 sm:h-5 sm:w-5" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><input id="login-email" name="email" autoComplete="email" type="email" required value={email} onChange={event => setEmail(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-2.5 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 sm:py-3.5 sm:pl-12 sm:text-base" placeholder="you@institution.edu" /></span></label>
+            <label htmlFor="login-password" className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-900 sm:mb-2 sm:text-sm">Password</span><span className="relative block"><span className="pointer-events-none absolute inset-y-0 left-3.5 grid place-items-center text-slate-500 sm:left-4" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 sm:h-5 sm:w-5" stroke="currentColor" strokeWidth="1.8"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg></span><input id="login-password" name="password" autoComplete="current-password" type={showPassword ? "text" : "password"} required minLength={1} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} className="w-full rounded-xl border border-slate-300/90 bg-blue-50/45 py-2.5 pl-10 pr-11 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100 sm:py-3.5 sm:pl-12 sm:pr-12 sm:text-base" placeholder="Enter your password" /><button data-button-variant="icon" type="button" onClick={() => setShowPassword(value => !value)} className="absolute inset-y-0 right-2 grid w-8 place-items-center sm:right-3 sm:w-9" aria-label={showPassword ? "Hide password" : "Show password"}><svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 sm:h-5 sm:w-5" stroke="currentColor" strokeWidth="1.8"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/>{showPassword && <path d="m4 4 16 16"/>}</svg></button></span></label>
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
               <Link href="/" className="font-semibold text-blue-700 hover:underline">Choose a different login option</Link>
               <Link href="/forgot-password" className="font-semibold text-blue-700 hover:underline">Forgot Password?</Link>

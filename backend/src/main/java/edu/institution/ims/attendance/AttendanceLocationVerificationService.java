@@ -41,6 +41,25 @@ public class AttendanceLocationVerificationService {
 
     public BigDecimal maxGpsAccuracyMeters() { return maxAccuracy; }
 
+    public WorkplaceAttendanceStatus workplaceStatus(InternshipDetails internship,
+            AttendanceVerificationMethod verificationMethod) {
+        if (verificationMethod != AttendanceVerificationMethod.PHYSICAL)
+            return WorkplaceAttendanceStatus.NOT_REQUIRED;
+        // Eligibility reads run in a read-only transaction; do not request a
+        // PostgreSQL row lock here. Submission performs the locked recheck.
+        return locations.findByInternshipId(internship.getId())
+                .map(location -> approvals.fullyApproved(location)
+                        ? WorkplaceAttendanceStatus.APPROVED
+                        : WorkplaceAttendanceStatus.AWAITING_MENTOR_APPROVAL)
+                .orElse(WorkplaceAttendanceStatus.DECLARATION_REQUIRED);
+    }
+
+    public InternshipLocation requireApprovedWorkplace(InternshipDetails internship) {
+        return locations.findForVerification(internship.getId()).filter(approvals::fullyApproved)
+                .orElseThrow(() -> AttendanceService.error(HttpStatus.CONFLICT, "WORKPLACE_NOT_APPROVED",
+                        "The selected internship requires a workplace approved by the assigned mentor before physical attendance"));
+    }
+
     public void validateCaptureTime(Instant capturedAt) {
         if (capturedAt != null && (capturedAt.isBefore(Instant.EPOCH)
                 || capturedAt.isAfter(clock.instant().plusSeconds(30))))
@@ -54,9 +73,7 @@ public class AttendanceLocationVerificationService {
         // The evidence constructor attaches itself to the managed attendance record. Make it
         // managed before the approval query can trigger Hibernate's automatic flush.
         evidence.save(captured);
-        InternshipLocation workplace = geofenceApplicable
-                ? locations.findForVerification(internship.getId()).filter(approvals::fullyApproved).orElse(null)
-                : null;
+        InternshipLocation workplace = geofenceApplicable ? requireApprovedWorkplace(internship) : null;
         LocationVerificationDecision decision = evaluate(submitted, workplace, capturedAt, geofenceApplicable);
         captured.recordLocationVerification(workplace, decision, capturedAt);
         evidence.saveAndFlush(captured);

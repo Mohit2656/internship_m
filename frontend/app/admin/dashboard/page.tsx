@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { api } from "@/lib/api";
 import { DashboardSummary } from "@/lib/dashboard";
-import { DashboardReportExport } from "@/components/DashboardReportExport";
 import { AcademicSessionPicker } from "@/components/AcademicSessionPicker";
 import { useAcademicSessions } from "@/lib/academic-sessions";
 import { STUDENT_ACCOUNTS_CHANGED } from "@/lib/student-deletion";
@@ -91,16 +90,15 @@ export default function AdminDashboard() {
   const [error, setError] = useState("");
   const session = useAcademicSessions();
   const [accountRefresh, setAccountRefresh] = useState(0);
+  const prevSessionRef = useRef<number | null>(null);
 
   useEffect(() => {
     const refresh = () => setAccountRefresh(value => value + 1);
     const storage = (event: StorageEvent) => { if (event.key === STUDENT_ACCOUNTS_CHANGED) refresh(); };
     window.addEventListener(STUDENT_ACCOUNTS_CHANGED, refresh);
-    window.addEventListener("focus", refresh);
     window.addEventListener("storage", storage);
     return () => {
       window.removeEventListener(STUDENT_ACCOUNTS_CHANGED, refresh);
-      window.removeEventListener("focus", refresh);
       window.removeEventListener("storage", storage);
     };
   }, []);
@@ -108,8 +106,11 @@ export default function AdminDashboard() {
   const [completions, setCompletions] = useState<CompletionPage | null>(null);
 
   useEffect(() => {
-    setSummary(null);
-    setCompletions(null);
+    if (prevSessionRef.current !== session.selected) {
+      setSummary(null);
+      setCompletions(null);
+      prevSessionRef.current = session.selected;
+    }
     setError("");
     if (!session.selected) return;
     const controller = new AbortController();
@@ -198,7 +199,6 @@ export default function AdminDashboard() {
     ? [
         { key: "PAID", label: "Paid internships", value: summary.stipend.paid, count: summary.stipend.paid, tone: "emerald" as const, params: { paid: true } },
         { key: "UNPAID", label: "Unpaid internships", value: summary.stipend.unpaid, count: summary.stipend.unpaid, tone: "slate" as const, params: { paid: false } },
-        { key: "AVG_STIPEND", label: "Average monthly stipend (paid)", value: summary.stipend.averagePaidMonthlyStipend === null ? "—" : currency.format(summary.stipend.averagePaidMonthlyStipend), count: 0, tone: "blue" as const, params: null },
         { key: "FTE_YES", label: "Full-time opportunity — yes", value: summary.fullTimeEmployment.yes, count: summary.fullTimeEmployment.yes, tone: "emerald" as const, params: { fullTimeEmploymentOffered: true } },
         { key: "FTE_NO", label: "Full-time opportunity — no", value: summary.fullTimeEmployment.no, count: summary.fullTimeEmployment.no, tone: "slate" as const, params: { fullTimeEmploymentOffered: false } },
       ]
@@ -216,11 +216,6 @@ export default function AdminDashboard() {
 
           <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
             <AcademicSessionPicker sessions={session.sessions} selected={session.selected} onChange={session.setSelected} />
-            <DashboardReportExport
-              key={session.selected}
-              role="ADMIN"
-              initialFilters={session.selected ? { academicSessionId: String(session.selected) } : {}}
-            />
           </div>
 
           {session.error && <p role="alert" className="mt-4 text-sm text-red-700">{session.error}</p>}

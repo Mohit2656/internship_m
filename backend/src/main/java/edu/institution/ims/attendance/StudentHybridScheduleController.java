@@ -10,7 +10,8 @@ public class StudentHybridScheduleController {
     private final HybridScheduleService service;
     public StudentHybridScheduleController(HybridScheduleService service) { this.service = service; }
 
-    @GetMapping public HybridScheduleResponse get(@AuthenticationPrincipal UserPrincipal principal) {
-        return service.getOwn(principal);
+    @GetMapping public HybridScheduleResponse get(@AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) Long internshipId) {
+        return service.getOwn(principal, internshipId);
     }
 }

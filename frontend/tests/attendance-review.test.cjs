@@ -8,7 +8,7 @@ function all(node, predicate) { if (Array.isArray(node)) return node.flatMap(chi
 function harness(api, props = {}) {
   const states = []; let cursor = 0;
   const hooks = { useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === "function" ? value(states[i]) : value; }]; }, useRef(initial) { const i = cursor++; if (!(i in states)) states[i] = { current: initial }; return states[i]; } };
-  const m = { exports: {} }, imports = { react: hooks, "@/lib/api": { api }, "@/lib/monthly-progress": { formatDateTime: value => value }, "@/lib/professional-profile": { resumeError: (cause, fallback) => cause?.message || fallback } };
+  const m = { exports: {} }, imports = { react: hooks, "@/lib/api": { api }, "@/lib/monthly-progress": { formatDateTime: value => value }, "@/lib/professional-profile": { resumeError: (cause, fallback) => cause?.message || fallback }, "@/components/LoadingSpinner": { LoadingSpinner: ({ label }) => React.createElement("span", null, label) } };
   new Function("require", "module", "exports", ts.transpileModule(fs.readFileSync(path.join(__dirname, "../components/AttendanceReviewPanel.tsx"), "utf8"), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText)(name => imports[name] || require(name), m, m.exports);
   const current = { role: "MENTOR", record, onChanged() {}, ...props };
   function tree() { cursor = 0; return m.exports.AttendanceReviewPanel(current); }
@@ -24,6 +24,14 @@ test("mentor approval uses the selected record revision and refreshes after succ
   assert.equal(h.button("Mark present").props.disabled, false);
   h.button("Mark present").props.onClick(); await flush();
   assert.deepEqual(calls, [{ url: "/mentor/attendance/91/review", body: { status: "APPROVED", revision: 3, reason: null } }]); assert.equal(changed, 1);
+});
+test("rapid mentor review clicks emit one request while the selected record is pending", async () => {
+  let release; const pending = new Promise(resolve => { release = resolve; }); const calls = [];
+  const h = harness({ async post(url, body) { calls.push({ url, body }); await pending; return { data: {} }; } });
+  const click = h.button("Mark present").props.onClick;
+  click(); click();
+  assert.equal(calls.length, 1);
+  release(); await flush();
 });
 test("rejection needs a reason and failures retain the draft for correction", async () => {
   const calls = []; const h = harness({ async post(url, body) { calls.push(body); throw new Error("The review changed. Reload before retrying."); } });
@@ -49,4 +57,9 @@ test("finalized attendance acknowledgement is independent of approval", async ()
   const h = harness({ async post(url, body) { calls.push({ url, body }); return { data: {} }; } }, { record: finalized, onChanged() { changed++; } });
   h.button("Mark as Seen").props.onClick(); await flush();
   assert.deepEqual(calls, [{ url: "/mentor/attendance/91/acknowledgement", body: undefined }]); assert.equal(changed, 1);
+});
+
+test("mentor attendance history does not display review audit history control", () => {
+  const h = harness({}, { role: "MENTOR" });
+  assert.doesNotMatch(h.html(), /Review audit history/);
 });

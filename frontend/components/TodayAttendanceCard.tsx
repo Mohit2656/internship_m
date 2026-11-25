@@ -7,6 +7,7 @@ import { AiVerificationEvidence, AiVerificationSession, Attendance, AttendancePo
 import { challengeLabel, EdgeAiAnalyzer, EdgeAiFrameState, EDGE_AI_MODEL_VERSION } from "@/lib/edge-ai";
 import { AttendanceLocations, validSubmissionCoordinates } from "@/components/AttendanceLocations";
 import { LocationVerificationResult } from "@/components/LocationVerificationResult";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { captureAttendanceLocation, accuracyDescription, usableAccuracy, type AttendanceLocationSample } from "@/lib/attendance-location";
 import type { InternshipDetails } from "@/lib/internship-details";
 
@@ -119,6 +120,12 @@ export function TodayAttendanceCard() {
   const [submissionLocation, setSubmissionLocation] = useState<AttendanceLocationSample | null>(null);
   const [locationNotice, setLocationNotice] = useState("");
   const [locating, setLocating] = useState(false);
+  const [forceExtraWork, setForceExtraWork] = useState(false);
+  const [holidayModalOpen, setHolidayModalOpen] = useState(false);
+  const [holidayReason, setHolidayReason] = useState("");
+  const [holidaySubmitting, setHolidaySubmitting] = useState(false);
+  const [holidaySuccess, setHolidaySuccess] = useState("");
+  const [holidayError, setHolidayError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -236,7 +243,7 @@ export function TodayAttendanceCard() {
     throw new Error("Camera preview did not initialize");
   }
 
-  async function startCamera() {
+  async function startCamera(preserveLocation = false) {
     const isSubmitted = Boolean(today?.attendance && !isAutomaticAbsence(today.attendance));
     if (isSubmitted) {
       stopCamera();
@@ -249,7 +256,17 @@ export function TodayAttendanceCard() {
       setError("Today's attendance submission window has closed.");
       return;
     }
-    locationRequestRef.current += 1; setSubmissionLocation(null); setLocationNotice(""); setLocating(false);
+    const isLocationValid = Boolean(
+      submissionLocation &&
+      validSubmissionCoordinates(submissionLocation.latitude, submissionLocation.longitude) &&
+      (policy?.verificationMethod === "REMOTE" || typeof policy?.maxGpsAccuracyMeters !== "number" || usableAccuracy(submissionLocation.accuracy, policy.maxGpsAccuracyMeters))
+    );
+    if (!preserveLocation || !isLocationValid) {
+      locationRequestRef.current += 1;
+      setSubmissionLocation(null);
+      setLocationNotice("");
+      setLocating(false);
+    }
     stopCamera(); setError(""); setAiError(""); setFlowOpen(true); setPhoto(null);
     setAiSession(null); setAiState(null); aiPassedRef.current = false;
     setCameraStatus("Preparing server challenge…");
@@ -488,10 +505,46 @@ export function TodayAttendanceCard() {
     } finally { setSubmitting(false); }
   }
 
+  async function submitHoliday() {
+    if (!holidayReason.trim()) {
+      setHolidayError("Please provide a reason for the company holiday.");
+      return;
+    }
+    setHolidaySubmitting(true);
+    setHolidayError("");
+    try {
+      await api.post("/student/attendance/exceptions/holiday", {
+        internshipId: internshipId ?? undefined,
+        date: today?.attendanceDate,
+        reason: holidayReason.trim()
+      });
+      setHolidaySuccess("Company holiday request submitted. It is pending faculty mentor approval.");
+      setHolidayModalOpen(false);
+      setHolidayReason("");
+      if (internshipId) {
+        api.get<AttendancePolicy>("/student/attendance/today/policy", { params: { internshipId } })
+          .then(({ data }) => setPolicy(data))
+          .catch(() => {});
+      }
+    } catch (cause: unknown) {
+      const msg = (cause as AxiosError<ApiError>)?.response?.data?.message || "Failed to submit holiday request.";
+      setHolidayError(msg);
+    } finally {
+      setHolidaySubmitting(false);
+    }
+  }
+
   const attendance = today?.attendance;
   const physical = policy?.verificationMethod === "PHYSICAL";
   const remote = policy?.verificationMethod === "REMOTE";
   const poorAccuracy = Boolean(submissionLocation && !remote && typeof policy?.maxGpsAccuracyMeters === "number" && !usableAccuracy(submissionLocation.accuracy, policy.maxGpsAccuracyMeters));
+  const hasValidLocation = Boolean(
+    submissionLocation &&
+    validSubmissionCoordinates(submissionLocation.latitude, submissionLocation.longitude) &&
+    (remote || typeof policy?.maxGpsAccuracyMeters !== "number" || usableAccuracy(submissionLocation.accuracy, policy.maxGpsAccuracyMeters))
+  );
+  const isLifecycleEnded = policy?.lifecycleStatus === "ENDED" || policy?.lifecycleStatus === "COMPLETED" || (Boolean(policy?.internshipEndDate) && Boolean(today?.attendanceDate) && policy!.internshipEndDate < today!.attendanceDate);
+  const isLifecycleNotStarted = policy?.lifecycleStatus === "NOT_STARTED" || (Boolean(policy?.internshipStartDate) && Boolean(today?.attendanceDate) && policy!.internshipStartDate > today!.attendanceDate);
   const automatic = attendance ? isAutomaticAbsence(attendance) : false;
   const submitted = Boolean(attendance && !automatic);
   const latePermissionActive = Boolean(today?.latePermissionEnabled && attendanceSubmissionOpen(today));
@@ -499,25 +552,128 @@ export function TodayAttendanceCard() {
   const locationCaptureControl = <div className="mt-4 text-sm text-slate-600"><button data-button-variant="text" type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="hover:underline">{locating ? "Capturing submission location..." : poorAccuracy ? "Retry GPS capture" : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance.{!remote && typeof policy?.maxGpsAccuracyMeters === "number" && ` Required GPS accuracy: ${policy.maxGpsAccuracyMeters} m or better.`}</p>{locationNotice && <p role={poorAccuracy ? "alert" : "status"} className={`mt-2 ${poorAccuracy ? "text-amber-800" : ""}`}>{locationNotice}</p>}</div>;
   return (
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-7 lg:col-span-2">
-      {internships.length>1&&<label className="mb-5 block text-sm font-semibold">Attendance internship<select className="input mt-2" value={internshipId??""} onChange={e=>{stopCamera();setFlowOpen(false);setError("");setAiError("");setInternshipId(Number(e.target.value));setToday(null);setPolicy(null);setLoading(true)}}>{internships.map(i=><option key={i.id} value={i.id}>Internship {i.internshipNumber} — {i.companyName}</option>)}</select></label>}
+      {internships.length>1&&<label className="mb-5 block text-sm font-semibold">Attendance internship<select className="input mt-2" value={internshipId??""} onChange={e=>{stopCamera();setFlowOpen(false);setError("");setAiError("");setSubmissionLocation(null);setLocationNotice("");setLocating(false);setInternshipId(Number(e.target.value));setToday(null);setPolicy(null);setLoading(true)}}>{internships.map(i=><option key={i.id} value={i.id}>Internship {i.internshipNumber} — {i.companyName}</option>)}</select></label>}
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Today&apos;s Attendance</p><h2 className="mt-3 text-xl font-bold">{loading ? "Checking attendance…" : attendance ? attendanceLabel(attendance) : "Not submitted"}</h2></div>
+        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Today&apos;s Attendance</p><h2 className="mt-3 text-xl font-bold">{loading ? "Checking attendance…" : attendance ? attendanceLabel(attendance) : isLifecycleEnded ? "Internship Completed" : isLifecycleNotStarted ? "Internship Not Started" : "Not submitted"}</h2></div>
         {attendance && attendance.attendanceResult === "PRESENT" && <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${attendance.livenessStatus === "VERIFIED" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{livenessLabel(attendance.livenessStatus)}</span>}
       </div>
-      {!loading && attendance ? <p className="mt-3 text-sm text-slate-600">{automatic ? "Automatically marked absent for the full working day because attendance was not submitted before the deadline." : <>Submitted at {new Date(attendance.serverSubmittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: today?.attendanceZone })} using server time.</>}</p> : !loading && <p className="mt-3 text-sm text-slate-600">Attendance can be submitted once per working day during your registered internship period.{deadline && <> Submit before {deadline} ({today?.attendanceZone}). Missing attendance is marked absent for the full working day after this deadline.</>}</p>}
+      {!loading && attendance ? <p className="mt-3 text-sm text-slate-600">{automatic ? "Automatically marked absent for the full working day because attendance was not submitted before the deadline." : <>Submitted at {new Date(attendance.serverSubmittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: today?.attendanceZone })} using server time.</>}</p> : !loading && isLifecycleEnded ? <p className="mt-3 text-sm text-slate-600">This internship concluded on {policy?.internshipEndDate}. Attendance is no longer active.</p> : !loading && isLifecycleNotStarted ? <p className="mt-3 text-sm text-slate-600">Attendance tracking starts on {policy?.internshipStartDate}.</p> : !loading && <p className="mt-3 text-sm text-slate-600">Attendance can be submitted once per working day during your registered internship period.{deadline && <> Submit before {deadline} ({today?.attendanceZone}). Missing attendance is marked absent for the full working day after this deadline.</>}</p>}
       {!loading && latePermissionActive && <p role="status" className="mt-4 rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-800">Your faculty mentor has enabled late attendance submission for {today?.attendanceDate} ({today?.attendanceZone}). Permission expires at the end of this day. Complete the required attendance validation to submit.{automatic && " A valid submission will update today's automatic absence."}</p>}
       {!loading && attendance?.submittedLate && <p className="mt-3 text-sm font-semibold text-blue-700">Submitted late with faculty mentor permission.</p>}
-      {!loading && windowClosed && !submitted && <p role="status" className="mt-3 text-sm text-amber-800">Today's submission window has closed. Any missing attendance will be recorded as absent automatically.</p>}
+      {!loading && windowClosed && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && <p role="status" className="mt-3 text-sm text-amber-800">Today's submission window has closed. Any missing attendance will be recorded as absent automatically.</p>}
       {!loading && attendance && !automatic && <AttendanceLocations evidence={attendance.evidence} />}
       {!loading && attendance && !automatic && <LocationVerificationResult evidence={attendance.evidence} maxGpsAccuracyMeters={policy?.maxGpsAccuracyMeters}/>}
       {!loading && attendance?.attendanceResult === "PENDING_MENTOR_REVIEW" && <p role="alert" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Your evidence was saved and is pending mentor review. {attendance.evidence?.locationVerificationStatus && attendance.evidence.locationVerificationStatus !== "VERIFIED" && attendance.evidence.locationVerificationStatus !== "NOT_APPLICABLE" ? `Location issue: ${attendance.evidence.locationVerificationStatus.replaceAll("_", " ").toLowerCase()}.` : attendance.livenessStatus !== "VERIFIED" ? `Verification issue: ${attendance.evidence?.verificationReason?.replaceAll("_", " ").toLowerCase() || livenessLabel(attendance.livenessStatus)}.` : "A mandatory verification check requires review."}</p>}
       {!loading && attendance?.acknowledgement && <p className="mt-3 text-sm text-slate-600">Viewed by mentor · {new Date(attendance.acknowledgement.seenAt).toLocaleString("en-IN", { timeZone: today?.attendanceZone })}</p>}
       {!loading && policy?.todayWorkMode && <p className="mt-3 text-sm font-semibold text-slate-700">Today&apos;s expected work mode: {policy.todayWorkMode === "OFFICE" ? "Office" : "Remote"}</p>}
       {!loading && policy?.internshipMode === "HYBRID" && schedule && <div className="mt-4 flex flex-wrap gap-2">{schedule.entries.map(entry => <span key={entry.dayOfWeek} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-700">{entry.dayOfWeek.slice(0, 3)} · {entry.workMode === "OFFICE" ? "Office" : "Remote"}</span>)}</div>}
+
+      {/* Approved Company Holiday Notice */}
+      {!loading && policy?.approvedHoliday && (
+        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          <p className="font-bold">Company Holiday (Approved)</p>
+          <p className="mt-1">Today is an approved company holiday. You are excused from submitting attendance today.</p>
+        </div>
+      )}
+
+      {/* Pending Company Holiday Notice */}
+      {!loading && policy?.pendingHoliday && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-bold">Company Holiday Request Pending</p>
+          <p className="mt-1">Your company holiday request has been submitted and is awaiting faculty mentor verification.</p>
+        </div>
+      )}
+
+      {/* Holiday Request Success Notice */}
+      {holidaySuccess && (
+        <p role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+          {holidaySuccess}
+        </p>
+      )}
+
+      {/* Scheduled Day Off Banner */}
+      {!loading && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && policy?.scheduledDayOff && !policy.approvedHoliday && !forceExtraWork && !policy.approvedExtraWorkday && (
+        <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50/60 p-5">
+          <h3 className="text-base font-bold text-blue-950">Today is your scheduled day off</h3>
+          <p className="mt-1 text-sm text-blue-800">
+            According to your company schedule, today is not a regular working day. No attendance is required, and no automatic absence will be recorded.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setForceExtraWork(true)}
+              className="rounded-xl border border-blue-700 bg-white px-4 py-2 text-sm font-semibold text-blue-800 shadow-sm hover:bg-blue-50"
+            >
+              Working today (extra work)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Extra Workday Confirmed Indicator */}
+      {!loading && (forceExtraWork || policy?.approvedExtraWorkday) && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && (
+        <div className="mt-4 rounded-xl border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
+          <p className="font-semibold">Extra Workday Mode Active</p>
+          <p className="text-xs text-blue-800">You are submitting attendance for an extra workday outside your normal schedule. Valid attendance will be verified and counted.</p>
+        </div>
+      )}
+
+      {/* Report Company Holiday Option on working days */}
+      {!loading && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && !windowClosed && !policy?.approvedHoliday && !policy?.pendingHoliday && !holidayModalOpen && (
+        <div className="mt-4">
+          <button
+            type="button"
+            data-button-variant="outline"
+            onClick={() => { setHolidayModalOpen(true); setHolidayError(""); }}
+            className="text-xs text-slate-600 hover:text-slate-900"
+          >
+            Report Company Holiday for Today
+          </button>
+        </div>
+      )}
+
+      {/* Holiday Reporting Form */}
+      {holidayModalOpen && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <h3 className="text-sm font-bold text-slate-900">Report Exceptional Company Holiday</h3>
+          <p className="mt-1 text-xs text-slate-600">
+            Report a company-specific holiday for {today?.attendanceDate}. Your faculty mentor will review and approve this exception.
+          </p>
+          <div className="mt-3">
+            <textarea
+              rows={3}
+              placeholder="Reason for company holiday (e.g. Annual Company Day, Facility Maintenance)"
+              value={holidayReason}
+              onChange={e => setHolidayReason(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none"
+            />
+          </div>
+          {holidayError && <p role="alert" className="mt-2 text-xs text-red-700">{holidayError}</p>}
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              disabled={holidaySubmitting || !holidayReason.trim()}
+              onClick={submitHoliday}
+              className="text-xs"
+            >
+              {holidaySubmitting ? "Submitting…" : "Submit Holiday Request"}
+            </button>
+            <button
+              type="button"
+              data-button-variant="outline"
+              onClick={() => { setHolidayModalOpen(false); setHolidayReason(""); setHolidayError(""); }}
+              className="text-xs"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {!loading && !submitted && !policy && <p role="alert" className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s attendance policy could not be confirmed. Reload the dashboard before submitting attendance.</p>}
       {!loading && !submitted && policy && !policy.configurationReady && <p className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s work mode has not been configured. Attendance can be recorded; liveness will be marked as not performed.</p>}
-      {!loading && !submitted && policy && !flowOpen && <button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || ((!physical && !remote) && (!submissionLocation || locating))} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 text-sm">{submitting ? "Submitting…" : "Mark Today's Attendance"}</button>}
-      {!loading && !submitted && policy && !physical && !remote && locationCaptureControl}
+      {!loading && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && policy && !flowOpen && (!policy.scheduledDayOff || forceExtraWork || policy.approvedExtraWorkday) && !policy.approvedHoliday && <button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || ((!physical && !remote) && (!submissionLocation || locating))} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 text-sm">{submitting ? "Submitting…" : "Mark Today's Attendance"}</button>}
+      {!loading && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && policy && !physical && !remote && (!policy.scheduledDayOff || forceExtraWork || policy.approvedExtraWorkday) && !policy.approvedHoliday && locationCaptureControl}
       {!loading && !submitted && !windowClosed && flowOpen && <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div className="mb-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-950"><p className="font-bold">Edge Verification</p><p className="mt-1">Camera analysis verifies a live attendance capture on this device. Face recognition and identity matching are not performed.</p></div>
         {!photo ? <video ref={videoRef} playsInline muted style={{ transform: isFrontCamera ? "scaleX(-1)" : "none" }} className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" /> : <img src={photoUrl} alt="Fresh attendance camera capture" className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" />}
@@ -527,7 +683,21 @@ export function TodayAttendanceCard() {
         </div>
         {!photo && aiSession && <div className="mt-4 max-w-xl rounded-xl border border-slate-200 bg-white p-4 text-sm"><p className="font-semibold">Liveness challenge: {challengeLabel(aiSession.challenge)}</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><span>{aiState?.faceDetected ? "✓" : "○"} Face detected</span><span>{aiState?.singleFace && aiState.qualityPassed ? "✓" : "○"} Face positioned</span><span>{aiState?.livenessPassed ? "✓" : "○"} Liveness confirmed</span></div><p className="mt-3 text-slate-600">{aiState?.guidance ?? "Loading face analysis…"}</p></div>}
         {aiError && <p role="alert" className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">{aiError}</p>}
-        {!loading && !submitted && policy && photo && locationCaptureControl}
+        {!loading && !submitted && policy && photo && (
+          <div className="mt-4 text-sm text-slate-600">
+            {hasValidLocation ? (
+              <>
+                <p role="status" className="font-semibold text-emerald-700">Location captured successfully</p>
+                {locationNotice && <p className="mt-1 text-slate-600">{locationNotice}</p>}
+              </>
+            ) : (
+              <>
+                <p className="mt-1">Location is required to submit attendance.{!remote && typeof policy?.maxGpsAccuracyMeters === "number" && ` Required GPS accuracy: ${policy.maxGpsAccuracyMeters} m or better.`}</p>
+                {locationNotice && <p role={poorAccuracy ? "alert" : "status"} className={`mt-2 ${poorAccuracy ? "text-amber-800" : "font-medium text-red-700"}`}>{locationNotice}</p>}
+              </>
+            )}
+          </div>
+        )}
         {photo && remote && (
           <div className="mt-4 w-full max-w-xl">
             <label htmlFor="daily-work-summary" className="block text-sm font-semibold text-slate-700">
@@ -551,32 +721,45 @@ export function TodayAttendanceCard() {
         )}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {photo ? (
-            <>
-              <button
-                type="button"
-                disabled={
-                  windowClosed ||
-                  !attendanceSubmissionOpen(today) ||
-                  submitting ||
-                  locating ||
-                  !submissionLocation ||
-                  (remote && dailyWorkSummary.trim().length < 20)
-                }
-                onClick={() => void (remote ? submitRemote() : submitPhysical())}
-                className="text-sm"
-              >
-                {submitting ? "Submitting…" : "Submit Attendance"}
-              </button>
-              <button
-                data-button-variant="outline"
-                type="button"
-                disabled={submitting}
-                onClick={() => void startCamera()}
-                className="text-sm"
-              >
-                Retake
-              </button>
-            </>
+            !hasValidLocation ? (
+              <>
+                <button
+                  type="button"
+                  disabled={submitting || locating}
+                  onClick={includeSubmissionLocation}
+                  className="text-sm"
+                >
+                  {locating ? <LoadingSpinner label="Capturing location…" /> : poorAccuracy ? "Retry GPS capture" : "Capture Location"}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={
+                    windowClosed ||
+                    !attendanceSubmissionOpen(today) ||
+                    submitting ||
+                    locating ||
+                    !submissionLocation ||
+                    (remote && dailyWorkSummary.trim().length < 20)
+                  }
+                  onClick={() => void (remote ? submitRemote() : submitPhysical())}
+                  className="text-sm"
+                >
+                  {submitting ? <LoadingSpinner label="Submitting…" /> : "Submit Attendance"}
+                </button>
+                <button
+                  data-button-variant="outline"
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => void startCamera(true)}
+                  className="text-sm"
+                >
+                  Retake Photo
+                </button>
+              </>
+            )
           ) : (
             <>
               {streamRef.current && (
@@ -612,6 +795,8 @@ export function TodayAttendanceCard() {
             onClick={() => {
               stopCamera();
               setLocating(false);
+              setSubmissionLocation(null);
+              setLocationNotice("");
               setFlowOpen(false);
               setError("");
             }}

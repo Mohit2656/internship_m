@@ -10,6 +10,7 @@ import { StudentSidebar } from "@/components/StudentSidebar";
 import { AdminSidebar } from "@/components/AdminSidebar";
 import { MentorSidebar } from "@/components/MentorSidebar";
 import { SettingsDropdown } from "@/components/SettingsDropdown";
+import { trackRoute } from "@/lib/navigation";
 
 export function AppFrame({ children, activeSection }: { children: React.ReactNode; activeSection?: string }) {
   const { user, logout } = useAuth(); const router = useRouter();
@@ -45,6 +46,11 @@ export function AppFrame({ children, activeSection }: { children: React.ReactNod
     return () => window.removeEventListener("hashchange", syncHash);
   }, [pathname]);
   useEffect(() => {
+    if (pathname) {
+      trackRoute(pathname, typeof window !== "undefined" ? window.location.search : "");
+    }
+  }, [pathname]);
+  useEffect(() => {
     if (!menuOpen || !hasSidebar) return;
     requestAnimationFrame(() => studentSidebar.current?.querySelector<HTMLElement>("a[aria-current='page'], a")?.focus());
   }, [menuOpen, hasSidebar]);
@@ -55,7 +61,7 @@ export function AppFrame({ children, activeSection }: { children: React.ReactNod
     ["/admin/student-accounts", "Student accounts"], ["/admin/mentor-accounts", "Mentor accounts"],
     ["/admin/internship-completions", "Completions"], ["/admin/settings/academic-sessions", "Settings"], ["/admin/reports", "Reports"], ["/admin/attendance", "Attendance"],
   ] : user?.role === "MENTOR" ? [
-    ["/mentor/weekly-progress", "Weekly progress"], ["/mentor/monthly-progress", "Monthly progress"], ["/mentor/reports", "Reports"], ["/mentor/attendance", "Attendance"],
+    ["/mentor/weekly-progress", "Weekly progress"], ["/mentor/monthly-progress", "Monthly progress"], ["/mentor/attendance", "Attendance"],
   ] : user?.role === "STUDENT" ? [
     ["/student/weekly-progress", "Weekly progress"],
     ["/student/monthly-progress", "Monthly progress"],

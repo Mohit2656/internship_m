@@ -22,7 +22,6 @@ const groups: Array<{ heading: string; items: Item[] }> = [
     items: [
       { href: "/mentor/progress", label: "Progress", nested: "/mentor/progress" },
       { href: "/mentor/documents", label: "Documents" },
-      { href: "/mentor/reports", label: "Reports" },
     ],
   },
   {

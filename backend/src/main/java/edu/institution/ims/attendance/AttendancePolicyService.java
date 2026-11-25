@@ -15,16 +15,26 @@ public class AttendancePolicyService {
     private final Clock clock;
     private final LateAttendancePermissionService permissions;
     private final AttendanceLocationVerificationService locationVerification;
+    private final AttendanceDailyExceptionRepository exceptions;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public AttendancePolicyService(HybridWorkScheduleRepository schedules,
             InternshipDetailsRepository internships, AttendanceRepository attendance, Clock clock,
-            LateAttendancePermissionService permissions, AttendanceLocationVerificationService locationVerification) {
+            LateAttendancePermissionService permissions, AttendanceLocationVerificationService locationVerification,
+            AttendanceDailyExceptionRepository exceptions) {
         this.schedules = schedules;
         this.internships = internships;
         this.attendance = attendance;
         this.clock = clock;
         this.permissions = permissions;
         this.locationVerification = locationVerification;
+        this.exceptions = exceptions;
+    }
+
+    public AttendancePolicyService(HybridWorkScheduleRepository schedules,
+            InternshipDetailsRepository internships, AttendanceRepository attendance, Clock clock,
+            LateAttendancePermissionService permissions, AttendanceLocationVerificationService locationVerification) {
+        this(schedules, internships, attendance, clock, permissions, locationVerification, null);
     }
 
     @Transactional(readOnly = true)
@@ -34,12 +44,29 @@ public class AttendancePolicyService {
     @Transactional(readOnly = true)
     public AttendancePolicyResponse today(UserPrincipal principal,Long internshipId) {
         InternshipDetails internship = eligibleInternship(principal.id(),internshipId);
-        LocalDate today = LocalDate.now(clock);
+        LocalDate today = InternshipLifecycle.today(clock);
         ResolvedAttendancePolicy policy = resolve(internship, today);
+        AttendanceLifecycleStatus lifecycle = lifecycle(internship, today);
+
+        boolean isWorkingDay = internship.isWorkingDay(today);
+        boolean approvedHoliday = exceptions != null && exceptions.existsByInternshipIdAndExceptionDateAndExceptionTypeAndStatus(
+                internship.getId(), today, AttendanceExceptionType.COMPANY_HOLIDAY, AttendanceExceptionStatus.APPROVED);
+        boolean pendingHoliday = exceptions != null && exceptions.existsByInternshipIdAndExceptionDateAndExceptionTypeAndStatus(
+                internship.getId(), today, AttendanceExceptionType.COMPANY_HOLIDAY, AttendanceExceptionStatus.PENDING);
+        boolean approvedExtraWorkday = exceptions != null && exceptions.existsByInternshipIdAndExceptionDateAndExceptionTypeAndStatus(
+                internship.getId(), today, AttendanceExceptionType.EXTRA_WORKDAY, AttendanceExceptionStatus.APPROVED);
+
+        boolean scheduledWorkingDay = isWorkingDay && !approvedHoliday;
+        boolean scheduledDayOff = !isWorkingDay || approvedHoliday;
+
         return new AttendancePolicyResponse(internship.getInternshipMode(), policy.todayWorkMode(),
                 policy.verificationMethod(), attendance.findByStudentIdAndInternshipIdAndAttendanceDate(principal.id(),internship.getId(), today)
-                        .map(record -> !canReplaceAutomaticAbsence(record, principal.id(), today)).orElse(false),
-                policy.configurationReady(), today, locationVerification.maxGpsAccuracyMeters());
+                        .map(record -> !canReplaceAutomaticAbsence(record, principal.id(), internship.getId(), today)).orElse(false),
+                policy.configurationReady(), locationVerification.workplaceStatus(internship, policy.verificationMethod()),
+                lifecycle, internship.getStartDate(), internship.getEndDate(), lifecycle == AttendanceLifecycleStatus.ACTIVE,
+                today, locationVerification.maxGpsAccuracyMeters(),
+                scheduledWorkingDay, scheduledDayOff, approvedHoliday, pendingHoliday, approvedExtraWorkday,
+                internship.getEffectiveWorkingDaysPerWeek(), internship.getWorkingDaysList());
     }
 
     public ResolvedAttendancePolicy resolve(InternshipDetails internship, LocalDate date) {
@@ -66,19 +93,59 @@ public class AttendancePolicyService {
         }
     }
 
-    public void requireSubmissionOpen(Long studentId, LocalDate date) {
-        if (!date.equals(LocalDate.now(clock))) {
+    public void requireSubmissionOpen(Long studentId, Long internshipId, LocalDate date) {
+        if (!date.equals(InternshipLifecycle.today(clock))) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_DATE_CHANGED",
                     "The attendance date has changed. Refresh today's attendance and try again");
         }
-        if (AttendanceSubmissionWindow.isClosed(date, clock) && !permissions.isEnabled(studentId, date)) {
+        boolean allowed = internshipId != null
+                ? permissions.isEnabled(studentId, internshipId, date)
+                : permissions.isEnabled(studentId, date);
+        if (AttendanceSubmissionWindow.isClosed(date, clock) && !allowed) {
             requireSubmissionOpen(date);
         }
     }
 
-    boolean canReplaceAutomaticAbsence(AttendanceRecord record, Long studentId, LocalDate date) {
+    public void requireSubmissionOpen(Long studentId, LocalDate date) {
+        requireSubmissionOpen(studentId, null, date);
+    }
+
+    public AttendanceLifecycleStatus lifecycle(InternshipDetails internship, LocalDate date) {
+        if (internship == null || internship.getStartDate() == null || internship.getEndDate() == null) {
+            return AttendanceLifecycleStatus.NOT_STARTED;
+        }
+        if (internship.getOnboarding() == null || internship.getOnboarding().getWorkflowStatus() != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE) {
+            return AttendanceLifecycleStatus.NOT_STARTED;
+        }
+        if ("COMPLETED".equals(internship.getCompletionStatus())) return AttendanceLifecycleStatus.COMPLETED;
+        if (date.isBefore(internship.getStartDate())) return AttendanceLifecycleStatus.NOT_STARTED;
+        if (date.isAfter(internship.getEndDate())) return AttendanceLifecycleStatus.ENDED;
+        return AttendanceLifecycleStatus.ACTIVE;
+    }
+
+    public void requireAttendanceActive(InternshipDetails internship, LocalDate date) {
+        AttendanceLifecycleStatus status = lifecycle(internship, date);
+        if (status != AttendanceLifecycleStatus.ACTIVE) {
+            String message = switch (status) {
+                case NOT_STARTED -> "Attendance tracking starts on " + internship.getStartDate();
+                case ENDED -> "Attendance tracking ended on " + internship.getEndDate();
+                case COMPLETED -> "Attendance tracking is closed because this internship is completed";
+                default -> "Attendance is unavailable for this internship";
+            };
+            throw error(HttpStatus.CONFLICT, "ATTENDANCE_OUTSIDE_INTERNSHIP_LIFECYCLE", message);
+        }
+    }
+
+    boolean canReplaceAutomaticAbsence(AttendanceRecord record, Long studentId, Long internshipId, LocalDate date) {
+        boolean allowed = internshipId != null
+                ? permissions.isEnabled(studentId, internshipId, date)
+                : permissions.isEnabled(studentId, date);
         return record.isAutomaticAbsent() && record.getEvidence() == null
-                && date.equals(record.getAttendanceDate()) && permissions.isEnabled(studentId, date);
+                && date.equals(record.getAttendanceDate()) && allowed;
+    }
+
+    boolean canReplaceAutomaticAbsence(AttendanceRecord record, Long studentId, LocalDate date) {
+        return canReplaceAutomaticAbsence(record, studentId, null, date);
     }
 
     InternshipDetails eligibleInternship(Long studentId) {

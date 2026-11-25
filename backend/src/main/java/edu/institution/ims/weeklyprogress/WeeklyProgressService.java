@@ -2,6 +2,8 @@ package edu.institution.ims.weeklyprogress;
 
 import edu.institution.ims.internship.*;
 import edu.institution.ims.notification.*;
+import edu.institution.ims.internship.storage.*;
+import edu.institution.ims.monthlyprogress.*;
 import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.user.UserRepository;
 import edu.institution.ims.user.Role;
@@ -16,6 +18,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.*;
 
 /** Weekly progress is independent of monthly photo reports and GPS attendance. */
 @Service
@@ -26,18 +30,24 @@ public class WeeklyProgressService {
     private final MentorNotificationService mentors;
     private final Clock clock;
     private final UserRepository users;
+    private final FileStorageService storage;
+    private final ProgressReportPdfValidator reportPdfs;
+    private final WeeklyProgressPdfService generatedPdfs;
 
     public WeeklyProgressService(JdbcTemplate jdbc, InternshipDetailsRepository internships,
-            NotificationService students, MentorNotificationService mentors, Clock clock, UserRepository users) {
+            NotificationService students, MentorNotificationService mentors, Clock clock, UserRepository users,
+            FileStorageService storage, ProgressReportPdfValidator reportPdfs, WeeklyProgressPdfService generatedPdfs) {
         this.jdbc = jdbc; this.internships = internships; this.students = students; this.mentors = mentors; this.clock = clock; this.users=users;
+        this.storage=storage; this.reportPdfs=reportPdfs; this.generatedPdfs=generatedPdfs;
     }
 
     public record Event(int revision, String eventType, Long actorId, String actorEmail,
             Instant performedAt, String workDescription, String reason) {}
-    public record Week(Long id, Long internshipId, Long studentUserId, String studentName, String uid,
+    public record Week(Long id, Long internshipId, int internshipNumber, Long studentUserId, String studentName, String uid,
             String companyName, int weekNumber, LocalDate periodStart, LocalDate periodEnd, boolean active,
             String submissionStatus, String status, String workDescription, int revision, Instant submittedAt,
             Long reviewerId, String reviewerEmail, Instant reviewedAt, String rejectionReason,
+            String reportPdfOriginalName, Long reportPdfSize,
             long attendanceSubmitted, long attendancePresent, long attendanceGpsVerified, List<Event> history) {}
     public record Overview(Long internshipId, String companyName, LocalDate internshipStart,
             LocalDate internshipEnd, int totalWeeks, String calculationRule, List<Week> weeks) {}
@@ -128,6 +138,10 @@ public class WeeklyProgressService {
 
     @Transactional
     public Week submit(UserPrincipal principal, Long id, Integer revision, String description) {
+        return submit(principal,id,revision,description,null);
+    }
+    @Transactional
+    public Week submit(UserPrincipal principal, Long id, Integer revision, String description, MultipartFile reportPdf) {
         role(principal, "STUDENT");
         // Assignment changes lock mentor -> student. Attendance locks student before
         // inserting its internship FK. Follow both orders before taking the parent.
@@ -149,20 +163,89 @@ public class WeeklyProgressService {
         if (work.isBlank() || work.length() > 3000) throw error(HttpStatus.BAD_REQUEST, "WORK_DESCRIPTION_INVALID", "Describe the work performed using 1 to 3000 characters");
         int next = 1;
         Instant at = clock.instant();
+        ProgressReportPdfValidator.ValidatedPdf pdf=reportPdf==null||reportPdf.isEmpty()?null:reportPdfs.validate(reportPdf);
+        String previousPdfKey=pdf==null?null:jdbc.queryForList("select report_pdf_storage_key from weekly_progress_reports where period_id=? and report_pdf_storage_key is not null",String.class,id).stream().findFirst().orElse(null);
+        String newPdfKey=pdf==null?null:storePdf(pdf,previousPdfKey);
         if (week.revision() > 0) {
             if (!"REJECTED".equals(week.status())) throw error(HttpStatus.CONFLICT, "WEEK_ALREADY_SUBMITTED", "Only a rejected weekly report may be corrected and resubmitted");
             requireRevision(week, revision);
             next = week.revision() + 1;
-            jdbc.update("update weekly_progress_reports set work_description=?,revision=?,review_status='PENDING_MENTOR_REVIEW',submitted_at=?,reviewer_id=null,reviewed_at=null,rejection_reason=null where period_id=?",
-                    work, next, Timestamp.from(at), id);
+            jdbc.update("update weekly_progress_reports set work_description=?,revision=?,review_status='PENDING_MENTOR_REVIEW',submitted_at=?,reviewer_id=null,reviewed_at=null,rejection_reason=null,"
+                            +"report_pdf_storage_key=coalesce(?,report_pdf_storage_key),report_pdf_original_name=coalesce(?,report_pdf_original_name),report_pdf_size=coalesce(?,report_pdf_size) where period_id=?",
+                    work, next, Timestamp.from(at), newPdfKey, pdf==null?null:pdf.originalName(), pdf==null?null:pdf.size(), id);
         } else {
-            jdbc.update("insert into weekly_progress_reports(period_id,work_description,revision,review_status,submitted_at) values (?,?,1,'PENDING_MENTOR_REVIEW',?)", id, work, Timestamp.from(at));
+            jdbc.update("insert into weekly_progress_reports(period_id,work_description,revision,review_status,submitted_at,report_pdf_storage_key,report_pdf_original_name,report_pdf_size) values (?,?,1,'PENDING_MENTOR_REVIEW',?,?,?,?)",
+                    id, work, Timestamp.from(at), newPdfKey, pdf==null?null:pdf.originalName(), pdf==null?null:pdf.size());
         }
         event(id, next, "SUBMITTED", principal.id(), at, work, null);
         mentors.workflowSubmitted(principal.id(), "weekly-submitted:" + id + ":" + next, "WEEKLY_REPORT_SUBMITTED",
                 "Weekly progress requires review", Objects.toString(week.studentName(), "Student") + " submitted week " + week.weekNumber()
-                        + " at " + week.companyName() + ".", "/mentor/weekly-progress#week-" + id, at);
+                        + " at " + week.companyName() + ".", "/mentor/progress?tab=weekly&internshipId=" + internshipId + "#week-" + id, at);
         return week(id);
+    }
+
+    @Transactional(readOnly=true)
+    public ProgressFileDownload ownAttachment(UserPrincipal principal,Long id) {
+        role(principal,"STUDENT"); Week week=week(id);
+        if(!Objects.equals(week.studentUserId(),principal.id())) throw notFound();
+        return attachment(id);
+    }
+    @Transactional(readOnly=true)
+    public ProgressFileDownload mentorAttachment(UserPrincipal principal,Long id) {
+        role(principal,"MENTOR"); Week week=week(id);
+        boolean isAssigned = jdbc.queryForObject("select count(*) from mentor_student_assignments where student_user_id=? and mentor_user_id=? and active=true", Integer.class, week.studentUserId(), principal.id()) > 0;
+        boolean isReviewer = Objects.equals(week.reviewerId(), principal.id());
+        if(!isAssigned && !isReviewer) throw notFound();
+        return attachment(id);
+    }
+    @Transactional(readOnly=true)
+    public ProgressFileDownload ownPdf(UserPrincipal principal,Long id) {
+        role(principal,"STUDENT"); Week week=week(id);
+        if(!Objects.equals(week.studentUserId(),principal.id())) throw notFound();
+        return pdf(week);
+    }
+    @Transactional(readOnly=true)
+    public ProgressFileDownload mentorPdf(UserPrincipal principal,Long id) {
+        role(principal,"MENTOR"); Week week=week(id);
+        boolean isAssigned = jdbc.queryForObject("select count(*) from mentor_student_assignments where student_user_id=? and mentor_user_id=? and active=true", Integer.class, week.studentUserId(), principal.id()) > 0;
+        boolean isReviewer = Objects.equals(week.reviewerId(), principal.id());
+        if(!isAssigned && !isReviewer) throw notFound();
+        return pdf(week);
+    }
+    @Transactional(readOnly=true)
+    public ProgressFileDownload adminPdf(Long id) {
+        Week week=week(id);
+        return pdf(week);
+    }
+    @Transactional(readOnly=true)
+    public ProgressFileDownload adminAttachment(Long id) {
+        return attachment(id);
+    }
+    private ProgressFileDownload pdf(Week week) {
+        if (week.submittedAt()==null || week.workDescription()==null) throw notFound();
+        boolean hasTwoInternships = jdbc.queryForObject("select count(*) from second_internship_requests where student_user_id=? and status='APPROVED'", Integer.class, week.studentUserId()) > 0;
+        String facultyMentor = jdbc.query("select coalesce(mp.name, mu.email) from mentor_student_assignments a join users mu on mu.id=a.mentor_user_id left join mentor_profiles mp on mp.user_id=mu.id where a.student_user_id=? and a.active=true",
+                (rs, rowNum) -> rs.getString(1), week.studentUserId()).stream().findFirst().orElse(week.reviewerEmail());
+        if (facultyMentor == null || facultyMentor.isBlank()) facultyMentor = "Not assigned";
+        String safeUid=Objects.toString(week.uid(),"Student").replaceAll("[^A-Za-z0-9_-]","_");
+        return ProgressFileDownload.bytes(generatedPdfs.generate(week, hasTwoInternships, facultyMentor),
+                "Weekly_Progress_"+safeUid+"_Internship_"+week.internshipNumber()+"_Week_"+week.weekNumber()+".pdf","application/pdf");
+    }
+    private ProgressFileDownload attachment(Long id) {
+        Map<String,Object> row=jdbc.queryForList("select report_pdf_storage_key,report_pdf_original_name from weekly_progress_reports where period_id=? and report_pdf_storage_key is not null",id)
+                .stream().findFirst().orElseThrow(WeeklyProgressService::notFound);
+        StoredFile stored=storage.load((String)row.get("report_pdf_storage_key"));
+        return ProgressFileDownload.resource(stored.resource(),(String)row.get("report_pdf_original_name"),"application/pdf",stored.size());
+    }
+    private String storePdf(ProgressReportPdfValidator.ValidatedPdf pdf,String previous) {
+        String key;
+        try(InputStream input=new ByteArrayInputStream(pdf.bytes())) { key=storage.store(input,"pdf"); }
+        catch(IOException exception) { throw error(HttpStatus.BAD_REQUEST,"REPORT_PDF_READ_FAILED","The uploaded PDF could not be read"); }
+        if(org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive())
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+                @Override public void afterCompletion(int status) { if(status!=STATUS_COMMITTED) storage.delete(key); else if(previous!=null&&!previous.equals(key)) storage.delete(previous); }
+            });
+        return key;
     }
 
     @Transactional
@@ -191,7 +274,7 @@ public class WeeklyProgressService {
         students.create(studentId, "weekly-reviewed:" + id + ":" + revision, "WEEKLY_REPORT_" + status,
                 "Week " + week.weekNumber() + " progress " + (approved ? "approved" : "rejected"),
                 approved ? "Your faculty mentor approved your weekly progress report." : "Your faculty mentor rejected your weekly progress report. Review the feedback and resubmit.",
-                clean, principal.email(), "/student/weekly-progress#week-" + id, at);
+                clean, principal.email(), "/student/progress-reports?tab=weekly&internshipId=" + internshipId + "#week-" + id, at);
         return week(id);
     }
 
@@ -211,8 +294,8 @@ public class WeeklyProgressService {
                 (org.springframework.jdbc.core.RowCallbackHandler) rs -> histories.computeIfAbsent(rs.getLong("period_id"),ignored->new ArrayList<>())
                         .add(new Event(rs.getInt("revision"),rs.getString("event_type"),rs.getLong("actor_id"),rs.getString("email"),
                                 instant(rs,"performed_at"),rs.getString("work_description"),rs.getString("reason"))),args);
-        return jdbc.query("select p.*,o.student_user_id,coalesce(sp.student_name,sa.student_name,u.email) as student_name,coalesce(sp.uid,sa.uid) as uid,i.company_name,"
-                        + "r.review_status,r.work_description,r.revision,r.submitted_at,r.reviewer_id,r.reviewed_at,r.rejection_reason,reviewer.email as reviewer_email,"
+        return jdbc.query("select p.*,o.student_user_id,o.internship_number,coalesce(sp.student_name,sa.student_name,u.email) as student_name,coalesce(sp.uid,sa.uid) as uid,i.company_name,"
+                        + "r.review_status,r.work_description,r.revision,r.submitted_at,r.reviewer_id,r.reviewed_at,r.rejection_reason,r.report_pdf_original_name,r.report_pdf_size,reviewer.email as reviewer_email,"
                         + "(select count(*) from attendance_records a where a.internship_id=i.id and a.attendance_date between p.period_start and p.period_end and a.deleted_at is null and a.submission_type<>'AUTO_ABSENT') as attendance_submitted,"
                         + "(select count(*) from attendance_records a where a.internship_id=i.id and a.attendance_date between p.period_start and p.period_end and a.deleted_at is null and a.attendance_result='PRESENT') as attendance_present,"
                         + "(select count(*) from attendance_records a join attendance_evidence e on e.attendance_id=a.id where a.internship_id=i.id and a.attendance_date between p.period_start and p.period_end and a.deleted_at is null and e.location_verification_status='VERIFIED') as attendance_verified "
@@ -226,11 +309,12 @@ public class WeeklyProgressService {
         LocalDate start = rs.getDate("period_start").toLocalDate();
         String status = rs.getString("review_status");
         boolean active = rs.getBoolean("active");
-        return new Week(id, rs.getLong("internship_id"), rs.getLong("student_user_id"), rs.getString("student_name"), rs.getString("uid"),
+        return new Week(id, rs.getLong("internship_id"), rs.getInt("internship_number"), rs.getLong("student_user_id"), rs.getString("student_name"), rs.getString("uid"),
                 rs.getString("company_name"), rs.getInt("week_number"), start, rs.getDate("period_end").toLocalDate(), active,
                 status == null ? "NOT_SUBMITTED" : "SUBMITTED", status == null ? (!active ? "ARCHIVED" : LocalDate.now(clock).isBefore(start) ? "UPCOMING" : "AVAILABLE") : status,
                 rs.getString("work_description"), rs.getInt("revision"), instant(rs, "submitted_at"), rs.getObject("reviewer_id") == null ? null : rs.getLong("reviewer_id"),
-                rs.getString("reviewer_email"), instant(rs, "reviewed_at"), rs.getString("rejection_reason"), rs.getLong("attendance_submitted"),
+                rs.getString("reviewer_email"), instant(rs, "reviewed_at"), rs.getString("rejection_reason"),rs.getString("report_pdf_original_name"),
+                rs.getObject("report_pdf_size")==null?null:rs.getLong("report_pdf_size"), rs.getLong("attendance_submitted"),
                 rs.getLong("attendance_present"), rs.getLong("attendance_verified"), events);
     }
     private static Instant instant(ResultSet rs, String name) throws SQLException { Timestamp value = rs.getTimestamp(name); return value == null ? null : value.toInstant(); }

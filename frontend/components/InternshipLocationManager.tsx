@@ -12,7 +12,7 @@ import { InternshipLocation } from "@/lib/attendance";
 export type InternshipTabItem = {
   id: number;
   internshipNumber: number;
-  companyName?: string;
+  companyName?: string | null;
   status?: string;
 };
 

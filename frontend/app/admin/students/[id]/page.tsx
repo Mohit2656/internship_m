@@ -13,6 +13,7 @@ import { InternshipOnboardingDetails } from "@/components/InternshipOnboardingDe
 import { ProfileDetails } from "@/components/ProfileDetails";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { StatusBadge } from "@/components/StatusBadge";
+import { BackButton } from "@/components/BackButton";
 import { api } from "@/lib/api";
 import { StudentDetail } from "@/lib/student-profile";
 
@@ -38,10 +39,10 @@ function StudentDetailContent() {
     : "/admin/students";
 
   const backLinkLabel = fromAttendance
-    ? "← Back to Attendance"
+    ? "Back to Attendance"
     : fromDashboard
-    ? "← Back to Student Overview"
-    : "← Back to Student Directory"; // Preserves default Back to students fallback
+    ? "Back to Student Overview"
+    : "Back to Student Directory"; // Preserves default Back to students fallback
 
   useEffect(() => {
     api.get<StudentDetail>(`/admin/students/${id}`).then(response => setStudent(response.data))
@@ -57,7 +58,7 @@ function StudentDetailContent() {
   }, [id]);
 
   return <ProtectedRoute role="ADMIN"><AppFrame activeSection={fromAttendance ? "/admin/attendance" : undefined}><main className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
-    <Link href={backLinkHref} className="text-sm font-semibold text-blue-700 hover:underline inline-flex items-center gap-1">{backLinkLabel}</Link>
+    <BackButton fallbackHref={backLinkHref} fallbackLabel={backLinkLabel} />
     {loading ? <p className="py-20 text-center text-sm text-slate-500">Loading student record…</p> : error || !student ? <p className="mt-8 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p> : <>
       <div className="mt-5 flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold text-blue-700">Student record</p><h1 className="mt-2 text-3xl font-bold tracking-tight">{student.profile?.studentName ?? "Profile not completed"}</h1><p className="mt-2 text-slate-600">Login account: {student.loginEmail}</p></div><StatusBadge status={student.profileStatus}/></div>
       <div className="mt-8 space-y-6">

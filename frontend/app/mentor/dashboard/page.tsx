@@ -7,7 +7,6 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { api } from "@/lib/api";
 import { MentorAccount } from "@/lib/mentor-accounts";
 import { StudentAttendanceSummary } from "@/components/AttendanceAbsenceOverview";
-import { DashboardReportExport } from "@/components/DashboardReportExport";
 
 type MentorNotification = {
   id: number;
@@ -75,9 +74,7 @@ function MentorDashboardContent() {
   }, []);
 
   const totalAssigned = mentor?.assignedStudentCount ?? students.length;
-  const lowAttendanceStudents = students.filter(
-    (s) => (s.attendance?.percentage ?? 100) < 75
-  );
+  const attendanceInternships = students.filter((s) => s.internshipId != null).length;
   const companiesCount = new Set(students.map((s) => s.company).filter(Boolean)).size;
 
   return (
@@ -119,20 +116,12 @@ function MentorDashboardContent() {
             {/* Card 2: Attendance Status */}
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Attendance Attention</p>
-                {lowAttendanceStudents.length > 0 ? (
-                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 border border-amber-200">
-                    {lowAttendanceStudents.length} Low
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                    Good
-                  </span>
-                )}
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Attendance Records</p>
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">Available</span>
               </div>
-              <p className="mt-2 text-2xl font-bold text-slate-950">{lowAttendanceStudents.length}</p>
+              <p className="mt-2 text-2xl font-bold text-slate-950">{attendanceInternships}</p>
               <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                <span>Below 75% threshold</span>
+                <span>Internships tracked independently</span>
                 <Link href="/mentor/attendance" className="font-semibold text-blue-700 hover:underline">
                   Review →
                 </Link>
@@ -180,7 +169,7 @@ function MentorDashboardContent() {
           </div>
 
           {/* Action Required Section - Compact & No Empty Space */}
-          {(lowAttendanceStudents.length > 0 || pendingLateCount > 0 || pendingProgressCount > 0) && (
+          {(pendingLateCount > 0 || pendingProgressCount > 0) && (
             <section
               className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm"
               aria-label="Action required"
@@ -190,7 +179,7 @@ function MentorDashboardContent() {
                   Action Required
                 </h2>
                 <span className="text-[11px] font-semibold text-amber-800">
-                  {(pendingLateCount > 0 ? 1 : 0) + (lowAttendanceStudents.length > 0 ? 1 : 0) + (pendingProgressCount > 0 ? 1 : 0)} items pending
+                  {(pendingLateCount > 0 ? 1 : 0) + (pendingProgressCount > 0 ? 1 : 0)} items pending
                 </span>
               </div>
 
@@ -236,23 +225,6 @@ function MentorDashboardContent() {
                   </div>
                 )}
 
-                {lowAttendanceStudents.length > 0 && (
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200/80 bg-white px-3.5 py-2.5 text-sm shadow-sm">
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-800">
-                        !
-                      </span>
-                      <p className="text-xs font-medium text-slate-800">
-                        <span className="font-semibold text-slate-900">
-                          {lowAttendanceStudents.length} students below 75% attendance.
-                        </span>
-                      </p>
-                    </div>
-                    <Link href="/mentor/attendance" className="ui-button text-xs whitespace-nowrap">
-                      View Attendance
-                    </Link>
-                  </div>
-                )}
               </div>
             </section>
           )}
@@ -288,15 +260,6 @@ function MentorDashboardContent() {
               </ul>
             </section>
           )}
-
-          {/* Institutional Reports Export - Compact */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
-            <h2 className="text-base font-bold text-slate-900">Institutional Report Generation</h2>
-            <p className="text-xs text-slate-500 mb-3">
-              Export attendance and progress data for departmental records.
-            </p>
-            <DashboardReportExport role="MENTOR" />
-          </div>
         </div>
       )}
     </main>

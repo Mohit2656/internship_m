@@ -3,6 +3,7 @@ package edu.institution.ims.attendance;
 import edu.institution.ims.internship.InternshipDetails;
 import edu.institution.ims.notification.MentorNotificationService;
 import edu.institution.ims.user.User;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,25 +22,55 @@ public class AttendanceSubmissionService {
     private final JdbcTemplate jdbc;
     private final Clock clock;
     private final MentorNotificationService notifications;
+    private final AttendanceExceptionService exceptionService;
 
+    @Autowired
     public AttendanceSubmissionService(AttendanceRepository attendance, AttendancePolicyService policies,
             LateAttendancePermissionService permissions, JdbcTemplate jdbc, Clock clock,
-            MentorNotificationService notifications) {
+            MentorNotificationService notifications, AttendanceExceptionService exceptionService) {
         this.attendance = attendance;
         this.policies = policies;
         this.permissions = permissions;
         this.jdbc = jdbc;
         this.clock = clock;
         this.notifications = notifications;
+        this.exceptionService = exceptionService;
+    }
+
+    public AttendanceSubmissionService(AttendanceRepository attendance, AttendancePolicyService policies,
+            LateAttendancePermissionService permissions, JdbcTemplate jdbc, Clock clock,
+            MentorNotificationService notifications) {
+        this(attendance, policies, permissions, jdbc, clock, notifications, null);
     }
 
     // The caller holds the student lock, shared with mentor permission changes.
     @Transactional(propagation = Propagation.MANDATORY)
     public AttendanceRecord record(User student, InternshipDetails internship, LocalDate date,
             VerificationStatus status, AttendanceSubmissionType type) {
-        policies.requireSubmissionOpen(student.getId(), date);
+        policies.requireAttendanceActive(internship, date);
+        policies.requireSubmissionOpen(student.getId(), internship.getId(), date);
+
+        if (internship.getStartDate() != null && date.isBefore(internship.getStartDate())) {
+            throw AttendanceService.error(HttpStatus.CONFLICT, "ATTENDANCE_BEFORE_START",
+                    "Attendance date cannot be before internship start date");
+        }
+        if (internship.getEndDate() != null && date.isAfter(internship.getEndDate())) {
+            throw AttendanceService.error(HttpStatus.CONFLICT, "ATTENDANCE_AFTER_END",
+                    "Attendance date cannot be after internship end date");
+        }
+
+        if (exceptionService != null && exceptionService.isApprovedHoliday(internship.getId(), date)) {
+            throw AttendanceService.error(HttpStatus.CONFLICT, "APPROVED_HOLIDAY",
+                    "Attendance cannot be submitted on an approved company holiday");
+        }
+
+        // Handle extra workday when submitting on a scheduled day off
+        if (exceptionService != null && !internship.isWorkingDay(date)) {
+            exceptionService.recordOrUpdateExtraWorkday(student.getId(), internship.getId(), date, "Working today (extra work)", true);
+        }
+
         boolean late = AttendanceSubmissionWindow.isClosed(date, clock);
-        LateAttendancePermission permission = late ? permissions.activePermission(student.getId(), date)
+        LateAttendancePermission permission = late ? permissions.activePermission(student.getId(), internship.getId(), date)
                 .orElseThrow(() -> AttendanceService.error(HttpStatus.CONFLICT, "ATTENDANCE_WINDOW_CLOSED",
                         "Late attendance permission is no longer active")) : null;
         AttendanceRecord record = attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), internship.getId(), date).orElse(null);
@@ -60,8 +91,12 @@ public class AttendanceSubmissionService {
             throw duplicate();
         }
         if (late) audit(record, "LATE_SUBMISSION");
-        notifications.attendanceSubmitted(record);
         return record;
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void notifyMentor(AttendanceRecord record) {
+        notifications.attendanceSubmitted(record);
     }
 
     private void audit(AttendanceRecord record, String event) {

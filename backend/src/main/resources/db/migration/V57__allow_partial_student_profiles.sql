@@ -1,0 +1,21 @@
+-- Allow partial student profiles by making non-essential profile columns nullable
+ALTER TABLE student_profiles ALTER COLUMN student_name DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN branch DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN uid DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN roll_number DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN permanent_address DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN personal_email DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN institute_email DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN phone_number DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN guardian_name DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN guardian_contact DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN emergency_contact DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN blood_group DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN aadhaar_encrypted DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN aadhaar_last_four DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN internship_coordinator_name DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN internship_coordinator_contact DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN cdc_coordinator_name DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN cdc_coordinator_contact DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN academic_year DROP NOT NULL;
+ALTER TABLE student_profiles ALTER COLUMN semester DROP NOT NULL;

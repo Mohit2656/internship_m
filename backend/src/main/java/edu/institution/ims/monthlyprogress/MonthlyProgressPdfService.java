@@ -22,13 +22,18 @@ public class MonthlyProgressPdfService {
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a", Locale.ENGLISH).withZone(ZoneId.of("Asia/Kolkata"));
 
     public byte[] generate(MonthlyProgressReport report, byte[] photo) {
+        return generate(report, photo, report.getStudentInternship().getOnboarding().getInternshipNumber() == 2,
+                report.getReviewer() != null ? report.getReviewer().getEmail() : null);
+    }
+
+    public byte[] generate(MonthlyProgressReport report, byte[] photo, boolean hasTwoInternships, String facultyMentor) {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             var fonts = ReportPdfFonts.load(document);
             Writer writer = new Writer(document, fonts);
             writer.center("ST. VINCENT PALLOTTI COLLEGE OF ENGINEERING & TECHNOLOGY, NAGPUR", fonts.bold(), 12);
-            writer.center("Department of Computer Science and Engineering", fonts.regular(), 10);
+            writer.center("Department of Computer Engineering", fonts.regular(), 10);
             writer.space(10);
-            writer.center("MONTHLY INTERNSHIP PROGRESS REPORT", fonts.bold(), 15);
+            writer.center("MONTHLY PROGRESS REPORT", fonts.bold(), 15);
             writer.center("Month " + report.getReportMonthNumber(), fonts.bold(), 12);
             writer.rule();
 
@@ -40,32 +45,42 @@ public class MonthlyProgressPdfService {
             String branch = profile == null ? "Not available" : profile.getBranch().getLabel();
             String semester = profile != null ? String.valueOf(profile.getSemester()) : account == null || account.getSemester() == null ? "Not available" : String.valueOf(account.getSemester());
             writer.label("Student Name", name);
-            writer.label("UID", uid);
+            writer.label("UID / Roll Number", uid);
             writer.label("Branch", branch);
             writer.label("Semester", semester);
             writer.space(5);
             writer.label("Company", report.getStudentInternship().getCompanyName());
+            writer.label("Faculty Mentor", facultyMentor != null && !facultyMentor.isBlank() ? facultyMentor : (report.getReviewer() != null ? report.getReviewer().getEmail() : "Not assigned"));
+            if (hasTwoInternships) {
+                writer.label("Selected Internship", "Internship " + report.getStudentInternship().getOnboarding().getInternshipNumber());
+            }
+            writer.label("Report Number", String.valueOf(report.getReportMonthNumber()));
             writer.label("Internship Mode", report.getStudentInternship().getInternshipMode().getLabel());
             writer.label("Reporting Period", DATE.format(report.getPeriodStart()) + " - " + DATE.format(report.getPeriodEnd()));
             writer.label("Submission Date", DATE_TIME.format(report.getSubmittedAt()));
             writer.label("Last updated by student", DATE_TIME.format(report.getSubmittedAt()));
+            writer.label("Report Status", report.getStatus().name());
+            writer.label("Revision", String.valueOf(report.getRevision()));
+            if (report.getReviewedAt() != null) {
+                writer.label("Reviewed At", DATE_TIME.format(report.getReviewedAt()));
+                writer.label("Reviewer", report.getReviewer().getEmail());
+            }
+            if (report.getRejectionReason() != null && !report.getRejectionReason().isBlank()) {
+                writer.space(6);
+                writer.paragraph("Mentor feedback: " + report.getRejectionReason(), 10);
+            }
+            if (report.getStatus() == MonthlyProgressStatus.PENDING_MENTOR_REVIEW) {
+                writer.space(6);
+                writer.paragraph("Sent to faculty mentor for review. This report is not yet approved.", 10);
+            }
 
             writer.heading("WORK PERFORMED DURING THE MONTH");
             writer.paragraph(report.getWorkDescription(), 10);
-            writer.label("Review Status", report.getStatus().name());
-            writer.label("Revision", String.valueOf(report.getRevision()));
-            if (report.getReviewedAt()!=null) {
-                writer.label("Reviewed At", DATE_TIME.format(report.getReviewedAt()));
-                writer.label("Faculty Mentor", report.getReviewer().getEmail());
+
+            if (photo != null && photo.length > 0) {
+                writer.image(photo);
             }
-            if (report.getRejectionReason()!=null) writer.paragraph("Rejection reason: " + report.getRejectionReason(),10);
-            if (report.getStatus()==MonthlyProgressStatus.PENDING_MENTOR_REVIEW)
-                writer.paragraph("Sent to faculty mentor for review. This report is not yet approved.",10);
-            writer.image(photo);
-            writer.space(24);
-            writer.paragraph("Student Signature: ______________________", 10);
-            writer.paragraph("Faculty Mentor Signature: _______________", 10);
-            writer.paragraph("III Cell Incharge: ______________________", 10);
+
             writer.close();
             writer.pageNumbers();
             document.save(output);
@@ -120,16 +135,56 @@ public class MonthlyProgressPdfService {
             }
         }
         void paragraph(String value, float size) throws IOException {
-            for (String line : ReportPdfText.wrap(value, fonts.regular(), size, WIDTH)) { ensure(size + 5); text(line, MARGIN, fonts.regular(), size); y -= size + 5; }
+            if (value == null || value.isBlank()) {
+                ensure(size + 5);
+                text("Not available", MARGIN, fonts.regular(), size);
+                y -= size + 5;
+                return;
+            }
+            for (String line : ReportPdfText.wrap(value, fonts.regular(), size, WIDTH)) {
+                ensure(size + 5);
+                if (!line.isEmpty()) {
+                    text(line, MARGIN, fonts.regular(), size);
+                }
+                y -= size + 5;
+            }
         }
         void image(byte[] bytes) throws IOException {
-            PDImageXObject image = PDImageXObject.createFromByteArray(document, bytes, "monthly-progress-photo");
-            // Keep the photo heading and signatures with the image when practical.
-            ensure(286); heading("PHOTOGRAPH");
-            float maxHeight = Math.min(280, y - MARGIN - 96);
-            float scale = Math.min(WIDTH / image.getWidth(), maxHeight / image.getHeight());
-            float width = image.getWidth() * scale; float height = image.getHeight() * scale;
-            ensure(height + 15); stream.drawImage(image, MARGIN + (WIDTH - width) / 2, y - height, width, height); y -= height + 15;
+            if (bytes == null || bytes.length == 0) return;
+            PDImageXObject image;
+            try {
+                image = PDImageXObject.createFromByteArray(document, bytes, "monthly-progress-photo");
+            } catch (Exception e) {
+                try {
+                    java.awt.image.BufferedImage bimg = javax.imageio.ImageIO.read(new ByteArrayInputStream(bytes));
+                    if (bimg != null) {
+                        image = org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bimg);
+                    } else {
+                        heading("PHOTOGRAPH");
+                        paragraph("Submitted photograph format is not supported for PDF embedding.", 10);
+                        return;
+                    }
+                } catch (Exception fallbackEx) {
+                    heading("PHOTOGRAPH");
+                    paragraph("Photograph could not be rendered in PDF.", 10);
+                    return;
+                }
+            }
+
+            float maxPhotoHeight = 260f;
+            float scale = Math.min(WIDTH / image.getWidth(), maxPhotoHeight / image.getHeight());
+            float width = image.getWidth() * scale;
+            float height = image.getHeight() * scale;
+
+            float neededSpace = 45f + height + 15f;
+            if (y - neededSpace < MARGIN) {
+                newPage();
+            }
+
+            heading("PHOTOGRAPH");
+            ensure(height + 15);
+            stream.drawImage(image, MARGIN + (WIDTH - width) / 2, y - height, width, height);
+            y -= (height + 15);
         }
         void close() throws IOException { stream.close(); stream = null; }
         void pageNumbers() throws IOException {

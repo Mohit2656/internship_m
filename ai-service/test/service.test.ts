@@ -45,9 +45,39 @@ test("empty and corrupt inputs are rejected safely", async () => {
   await app.close();
 });
 
-test("skill cleanup is conservative and case-insensitive", () => {
-  assert.deepEqual(normalizeSkills([" java ", "Java", "POSTGRESQL", "HTML/CSS", "HTML", "CSS", "Domain Skill"]),
-    ["Java", "PostgreSQL", "HTML/CSS", "Domain Skill"]);
+test("skill cleanup is conservative, case-insensitive, and filters stopwords", () => {
+  assert.deepEqual(
+    normalizeSkills([" java ", "Java", "POSTGRESQL", "HTML/CSS", "HTML", "CSS", "is", "the", "are", "developer"]),
+    ["Java", "PostgreSQL", "HTML/CSS"]
+  );
+});
+
+test("skill cleanup preserves legitimate short skills such as C, R, Go, C++, and C#", () => {
+  assert.deepEqual(
+    normalizeSkills(["c", "C", "r", "R", "go", "golang", "c++", "cpp", "c#", "csharp"]),
+    ["C", "R", "Go", "C++", "C#"]
+  );
+});
+
+test("skill cleanup rejects ordinary stopwords and narrative false positives", () => {
+  assert.deepEqual(
+    normalizeSkills(["is", "the", "are", "and", "or", "in", "to", "for", "with", "experience", "role", "responsible"]),
+    []
+  );
+});
+
+test("skill cleanup validates and normalizes aliases to canonical skills", () => {
+  assert.deepEqual(
+    normalizeSkills(["js", "javascript", "ts", "typescript", "k8s", "kubernetes", "postgres", "postgresql", "docker"]),
+    ["JavaScript", "TypeScript", "Kubernetes", "PostgreSQL", "Docker"]
+  );
+});
+
+test("skill cleanup normalizes expanded catalog skills and aliases", () => {
+  assert.deepEqual(
+    normalizeSkills(["reactjs", "react-js", "fastapi", "powerbi", "nlp", "selenium", "scrum", "oop"]),
+    ["React", "FastAPI", "Power BI", "Natural Language Processing", "Selenium", "Scrum", "Object-Oriented Programming"]
+  );
 });
 
 test("opportunity endpoint returns structured hybrid NLP results", async () => {

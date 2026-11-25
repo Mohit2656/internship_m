@@ -70,21 +70,22 @@ class SharedWorkplaceIntegrationTest extends MonthlyProgressIntegrationTest {
    var ai=new MockMultipartFile("aiEvidence","ai-evidence.json","application/json",json.writeValueAsBytes(java.util.Map.of(
     "sessionId",issued.get("sessionId").asText(),"challenge",issued.get("challenge").asText(),"faceCount",1,
     "qualityPassed",true,"livenessPassed",true,"modelVersion","mediapipe-face-landmarker@1.0.1/test")));
-   mvc.perform(multipart("/api/v1/student/attendance/today/physical")
+   var submission=mvc.perform(multipart("/api/v1/student/attendance/today/physical")
     .file(new MockMultipartFile("photo","capture.jpg","image/jpeg",ProgressPhotoValidatorTest.fixture(true,true,21)))
     .file(ai).param("latitude","21.125").param("longitude","79.0875").param("accuracy","5").param("locationCapturedAt",NOW.toString()).cookie(cookie))
-    .andExpect(status().isCreated()).andExpect(jsonPath("$.attendanceResult").value(student == studentA ? "PRESENT" : "PENDING_MENTOR_REVIEW"))
-    .andExpect(jsonPath("$.verificationStatus").value("VERIFIED"))
-    .andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
+    .andExpect(student==studentA?status().isCreated():status().isConflict());
+   if(student==studentA) submission.andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+    .andExpect(jsonPath("$.verificationStatus").value("VERIFIED")).andExpect(jsonPath("$.livenessStatus").value("VERIFIED"))
     .andExpect(jsonPath("$.evidence.verificationReason").value("EDGE_AI_VERIFIED"))
-    .andExpect(jsonPath("$.evidence.latitude").value(21.125))
-    .andExpect(jsonPath("$.evidence.locationVerificationStatus").value(student==studentA?"VERIFIED":"WORKPLACE_NOT_APPROVED"))
+    .andExpect(jsonPath("$.evidence.latitude").value(21.125)).andExpect(jsonPath("$.evidence.locationVerificationStatus").value("VERIFIED"))
     .andExpect(jsonPath("$.evidence.exifLatitude").value(org.hamcrest.Matchers.nullValue()));
+   else submission.andExpect(jsonPath("$.code").value("WORKPLACE_NOT_APPROVED"));
   }
   long approvedPhoto=submitPhoto(studentA,"StudentPassword!23"),pendingPhoto=submitPhoto(studentB,"StudentPassword!24");
   assertThat(reports.findById(approvedPhoto).orElseThrow().getWorkplaceVerificationStatus()).isNull();
   assertThat(reports.findById(pendingPhoto).orElseThrow().getWorkplaceVerificationStatus()).isNull();
-  assertThat(jdbc.queryForObject("select count(*) from attendance_records where verification_status='VERIFIED'",Integer.class)).isEqualTo(2);
+  assertThat(jdbc.queryForObject("select count(*) from attendance_records where verification_status='VERIFIED'",Integer.class)).isEqualTo(1);
+  assertThat(jdbc.queryForObject("select count(*) from attendance_records where student_user_id=?",Integer.class,studentB.getId())).isZero();
  }
  @Test void correctionsRequireAdminScopeAndKeepHistoricalPhotoSnapshot() throws Exception {
   register(studentA,"21.125","79.0875","Original branch");approve(studentA);long id=submitPhoto(studentA,"StudentPassword!23");

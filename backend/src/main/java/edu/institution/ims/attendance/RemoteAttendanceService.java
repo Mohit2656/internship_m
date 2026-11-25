@@ -68,9 +68,9 @@ public class RemoteAttendanceService {
         User student = users.findByIdForAttendanceUpdate(principal.id()).filter(user -> user.getRole() == Role.STUDENT)
                 .orElseThrow(() -> error(HttpStatus.FORBIDDEN, "STUDENT_REQUIRED", "Only a student may submit attendance"));
         InternshipDetails internship = policies.eligibleInternship(student.getId(),internshipId);
-        LocalDate today = LocalDate.now(clock);
-        requireWithinInternship(internship, today);
-        policies.requireSubmissionOpen(student.getId(), today);
+        LocalDate today = edu.institution.ims.internship.InternshipLifecycle.today(clock);
+        policies.requireAttendanceActive(internship, today);
+        policies.requireSubmissionOpen(student.getId(), internship.getId(), today);
         ResolvedAttendancePolicy policy = policies.resolve(internship, today);
         if (policy.verificationMethod() != AttendanceVerificationMethod.REMOTE) {
             throw policy.verificationMethod() == AttendanceVerificationMethod.PHYSICAL
@@ -92,6 +92,7 @@ public class RemoteAttendanceService {
         locationVerification.save(captured, internship, submitted, locationCapturedAt, false, accuracy);
         record.finalizeSubmission(AttendanceReviewResponse.submissionVerificationPassed(record));
         attendance.saveAndFlush(record);
+        submissions.notifyMentor(record);
         return AttendanceService.response(record);
     }
 

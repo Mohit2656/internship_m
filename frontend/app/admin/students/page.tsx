@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
-import { StudentAttendanceHistory, StudentAttendanceSummary, formatAttendancePercentage } from "@/components/AttendanceAbsenceOverview";
+import { StudentAttendanceHistory, StudentAttendanceSummary, formatAttendancePercentage, formatAttendanceDays } from "@/components/AttendanceAbsenceOverview";
 import { DeleteStudentButton } from "@/components/DeleteStudentButton";
 import { ResetPasswordButton } from "@/components/ResetPasswordButton";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -12,6 +12,8 @@ import { WorkflowBadge } from "@/components/WorkflowBadge";
 import { api } from "@/lib/api";
 import { Paged, StudentSummary } from "@/lib/student-profile";
 import { StudentDeletionResult } from "@/lib/student-deletion";
+import { formatNumericUid } from "@/lib/uid-formatter";
+import { BackButton } from "@/components/BackButton";
 
 type Option = { value: string; label: string };
 
@@ -205,9 +207,7 @@ function StudentDirectory() {
     <ProtectedRoute role="ADMIN">
       <AppFrame>
         <main className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
-          <Link href="/admin/dashboard" className="text-sm font-semibold text-blue-700 hover:underline">
-            ← Back to dashboard
-          </Link>
+          <BackButton fallbackHref="/admin/dashboard" fallbackLabel="Back to dashboard" />
 
           {/* Heading area matching Mentor Assigned Students reference */}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
@@ -487,7 +487,7 @@ function StudentDirectory() {
                     <th className="p-3">Student Name</th>
                     <th className="p-3">Branch</th>
                     <th className="p-3">Company</th>
-                    <th className="p-3">Attendance %</th>
+                    <th className="p-3">Attendance</th>
                     <th className="p-3">Internship Status</th>
                     <th className="p-3 text-right">Actions</th>
                   </tr>
@@ -503,7 +503,6 @@ function StudentDirectory() {
                     result.content.map((student) => {
                       const attSummary = attendance[student.id];
                       const pct = attSummary?.attendance.percentage ?? null;
-                      const isLowAttendance = pct !== null && pct < 75;
 
                       return (
                         <tr
@@ -511,7 +510,7 @@ function StudentDirectory() {
                           className="border-b border-slate-100 transition-colors hover:bg-slate-50/70 dark:border-slate-800 dark:hover:bg-slate-800/50"
                         >
                           <td className="p-3 font-medium text-slate-900 dark:text-slate-200">
-                            {student.uid || "—"}
+                            {formatNumericUid(student.uid)}
                           </td>
                           <td className="p-3 font-semibold">
                             <Link
@@ -534,20 +533,9 @@ function StudentDirectory() {
                               className="attendance-pct-btn"
                               title="Click to view student attendance history"
                             >
-                              <span
-                                className={
-                                  isLowAttendance
-                                    ? "font-semibold text-amber-700 dark:text-amber-400"
-                                    : "font-semibold text-slate-900 dark:text-slate-100"
-                                }
-                              >
-                                {formatAttendancePercentage(pct)}
+                              <span className="font-semibold text-slate-900 dark:text-slate-100">
+                                {formatAttendanceDays(attSummary?.attendance)}
                               </span>
-                              {isLowAttendance && (
-                                <span className="inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800">
-                                  Low
-                                </span>
-                              )}
                             </button>
                           </td>
                           <td className="p-3">

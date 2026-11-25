@@ -10,6 +10,7 @@ import { MonthlyProgressReportList } from "@/components/MonthlyProgressReportLis
 function MentorProgressContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams?.get("tab");
+  const internshipId = Number(searchParams?.get("internshipId")) || undefined;
   const [reportType, setReportType] = useState<"weekly" | "monthly">(
     tabParam === "monthly" ? "monthly" : "weekly"
   );
@@ -70,11 +71,11 @@ function MentorProgressContent() {
         <div className="mt-6">
           {reportType === "weekly" ? (
             <div id="panel-weekly" role="tabpanel" aria-labelledby="tab-weekly">
-              <WeeklyProgress scope="mentor" />
+              <WeeklyProgress scope="mentor" internshipId={internshipId} />
             </div>
           ) : (
             <div id="panel-monthly" role="tabpanel" aria-labelledby="tab-monthly">
-              <MonthlyProgressReportList scope="mentor" />
+              <MonthlyProgressReportList scope="mentor" internshipId={internshipId} />
             </div>
           )}
         </div>

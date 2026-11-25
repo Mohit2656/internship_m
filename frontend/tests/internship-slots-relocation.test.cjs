@@ -31,15 +31,19 @@ test("my internships page includes InternshipSlotsSection near top before detail
   assert.ok(detailsIndex > slotsIndex, "InternshipSlotsSection should be placed before detailed internship information");
 });
 
-test("InternshipSlotsSection component implements dual slots, actions, and isolation", () => {
+test("InternshipSlotsSection separates second-internship requests until approval", () => {
   const slotsSectionSource = fs.readFileSync(path.join(__dirname, "../components/InternshipSlotsSection.tsx"), "utf8");
-  assert.ok(slotsSectionSource.includes("Internship Slots &amp; Requests"));
+  assert.ok(slotsSectionSource.includes("My Internships"));
+  assert.ok(slotsSectionSource.includes("hasApprovedSecondInternship && <div"));
+  assert.ok(slotsSectionSource.includes('id={hasApprovedSecondInternship ? "panel-slot-2" : "second-internship-request"}'));
+  assert.ok(slotsSectionSource.includes('latestSecondRequest?.status === "PENDING"'));
+  assert.ok(slotsSectionSource.includes('latestSecondRequest?.status === "REJECTED"'));
+  assert.ok(slotsSectionSource.includes('latestSecondRequest?.status === "APPROVED"'));
+  assert.ok(slotsSectionSource.includes("Apply for Second Internship"));
   assert.ok(slotsSectionSource.includes("id=\"tab-slot-1\""));
   assert.ok(slotsSectionSource.includes("id=\"tab-slot-2\""));
-  assert.ok(slotsSectionSource.includes("id=\"panel-slot-1\""));
-  assert.ok(slotsSectionSource.includes("id=\"panel-slot-2\""));
+  assert.ok(slotsSectionSource.includes('id={hasApprovedSecondInternship ? "panel-slot-1" : "mandatory-internship"}'));
+  assert.ok(slotsSectionSource.includes("mentorInfo?.internship2MentorName ?? mentorInfo?.internship1MentorName"));
   assert.ok(slotsSectionSource.includes("id=\"raise-request-slot-1\""));
   assert.ok(slotsSectionSource.includes("id=\"raise-request-slot-2\""));
-  assert.ok(slotsSectionSource.includes("Second Internship Slot"));
-  assert.ok(slotsSectionSource.includes("First Internship Slot"));
 });

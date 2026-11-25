@@ -173,6 +173,26 @@ export type MatchingRun = MatchingRunSummary & {
   opportunityId: number;
   report: { title: string; companyName: string; scoringExplanation: string; strongMatchThreshold: number; candidates: ScoredCandidate[] };
 };
+export type SystemMatchedStudents = {
+  available: boolean;
+  message: string | null;
+  students: Array<{
+    studentId: number;
+    studentName: string;
+    uid: string;
+    matchedSkills: string[];
+    missingRequiredSkills: string[];
+    matchPercentage: number;
+  }>;
+};
+export type InterestedStudents = {
+  students: Array<{
+    studentId: number;
+    studentName: string;
+    uid: string | null;
+    matchPercentage: number | null;
+  }>;
+};
 
 /** CSV cells are quoted and spreadsheet formulas neutralized before download. */
 export function matchingCsv(candidates: ScoredCandidate[]) {

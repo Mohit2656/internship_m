@@ -2,6 +2,7 @@ package edu.institution.ims.studentprofile;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.institution.ims.auth.LoginRequest;
+import edu.institution.ims.mentor.*;
 import edu.institution.ims.user.*;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.*;
@@ -15,6 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.*;
 import java.util.*;
+import java.time.Instant;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -23,10 +25,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class StudentProfileIntegrationTest {
     @Autowired MockMvc mvc; @Autowired ObjectMapper json; @Autowired UserRepository users; @Autowired StudentAccountRepository accounts;
     @Autowired StudentProfileRepository profiles; @Autowired PasswordEncoder encoder;
+    @Autowired MentorProfileRepository mentorProfiles; @Autowired MentorStudentAssignmentRepository assignments;
     User admin; User studentA; User studentB; Cookie adminCookie; Cookie studentACookie; Cookie studentBCookie;
 
     @BeforeEach void setUp() throws Exception {
-        profiles.deleteAll(); accounts.deleteAll(); users.deleteAll();
+        profiles.deleteAll(); assignments.deleteAll(); mentorProfiles.deleteAll(); accounts.deleteAll(); users.deleteAll();
         admin = users.save(new User("incharge@example.edu", encoder.encode("AdminPassword!23"), Role.ADMIN, true));
         studentA = student("student.a@example.edu", "StudentAPassword!23"); studentB = student("student.b@example.edu", "StudentBPassword!23");
         adminCookie = login(admin.getEmail(), "AdminPassword!23"); studentACookie = login(studentA.getEmail(), "StudentAPassword!23"); studentBCookie = login(studentB.getEmail(), "StudentBPassword!23");
@@ -45,6 +48,23 @@ class StudentProfileIntegrationTest {
         mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.studentName").value("Student A Updated")).andExpect(jsonPath("$.currentCgpa").value(8.75)).andExpect(jsonPath("$.maskedAadhaar").value("XXXX XXXX 9012"));
         mvc.perform(get("/api/v1/student/profile").cookie(studentACookie)).andExpect(status().isOk()).andExpect(jsonPath("$.currentCgpa").value(8.75));
+    }
+
+    @Test void activeMentorAssignmentIsReadOnlyAndOverridesSubmittedProfileValues() throws Exception {
+        User mentor = users.save(new User("assigned.mentor@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
+        mentorProfiles.save(new MentorProfile(mentor, "Dr. Assigned Mentor", "FAC-ASSIGNED", "Computer Engineering", "Professor", "+91 98765 40000"));
+        assignments.save(new MentorStudentAssignment(mentor, studentA, admin, Instant.now()));
+
+        mvc.perform(get("/api/v1/student/profile/prefill").cookie(studentACookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.facultyMentorName").value("Dr. Assigned Mentor"))
+                .andExpect(jsonPath("$.facultyMentorContact").value("+91 98765 40000"));
+        Map<String,Object> submitted = profile("A", "UID-A", "a@college.edu");
+        submitted.put("facultyMentorName", "Spoofed Mentor"); submitted.put("facultyMentorContact", "+91 99999 99999");
+        mvc.perform(post("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(submitted)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.facultyMentorName").value("Dr. Assigned Mentor"))
+                .andExpect(jsonPath("$.facultyMentorContact").value("+91 98765 40000"));
+        assertThat(profiles.findByUserId(studentA.getId()).orElseThrow().getFacultyMentorName()).isEqualTo("Dr. Assigned Mentor");
     }
 
     @Test void currentCgpaIsOptionalAndValidatedToTwoDecimals() throws Exception {
@@ -87,7 +107,7 @@ class StudentProfileIntegrationTest {
                 .andExpect(jsonPath("$.aadhaarNumber").value("123456789012"));
     }
 
-    @Test void importedInstitutionalIdentifiersAndBranchCannotBeChangedByStudent() throws Exception {
+    @Test void importedPersonalDetailsArePrefilledAndStudentEditableWhileAuthenticationStaysProtected() throws Exception {
         User imported = users.save(new User("imported@college.edu", encoder.encode("StudentPassword!23"), Role.STUDENT, true));
         accounts.save(new StudentAccount(imported, "Imported Student", "23001107", 7));
         Cookie importedCookie = login(imported.getEmail(), "StudentPassword!23");
@@ -95,25 +115,31 @@ class StudentProfileIntegrationTest {
                 .andExpect(jsonPath("$.studentName").value("Imported Student")).andExpect(jsonPath("$.semester").value(7))
                 .andExpect(jsonPath("$.uid").value("23001107")).andExpect(jsonPath("$.instituteEmail").value("imported@college.edu"))
                 .andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
-                .andExpect(jsonPath("$.readOnlyFields", org.hamcrest.Matchers.containsInAnyOrder("studentName", "uid", "instituteEmail", "branch", "semester")));
+                .andExpect(jsonPath("$.readOnlyFields", org.hamcrest.Matchers.containsInAnyOrder("branch", "semester", "facultyMentorName", "facultyMentorContact")));
 
         Map<String,Object> submitted = profile("Imported", "changed-uid", "changed@college.edu"); submitted.put("branch", "ELECTRICAL"); submitted.put("semester", 4);
         mvc.perform(post("/api/v1/student/profile").cookie(importedCookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(submitted)))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.uid").value("23001107"))
-                .andExpect(jsonPath("$.instituteEmail").value("imported@college.edu")).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
-                .andExpect(jsonPath("$.studentName").value("Imported Student")).andExpect(jsonPath("$.semester").value(7));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.uid").value("changed-uid")).andExpect(jsonPath("$.rollNumber").value("changed-uid"))
+                .andExpect(jsonPath("$.instituteEmail").value("changed@college.edu")).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
+                .andExpect(jsonPath("$.studentName").value("Student Imported")).andExpect(jsonPath("$.semester").value(7));
 
         submitted.put("uid", "another-uid"); submitted.put("instituteEmail", "another@college.edu"); submitted.put("branch", "MECHANICAL"); submitted.put("aadhaarNumber", "");
         submitted.put("studentName", "Manipulated Name"); submitted.put("semester", 8); submitted.put("personalEmail", "updated@example.com");
         submitted.put("phoneNumber", "+91 98765 43219"); submitted.put("currentAddress", "Updated internship address");
         mvc.perform(put("/api/v1/student/profile").cookie(importedCookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(submitted)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.uid").value("23001107"))
-                .andExpect(jsonPath("$.instituteEmail").value("imported@college.edu")).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
-                .andExpect(jsonPath("$.studentName").value("Imported Student")).andExpect(jsonPath("$.semester").value(7))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.uid").value("another-uid")).andExpect(jsonPath("$.rollNumber").value("another-uid"))
+                .andExpect(jsonPath("$.instituteEmail").value("another@college.edu")).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
+                .andExpect(jsonPath("$.studentName").value("Manipulated Name")).andExpect(jsonPath("$.semester").value(7))
                 .andExpect(jsonPath("$.personalEmail").value("updated@example.com")).andExpect(jsonPath("$.phoneNumber").value("+91 98765 43219"))
                 .andExpect(jsonPath("$.currentAddress").value("Updated internship address"));
 
         String studentBody = mvc.perform(get("/api/v1/student/profile").cookie(importedCookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(studentBody).contains("Manipulated Name").contains("another@college.edu");
+        assertThat(users.findById(imported.getId()).orElseThrow().getEmail()).isEqualTo("imported@college.edu");
+        login("imported@college.edu", "StudentPassword!23");
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new LoginRequest("another@college.edu", "StudentPassword!23"))))
+                .andExpect(status().isUnauthorized());
         assertThat(studentBody).doesNotContain("123456789012");
         assertThat(profiles.findByUserId(imported.getId()).orElseThrow().getAadhaarEncrypted()).doesNotContain("123456789012");
         mvc.perform(get("/api/v1/admin/students/" + imported.getId()).cookie(adminCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.aadhaarNumber").value("123456789012"));
@@ -121,19 +147,21 @@ class StudentProfileIntegrationTest {
         mvc.perform(get("/api/v1/admin/students/" + imported.getId()).cookie(login(mentor.getEmail(), "MentorPassword!23"))).andExpect(status().isForbidden());
     }
 
-    @Test void bootstrapAccountsKeepUserEditableFieldsWhilePrefilledEmailAndBranchAreProtected() throws Exception {
+    @Test void bootstrapAccountsKeepPrefilledNameAndEmailEditableWhileBranchIsProtected() throws Exception {
         mvc.perform(get("/api/v1/student/profile/prefill").cookie(studentACookie)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.instituteEmail").value(studentA.getEmail()))
-                .andExpect(jsonPath("$.readOnlyFields", org.hamcrest.Matchers.containsInAnyOrder("instituteEmail", "branch")));
+                .andExpect(jsonPath("$.readOnlyFields", org.hamcrest.Matchers.containsInAnyOrder("branch", "facultyMentorName", "facultyMentorContact")));
         Map<String,Object> submitted = profile("A", "LEGACY-UID", "manipulated@college.edu"); submitted.put("branch", "MECHANICAL"); submitted.put("semester", 6);
         mvc.perform(post("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(submitted)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.uid").value("LEGACY-UID"))
-                .andExpect(jsonPath("$.instituteEmail").value(studentA.getEmail())).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
+                .andExpect(jsonPath("$.instituteEmail").value("manipulated@college.edu")).andExpect(jsonPath("$.branch").value("COMPUTER_ENGINEERING"))
                 .andExpect(jsonPath("$.studentName").value("Student A")).andExpect(jsonPath("$.semester").value(6));
         submitted.put("studentName", "Student A Updated"); submitted.put("semester", 8); submitted.put("uid", "CHANGED-UID"); submitted.put("aadhaarNumber", "");
         mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(submitted)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.studentName").value("Student A Updated")).andExpect(jsonPath("$.semester").value(8))
-                .andExpect(jsonPath("$.uid").value("LEGACY-UID")).andExpect(jsonPath("$.instituteEmail").value(studentA.getEmail()));
+                .andExpect(jsonPath("$.uid").value("CHANGED-UID")).andExpect(jsonPath("$.rollNumber").value("CHANGED-UID"))
+                .andExpect(jsonPath("$.instituteEmail").value("manipulated@college.edu"));
+        assertThat(accounts.findByUserId(studentA.getId()).orElseThrow().getUid()).isEqualTo("CHANGED-UID");
     }
 
     @Test void existingInstitutionalProfileValuesArePreservedWhenAccountPrefillDiffers() throws Exception {
@@ -152,11 +180,12 @@ class StudentProfileIntegrationTest {
                 .andExpect(jsonPath("$.semester").value(8));
         Map<String,Object> update = profile("Replacement", "replacement-uid", "replacement@college.edu"); update.put("phoneNumber", "+91 98765 43219");
         mvc.perform(put("/api/v1/student/profile").cookie(cookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(update)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.studentName").value("Existing Name")).andExpect(jsonPath("$.uid").value("EXISTING-UID"))
-                .andExpect(jsonPath("$.instituteEmail").value("existing@college.edu")).andExpect(jsonPath("$.branch").value("MECHANICAL"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.studentName").value("Student Replacement")).andExpect(jsonPath("$.uid").value("replacement-uid"))
+                .andExpect(jsonPath("$.rollNumber").value("replacement-uid"))
+                .andExpect(jsonPath("$.instituteEmail").value("replacement@college.edu")).andExpect(jsonPath("$.branch").value("MECHANICAL"))
                 .andExpect(jsonPath("$.semester").value(8)).andExpect(jsonPath("$.phoneNumber").value("+91 98765 43219"));
         assertThat(users.findById(imported.getId()).orElseThrow().getEmail()).isEqualTo("imported@college.edu");
-        assertThat(accounts.findAll().stream().filter(account -> account.getUser().getId().equals(imported.getId())).findFirst().orElseThrow().getUid()).isEqualTo("IMPORTED-UID");
+        assertThat(accounts.findByUserId(imported.getId()).orElseThrow().getUid()).isEqualTo("replacement-uid");
     }
 
     @Test void studentCannotAccessAdminStudentEndpoint() throws Exception {
@@ -167,6 +196,17 @@ class StudentProfileIntegrationTest {
         create(studentACookie, profile("A", "SAME-UID", "a@college.edu"));
         mvc.perform(post("/api/v1/student/profile").cookie(studentBCookie).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(profile("B", "SAME-UID", "b@college.edu"))))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DUPLICATE_UID"));
+    }
+
+    @Test void institutionalEmailMustBeUniqueAcrossProfilesAndLoginAccounts() throws Exception {
+        create(studentACookie, profile("A", "UID-A", "shared@college.edu"));
+        mvc.perform(post("/api/v1/student/profile").cookie(studentBCookie).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(profile("B", "UID-B", "SHARED@college.edu"))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DUPLICATE_INSTITUTE_EMAIL"));
+
+        mvc.perform(post("/api/v1/student/profile").cookie(studentBCookie).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(profile("B", "UID-B", admin.getEmail()))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DUPLICATE_INSTITUTE_EMAIL"));
     }
 
     @Test void invalidEmailIsRejected() throws Exception {
@@ -189,6 +229,75 @@ class StudentProfileIntegrationTest {
 
     @Test void aadhaarIsNotLogged(CapturedOutput output) throws Exception {
         create(studentACookie, profile("A", "UID-A", "a@college.edu")); assertThat(output.getAll()).doesNotContain("123456789012");
+    }
+
+    @Test void studentSavesPartiallyCompletedProfileAndCompletesMissingLater() throws Exception {
+        Map<String, Object> partial = new LinkedHashMap<>();
+        partial.put("studentName", "Student Partial");
+        partial.put("uid", "PARTIAL-UID");
+        partial.put("instituteEmail", "partial@college.edu");
+        partial.put("personalEmail", "partial.personal@example.com");
+        partial.put("phoneNumber", "+91 98765 43210");
+        partial.put("bloodGroup", "B+");
+
+        // Saving partially completed profile without requiring every field
+        mvc.perform(post("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(partial)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.studentName").value("Student Partial"))
+                .andExpect(jsonPath("$.uid").value("PARTIAL-UID"))
+                .andExpect(jsonPath("$.instituteEmail").value("partial@college.edu"))
+                .andExpect(jsonPath("$.personalEmail").value("partial.personal@example.com"))
+                .andExpect(jsonPath("$.phoneNumber").value("+91 98765 43210"))
+                .andExpect(jsonPath("$.bloodGroup").value("B+"))
+                .andExpect(jsonPath("$.permanentAddress").isEmpty())
+                .andExpect(jsonPath("$.profileStatus").value("INCOMPLETE"));
+
+        // Reopening the profile and retrieving saved partial data
+        mvc.perform(get("/api/v1/student/profile").cookie(studentACookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.studentName").value("Student Partial"))
+                .andExpect(jsonPath("$.phoneNumber").value("+91 98765 43210"))
+                .andExpect(jsonPath("$.bloodGroup").value("B+"));
+
+        // Editing other fields preserves previously saved values
+        Map<String, Object> update = new LinkedHashMap<>();
+        update.put("permanentAddress", "123 Campus Road");
+        update.put("guardianName", "Guardian Name");
+        update.put("guardianContact", "+91 98765 43211");
+        update.put("emergencyContact", "+91 98765 43212");
+
+        mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(update)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.studentName").value("Student Partial")) // preserved
+                .andExpect(jsonPath("$.uid").value("PARTIAL-UID")) // preserved
+                .andExpect(jsonPath("$.phoneNumber").value("+91 98765 43210")) // preserved
+                .andExpect(jsonPath("$.bloodGroup").value("B+")) // preserved
+                .andExpect(jsonPath("$.permanentAddress").value("123 Campus Road")) // updated
+                .andExpect(jsonPath("$.guardianName").value("Guardian Name")); // updated
+    }
+
+    @Test void studentEditsDisplayedMentorInfoWithoutSilentlyChangingOfficialAssignment() throws Exception {
+        User mentor = users.save(new User("official.mentor@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));
+        mentorProfiles.save(new MentorProfile(mentor, "Dr. Official Mentor", "FAC-OFFICIAL", "Computer Engineering", "Professor", "+91 98765 40001"));
+        assignments.save(new MentorStudentAssignment(mentor, studentA, admin, Instant.now()));
+
+        create(studentACookie, profile("A", "UID-A", "a@college.edu"));
+
+        Map<String, Object> update = profile("A", "UID-A", "a@college.edu");
+        update.put("facultyMentorName", "Student Edited Mentor Name");
+        update.put("facultyMentorContact", "+91 91111 22222");
+
+        mvc.perform(put("/api/v1/student/profile").cookie(studentACookie).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(update)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.facultyMentorName").value("Dr. Official Mentor"))
+                .andExpect(jsonPath("$.facultyMentorContact").value("+91 98765 40001"));
+
+        // Ensure official assignment was not altered
+        assertThat(assignments.findByStudentIdAndActiveTrue(studentA.getId()).orElseThrow().getMentor().getId())
+                .isEqualTo(mentor.getId());
     }
 
     private User student(String email, String password) { User user = users.save(new User(email, encoder.encode(password), Role.STUDENT, true)); accounts.save(new StudentAccount(user)); return user; }

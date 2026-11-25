@@ -1,6 +1,9 @@
 package edu.institution.ims.mentor;
 
 import edu.institution.ims.internship.*;
+import edu.institution.ims.internship.dto.InternshipDetailsRequest;
+import edu.institution.ims.internship.dto.RegisteredWorkplaceRequest;
+import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.user.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +25,8 @@ import java.time.LocalDate;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -36,6 +41,8 @@ public class MentorInternshipDetailsIntegrationTest {
     @Autowired private edu.institution.ims.attendance.InternshipLocationRepository locations;
     @Autowired private PasswordEncoder encoder;
     @Autowired private Clock clock;
+    @Autowired private InternshipDetailsService internshipDetailsService;
+    @Autowired private edu.institution.ims.attendance.InternshipLocationService locationService;
 
     private User mentor;
     private User otherMentor;
@@ -150,6 +157,44 @@ public class MentorInternshipDetailsIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.companyName").value("Company One"))
                 .andExpect(jsonPath("$.status").value("PENDING_MENTOR_APPROVAL"));
+    }
+
+    @Test
+    void approvedCoordinatesAreLockedForStudentUpdatesInBothInternshipSlots() {
+        var internships = detailsRepository.findAllByOnboardingStudentIdOrderByOnboardingInternshipNumber(student.getId());
+        for (InternshipDetails internship : internships) {
+            var location = new edu.institution.ims.attendance.InternshipLocation(internship,
+                    BigDecimal.valueOf(21.123456 + internship.getOnboarding().getInternshipNumber()),
+                    BigDecimal.valueOf(79.123456), BigDecimal.valueOf(200), Instant.now(clock));
+            location.selectedPlace("slot-" + internship.getOnboarding().getInternshipNumber(), "Approved branch");
+            location.name("Approved workplace");
+            locations.saveAndFlush(location);
+            internship.attachWorkplace(location);
+            detailsRepository.saveAndFlush(internship);
+            locationService.review(student.getId(), internship.getId(), UserPrincipal.from(mentor),
+                    new edu.institution.ims.attendance.WorkplaceReview(location.getRevision(),
+                            edu.institution.ims.attendance.WorkplaceReview.Decision.APPROVE, null));
+
+            var changed = new InternshipDetailsRequest(internship.getCompanyName() + " Updated", internship.getCompanyType(),
+                    internship.getOtherCompanyType(), internship.getCompanyAddress(), internship.getCompanyPhone(),
+                    internship.getIndustrySupervisorName(), internship.getIndustrySupervisorDesignation(),
+                    internship.getIndustrySupervisorContact(), internship.getDurationMonths(), internship.getStartDate(),
+                    internship.getEndDate(), internship.getTotalWeeks(), internship.getInternshipMode(),
+                    internship.getStipendPerMonth(), internship.isFullTimeEmploymentOffered(),
+                    new RegisteredWorkplaceRequest(location.getPlaceId(), location.getWorkplaceAddress(),
+                            location.getLatitude().add(new BigDecimal("0.001000")), location.getLongitude(), location.getWorkplaceName()));
+
+            assertThatThrownBy(() -> {
+                if (internship.getOnboarding().getInternshipNumber() == 1)
+                    internshipDetailsService.updateOwn(UserPrincipal.from(student), changed);
+                else internshipDetailsService.updateSecond(UserPrincipal.from(student), changed);
+            })
+                    .isInstanceOfSatisfying(edu.institution.ims.attendance.AttendanceException.class,
+                            failure -> assertThat(failure.getCode()).isEqualTo("WORKPLACE_COORDINATES_LOCKED"));
+            var unchanged = locations.findByInternshipId(internship.getId()).orElseThrow();
+            assertThat(unchanged.getLatitude()).isEqualByComparingTo(location.getLatitude());
+            assertThat(unchanged.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.APPROVED);
+        }
     }
 
     @Test

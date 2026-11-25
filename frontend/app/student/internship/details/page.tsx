@@ -8,10 +8,12 @@ import { InternshipDetailsForm } from "@/components/InternshipDetailsForm";
 import { InternshipDetailsView } from "@/components/InternshipDetailsView";
 import { InternshipLocationManager } from "@/components/InternshipLocationManager";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { BackButton } from "@/components/BackButton";
 import { ApiError, api } from "@/lib/api";
 import { emptyInternshipDetails, InternshipDetails, InternshipDetailsFormData, toFormData } from "@/lib/internship-details";
 import { InternshipOnboarding } from "@/lib/internship-onboarding";
 import type { InternshipLocation } from "@/lib/attendance";
+import { internshipDisplayLabel } from "@/lib/internship-label";
 import {
   getSelectedInternship,
   setSelectedInternship,
@@ -117,6 +119,7 @@ export default function InternshipDetailsPage() {
   }
 
   const latestSecondRequest = secondRequests.length > 0 ? secondRequests[0] : null;
+  const hasApprovedSecondInternship = latestSecondRequest?.status === "APPROVED";
 
   const status1: InternshipStatusBadge = deriveInternshipStatus(
     details1,
@@ -136,11 +139,22 @@ export default function InternshipDetailsPage() {
     setFieldErrors({});
     const payload = {
       ...data,
-      otherCompanyType: data.companyType === "OTHER" ? data.otherCompanyType : null,
-      durationMonths: Number(data.durationMonths),
-      totalWeeks: Number(data.totalWeeks),
-      stipendPerMonth: Number(data.stipendPerMonth),
-      fullTimeEmploymentOffered: data.fullTimeEmploymentOffered === "true",
+      companyName: data.companyName ? data.companyName.trim() : null,
+      companyType: data.companyType || null,
+      otherCompanyType: data.companyType === "OTHER" ? (data.otherCompanyType?.trim() || null) : null,
+      companyAddress: data.companyAddress ? data.companyAddress.trim() : null,
+      companyPhone: data.companyPhone ? data.companyPhone.trim() : null,
+      industrySupervisorName: data.industrySupervisorName ? data.industrySupervisorName.trim() : null,
+      industrySupervisorDesignation: data.industrySupervisorDesignation ? data.industrySupervisorDesignation.trim() : null,
+      industrySupervisorContact: data.industrySupervisorContact ? data.industrySupervisorContact.trim() : null,
+      durationMonths: data.durationMonths ? Number(data.durationMonths) : null,
+      startDate: data.startDate || null,
+      endDate: data.endDate || null,
+      totalWeeks: data.totalWeeks ? Number(data.totalWeeks) : null,
+      internshipMode: data.internshipMode || null,
+      stipendPerMonth: data.stipendPerMonth !== "" ? Number(data.stipendPerMonth) : null,
+      fullTimeEmploymentOffered: data.fullTimeEmploymentOffered === "true" ? true : data.fullTimeEmploymentOffered === "false" ? false : null,
+      workplace: data.workplace || null,
     };
     try {
       const response = details1
@@ -149,7 +163,7 @@ export default function InternshipDetailsPage() {
       setDetails1(response.data);
       setEditing1(false);
       window.history.replaceState(null, "", window.location.pathname);
-      setOnboarding1((curr) => (curr ? { ...curr, workflowStatus: "INTERNSHIP_DETAILS_COMPLETE" } : curr));
+      api.get<InternshipOnboarding>("/student/internship-onboarding?internshipNumber=1").then(r => setOnboarding1(r.data)).catch(() => {});
     } catch (cause) {
       if (axios.isAxiosError<ApiError>(cause)) {
         setError(cause.response?.data?.message ?? "Internship details could not be saved.");
@@ -166,11 +180,22 @@ export default function InternshipDetailsPage() {
     setFieldErrors({});
     const payload = {
       ...data,
-      otherCompanyType: data.companyType === "OTHER" ? data.otherCompanyType : null,
-      durationMonths: Number(data.durationMonths),
-      totalWeeks: Number(data.totalWeeks),
-      stipendPerMonth: Number(data.stipendPerMonth),
-      fullTimeEmploymentOffered: data.fullTimeEmploymentOffered === "true",
+      companyName: data.companyName ? data.companyName.trim() : null,
+      companyType: data.companyType || null,
+      otherCompanyType: data.companyType === "OTHER" ? (data.otherCompanyType?.trim() || null) : null,
+      companyAddress: data.companyAddress ? data.companyAddress.trim() : null,
+      companyPhone: data.companyPhone ? data.companyPhone.trim() : null,
+      industrySupervisorName: data.industrySupervisorName ? data.industrySupervisorName.trim() : null,
+      industrySupervisorDesignation: data.industrySupervisorDesignation ? data.industrySupervisorDesignation.trim() : null,
+      industrySupervisorContact: data.industrySupervisorContact ? data.industrySupervisorContact.trim() : null,
+      durationMonths: data.durationMonths ? Number(data.durationMonths) : null,
+      startDate: data.startDate || null,
+      endDate: data.endDate || null,
+      totalWeeks: data.totalWeeks ? Number(data.totalWeeks) : null,
+      internshipMode: data.internshipMode || null,
+      stipendPerMonth: data.stipendPerMonth !== "" ? Number(data.stipendPerMonth) : null,
+      fullTimeEmploymentOffered: data.fullTimeEmploymentOffered === "true" ? true : data.fullTimeEmploymentOffered === "false" ? false : null,
+      workplace: data.workplace || null,
     };
     try {
       const response = details2
@@ -179,6 +204,7 @@ export default function InternshipDetailsPage() {
       setDetails2(response.data);
       setEditing2(false);
       window.history.replaceState(null, "", window.location.pathname);
+      api.get<InternshipOnboarding>("/student/internship-onboarding?internshipNumber=2").then(r => setOnboarding2(r.data)).catch(() => {});
     } catch (cause) {
       if (axios.isAxiosError<ApiError>(cause)) {
         setError(cause.response?.data?.message ?? "Internship 2 details could not be saved.");
@@ -215,9 +241,7 @@ export default function InternshipDetailsPage() {
     <ProtectedRoute role="STUDENT">
       <AppFrame>
         <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
-          <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">
-            ← Back to dashboard
-          </Link>
+          <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to dashboard" />
 
           <div className="mt-5">
             <p className="text-sm font-semibold text-blue-700">Internship registration</p>
@@ -241,7 +265,7 @@ export default function InternshipDetailsPage() {
                     : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
                 }`}
               >
-                <span>Internship 1</span>
+                <span>{internshipDisplayLabel(1, hasApprovedSecondInternship)}</span>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                   activeTab === 1 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status1)
                 }`}>
@@ -259,7 +283,7 @@ export default function InternshipDetailsPage() {
                     : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
                 }`}
               >
-                <span>Internship 2</span>
+                <span>{hasApprovedSecondInternship ? "Internship 2" : "Second Internship Request"}</span>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                   activeTab === 2 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status2)
                 }`}>
@@ -346,7 +370,7 @@ export default function InternshipDetailsPage() {
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-amber-900">
                   <h2 className="font-bold">Primary Internship Required</h2>
                   <p className="mt-2 text-sm text-amber-800">
-                    Complete your primary internship (Internship 1) before requesting or setting up a second internship.
+                    Complete your mandatory internship before requesting or setting up a second internship.
                   </p>
                 </div>
               ) : details2 && !editing2 ? (
@@ -462,7 +486,7 @@ export default function InternshipDetailsPage() {
                       onClick={raiseSecondRequest}
                       className="ui-button text-sm"
                     >
-                      {requestingSlot2 ? "Submitting Request…" : "Raise Internship Request"}
+                      {requestingSlot2 ? "Submitting Request…" : "Internship Secured"}
                     </button>
                   </div>
                 </div>

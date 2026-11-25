@@ -81,9 +81,24 @@ class MentorAssignmentIntegrationTest {
     }
 
     @Test
-    void reassignmentAndRemovalPreserveHistoryAndDatabaseRejectsTwoActiveMentors() throws Exception {
+    void assignedStudentsAreNotAvailableAndMustBeExplicitlyUnassignedBeforeReassignment() throws Exception {
         Cookie adminSession = loginCookie(admin.getEmail(), "AdminPassword!23");
         assign(adminSession, mentorA, studentA).andExpect(status().isOk());
+
+        mvc.perform(get("/api/v1/admin/mentors/{mentorId}/students", mentorA.getId()).cookie(adminSession))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.assignedStudents[0].userId").value(studentA.getId()))
+                .andExpect(jsonPath("$.availableStudents[*].userId", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem(studentA.getId().intValue()))));
+        mvc.perform(get("/api/v1/admin/mentors/{mentorId}/students", mentorB.getId()).cookie(adminSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableStudents[*].userId", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem(studentA.getId().intValue()))));
+
+        assign(adminSession, mentorB, studentA).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STUDENT_ALREADY_ASSIGNED"));
+        assertThat(assignments.findByStudentIdAndActiveTrue(studentA.getId()).orElseThrow().getMentor().getId()).isEqualTo(mentorA.getId());
+        assertThat(assignments.findAllByStudentIdOrderByAssignedAtAsc(studentA.getId())).hasSize(1);
+
+        mvc.perform(delete("/api/v1/admin/mentors/{mentorId}/students/{studentId}", mentorA.getId(), studentA.getId())
+                        .cookie(adminSession)).andExpect(status().isOk());
         assign(adminSession, mentorB, studentA).andExpect(status().isOk());
 
         List<MentorStudentAssignment> history = assignments.findAllByStudentIdOrderByAssignedAtAsc(studentA.getId());
