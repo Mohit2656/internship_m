@@ -59,7 +59,10 @@ public class WeeklyProgressService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void synchronize(InternshipDetails internship) {
         lockInternship(internship.getId());
-        int count = InternshipDuration.generatedWeeks(internship.getStartDate(), internship.getEndDate());
+        LocalDate effectiveEnd = internship.isEarlyTerminated() && internship.getTerminatedAt() != null
+                ? internship.getTerminatedAt().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate()
+                : internship.getEndDate();
+        int count = InternshipDuration.generatedWeeks(internship.getStartDate(), effectiveEnd);
         // Normalize only this derived legacy value; retain dates and student timestamps.
         jdbc.update("update internship_details set total_weeks=? where id=? and total_weeks<>?",count,internship.getId(),count);
         List<Bounds> existing = jdbc.query("select p.*, r.period_id as submitted_id from weekly_internship_periods p "
@@ -133,7 +136,9 @@ public class WeeklyProgressService {
                 synchronize(internship);
             });
         }
-        return new Monitoring(admin ? weeks("exists(select 1 from users su where su.id=o.student_user_id and su.active=true)") : weeks("exists(select 1 from users su where su.id=o.student_user_id and su.active=true) and exists(select 1 from mentor_student_assignments a where a.student_user_id=o.student_user_id and a.mentor_user_id=? and a.active=true)", principal.id()),warnings);
+        return new Monitoring(admin
+                ? weeks("exists(select 1 from users su where su.id=o.student_user_id and su.active=true)")
+                : weeks("exists(select 1 from users su where su.id=o.student_user_id and su.active=true) and exists(select 1 from mentor_student_assignments a where a.student_user_id=o.student_user_id and a.mentor_user_id=? and a.active=true)", principal.id()), warnings);
     }
 
     @Transactional
@@ -290,6 +295,7 @@ public class WeeklyProgressService {
         Map<Long,List<Event>> histories=new HashMap<>();
         jdbc.query("select e.*,actor.email from weekly_progress_events e join weekly_internship_periods p on p.id=e.period_id "
                         + "join internship_details i on i.id=p.internship_id join internship_onboarding o on o.id=i.onboarding_id "
+                        + "left join weekly_progress_reports r on r.period_id=p.id "
                         + "join users actor on actor.id=e.actor_id where "+scope+" order by e.period_id,e.id",
                 (org.springframework.jdbc.core.RowCallbackHandler) rs -> histories.computeIfAbsent(rs.getLong("period_id"),ignored->new ArrayList<>())
                         .add(new Event(rs.getInt("revision"),rs.getString("event_type"),rs.getLong("actor_id"),rs.getString("email"),

@@ -34,6 +34,13 @@ public class InternshipDetails {
     @Column(name = "completion_status", nullable = false, length = 30) private String completionStatus = "IN_PROGRESS";
     @Column(name = "working_days_per_week") private Integer workingDaysPerWeek = 5;
     @Column(name = "working_days", length = 100) private String workingDays = "MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY";
+    @Column(name = "lifecycle_status", nullable = false, length = 30) private String lifecycleStatus = "ACTIVE";
+    @Column(name = "terminated_at") private Instant terminatedAt;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "terminated_by") private edu.institution.ims.user.User terminatedBy;
+    @Column(name = "termination_reason", length = 1000) private String terminationReason;
+    @Column(name = "deleted_at") private Instant deletedAt;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "deleted_by") private edu.institution.ims.user.User deletedBy;
+    @Column(name = "deletion_reason", length = 1000) private String deletionReason;
 
     @OneToOne(mappedBy="internship", fetch=FetchType.LAZY) private edu.institution.ims.attendance.InternshipLocation workplace;
     public edu.institution.ims.attendance.InternshipLocation getWorkplace() { return workplace; }
@@ -83,6 +90,37 @@ public class InternshipDetails {
     public String getCompletionStatus() { return completionStatus; }
     public Integer getWorkingDaysPerWeek() { return workingDaysPerWeek; }
     public String getWorkingDays() { return workingDays; }
+    public String getLifecycleStatus() { return lifecycleStatus; }
+    public Instant getTerminatedAt() { return terminatedAt; }
+    public edu.institution.ims.user.User getTerminatedBy() { return terminatedBy; }
+    public String getTerminationReason() { return terminationReason; }
+    public Instant getDeletedAt() { return deletedAt; }
+    public edu.institution.ims.user.User getDeletedBy() { return deletedBy; }
+    public String getDeletionReason() { return deletionReason; }
+
+    public boolean isEarlyTerminated() {
+        return "TERMINATED_EARLY".equals(lifecycleStatus) || "TERMINATED_EARLY".equals(completionStatus) || terminatedAt != null;
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
+
+    public void terminateEarly(edu.institution.ims.user.User adminUser, String reason, Instant when) {
+        this.lifecycleStatus = "TERMINATED_EARLY";
+        this.completionStatus = "TERMINATED_EARLY";
+        this.terminatedAt = when;
+        this.terminatedBy = adminUser;
+        this.terminationReason = reason;
+        this.updatedAt = when;
+    }
+
+    public void softDelete(edu.institution.ims.user.User adminUser, String reason, Instant when) {
+        this.deletedAt = when;
+        this.deletedBy = adminUser;
+        this.deletionReason = reason;
+        this.updatedAt = when;
+    }
 
     public java.util.Set<DayOfWeek> getWorkingDaysSet() {
         if (workingDays == null || workingDays.trim().isEmpty()) {

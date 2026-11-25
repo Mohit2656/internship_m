@@ -23,8 +23,10 @@ export function WeeklyProgress({ scope, internshipId }: { scope: Scope; internsh
   const [busy, setBusy] = useState(false);
   const [downloadingReport, setDownloadingReport] = useState<number | null>(null);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("");
   const [warnings, setWarnings] = useState<WeeklyWarning[]>([]);
+  const [filter, setFilter] = useState("");
+  const [manualWeekNumber, setManualWeekNumber] = useState<string>("");
+  const [showSubmittedOnly, setShowSubmittedOnly] = useState(false);
   const actionPending = useRef(new Set<string>());
   useEffect(() => {
     let active = true;
@@ -39,7 +41,7 @@ export function WeeklyProgress({ scope, internshipId }: { scope: Scope; internsh
   }, [scope, internshipId]);
 
   function open(week: InternshipWeek, action: "submit" | "reject") {
-    setSelected({ week, action }); setDescription(week.workDescription ?? ""); setReason(""); setReportPdf(null); setError(""); setNotice("");
+    setSelected({ week, action }); setManualWeekNumber(String(week.weekNumber)); setDescription(week.workDescription ?? ""); setReason(""); setReportPdf(null); setError(""); setNotice("");
   }
   async function save(event?: FormEvent, approved?: InternshipWeek) {
     event?.preventDefault();
@@ -106,14 +108,96 @@ export function WeeklyProgress({ scope, internshipId }: { scope: Scope; internsh
   }
   const visible = weeks.filter(week => (!internshipId || week.internshipId === internshipId) && (!filter || week.status === filter) && `${week.studentName} ${week.uid ?? ""} ${week.companyName}`.toLowerCase().includes(search.toLowerCase()));
   return <section className="mt-7">
-    {overview && <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5"><h2 className="font-bold">{overview.companyName} · {overview.totalWeeks} weeks</h2><p className="mt-2 text-sm">{formatDate(overview.internshipStart)} – {formatDate(overview.internshipEnd)}</p><p className="mt-2 text-xs text-slate-600">{overview.calculationRule}</p></div>}
+    {overview && <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5"><h2 className="font-bold">{overview.companyName}</h2><p className="mt-2 text-sm text-slate-600">{formatDate(overview.internshipStart)} – {formatDate(overview.internshipEnd)}</p></div>}
     {notice && <p role="status" className="mt-5 text-sm text-emerald-700">{notice}</p>}
     {!!warnings.length && <div role="status" className="mt-5 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{warnings.map(warning => <p key={warning.internshipId}><Link href={`/${scope}/students/${warning.studentUserId}`} className="font-bold underline">{warning.studentName}</Link>: {warning.message}</p>)}</div>}
     {error && !selected && <p role="alert" className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
-    {loading ? <p className="mt-6 text-sm text-slate-500"><LoadingSpinner label="Loading weekly records…"/></p> : <>
+    {loading ? <p className="mt-6 text-sm text-slate-500"><LoadingSpinner label="Loading weekly records…"/></p> : !error && <>
       <div className="mt-5 flex flex-wrap gap-3">{scope !== "student" && <label className="text-sm font-semibold">Search student or company<input value={search} onChange={event => setSearch(event.target.value)} className="input mt-1" placeholder="Name, UID or company"/></label>}<label className="text-sm font-semibold">Progress status<select value={filter} onChange={event => setFilter(event.target.value)} className="input mt-1"><option value="">All statuses</option>{(["AVAILABLE", "UPCOMING", "PENDING_MENTOR_REVIEW", "APPROVED", "REJECTED", "ARCHIVED"] as const).map(status => <option key={status} value={status}>{weeklyStatusLabel(status)}</option>)}</select></label></div>
-      {!visible.length ? <p className="mt-5 rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No weekly records match this view.</p> : scope === "student" ? <div className="mt-5 space-y-4">{visible.filter(w => w.active).map(record)}{visible.some(w => !w.active) && <details><summary className="cursor-pointer text-sm font-semibold text-blue-700">Archived reporting periods</summary><div className="mt-4 space-y-4">{visible.filter(w => !w.active).map(record)}</div></details>}</div> : <div className="mt-5 space-y-4">{groupWeeklyStudents(visible).map(([studentId, entries]) => <details key={studentId} className="rounded-2xl border border-slate-200 bg-white p-5"><summary className="cursor-pointer font-bold">{entries[0].studentName} <span className="text-sm font-normal text-slate-500">{entries[0].uid ?? "UID unavailable"} · {entries.filter(w => w.active && w.status === "PENDING_MENTOR_REVIEW").length} pending review</span></summary><div className="mt-4 flex flex-wrap items-center gap-3 text-sm"><span>{entries[0].companyName}</span><Link href={`/${scope}/students/${studentId}`} className="font-semibold text-blue-700">View student profile</Link></div><div className="mt-4 space-y-4">{entries.map(record)}</div></details>)}</div>}
+      {!visible.length ? <p className="mt-5 rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">{scope === "student" ? "No weekly records match this view." : "No submitted weekly reports yet."}</p> : scope === "student" ? (
+        <div className="mt-6 space-y-5">
+          <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 pb-4">
+            {(() => {
+              const availableWeek = visible.find(w => w.active && (w.status === "AVAILABLE" || w.status === "REJECTED"));
+              if (!availableWeek) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() => open(availableWeek, "submit")}
+                  className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Submit Weekly Report
+                </button>
+              );
+            })()}
+            <button
+              type="button"
+              data-button-variant={showSubmittedOnly ? "primary" : "outline"}
+              onClick={() => setShowSubmittedOnly(!showSubmittedOnly)}
+              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {showSubmittedOnly ? "Show Available Weeks" : `View Previously Submitted Reports (${visible.filter(w => w.submittedAt).length})`}
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {showSubmittedOnly ? (
+              visible.filter(w => w.submittedAt).length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+                  No submitted weekly reports yet.
+                </div>
+              ) : (
+                visible.filter(w => w.submittedAt).map(record)
+              )
+            ) : (
+              visible.filter(w => w.active && (w.status === "AVAILABLE" || w.status === "REJECTED" || w.status === "PENDING_MENTOR_REVIEW" || w.status === "APPROVED")).map(record)
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 space-y-4">
+          {groupWeeklyStudents(visible).map(([studentId, entries]) => {
+            const submitted = entries.filter(w => w.submittedAt != null || w.submissionStatus === "SUBMITTED" || w.status === "PENDING_MENTOR_REVIEW" || w.status === "APPROVED" || w.status === "REJECTED");
+            return (
+              <details key={studentId} className="rounded-2xl border border-slate-200 bg-white p-5">
+                <summary className="cursor-pointer font-bold">
+                  {entries[0].studentName}{" "}
+                  <span className="text-sm font-normal text-slate-500">
+                    {entries[0].uid ?? "UID unavailable"} · {entries.filter(w => w.active && w.status === "PENDING_MENTOR_REVIEW").length} pending review
+                  </span>
+                </summary>
+                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+                  <span>{entries[0].companyName}</span>
+                  <Link href={`/${scope}/students/${studentId}`} className="font-semibold text-blue-700 hover:underline">
+                    View student profile
+                  </Link>
+                </div>
+                <div className="mt-4 space-y-4">
+                  {submitted.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-200 p-4 text-xs text-slate-500">No weekly reports submitted yet.</p>
+                  ) : (
+                    submitted.map(record)
+                  )}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
     </>}
-    {selected && <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4"><form onSubmit={event => void save(event)} className="mx-auto my-8 max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><h2 className="text-xl font-bold">{selected.action === "submit" ? "Weekly progress report" : "Reject weekly report"} · Week {selected.week.weekNumber}</h2><p className="mt-2 text-sm text-slate-500">{formatDate(selected.week.periodStart)} – {formatDate(selected.week.periodEnd)}</p>{selected.action === "submit" ? <><label className="mt-5 block text-sm font-semibold">Work performed during this week<textarea required maxLength={3000} rows={6} value={description} onChange={event => setDescription(event.target.value)} className="input mt-2"/></label><label className="mt-5 block text-sm font-semibold">Upload Report PDF <span className="font-normal text-slate-500">(optional)</span><input type="file" accept=".pdf,application/pdf" onChange={event => { const file=event.target.files?.[0]??null; if(file&&file.size>10*1024*1024){event.target.value="";setReportPdf(null);setError("Report PDFs must be 10 MiB or smaller.");}else{setReportPdf(file);setError("");} }} className="mt-2 block w-full rounded-xl border border-slate-300 p-3 text-sm"/></label>{selected.week.reportPdfOriginalName && !reportPdf && <p className="mt-2 text-xs text-slate-500">Existing PDF “{selected.week.reportPdfOriginalName}” will be kept unless you choose a replacement.</p>}</> : <label className="mt-5 block text-sm font-semibold">Rejection reason<textarea required maxLength={1000} rows={4} value={reason} onChange={event => setReason(event.target.value)} className="input mt-2"/></label>}{error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}<div className="mt-5 flex gap-3"><button disabled={busy || !(selected.action === "submit" ? description.trim() : reason.trim())} className="text-sm">{busy ? <LoadingSpinner label="Saving…"/> : selected.action === "submit" ? "Send for Review" : "Confirm Rejection"}</button><button type="button" data-button-variant="outline" disabled={busy} className="text-sm" onClick={() => setSelected(null)}>Cancel</button></div></form></div>}
+    {selected && <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4"><form onSubmit={event => void save(event)} className="mx-auto my-8 max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><h2 className="text-xl font-bold">{selected.action === "submit" ? "Weekly progress report" : "Reject weekly report"} · Week {selected.week.weekNumber}</h2>
+          {selected.action === "submit" && scope === "student" && (
+            <label className="mt-3 block text-sm font-semibold">
+              Weekly Report Number
+              <input
+                type="number"
+                min={1}
+                max={52}
+                value={manualWeekNumber}
+                onChange={e => setManualWeekNumber(e.target.value)}
+                className="input mt-1 block w-32"
+              />
+            </label>
+          )}<p className="mt-2 text-sm text-slate-500">{formatDate(selected.week.periodStart)} – {formatDate(selected.week.periodEnd)}</p>{selected.action === "submit" ? <><label className="mt-5 block text-sm font-semibold">Work performed during this week<textarea required maxLength={3000} rows={6} value={description} onChange={event => setDescription(event.target.value)} className="input mt-2"/></label><label className="mt-5 block text-sm font-semibold">Upload Report PDF <span className="font-normal text-slate-500">(optional)</span><input type="file" accept=".pdf,application/pdf" onChange={event => { const file=event.target.files?.[0]??null; if(file&&file.size>10*1024*1024){event.target.value="";setReportPdf(null);setError("Report PDFs must be 10 MiB or smaller.");}else{setReportPdf(file);setError("");} }} className="mt-2 block w-full rounded-xl border border-slate-300 p-3 text-sm"/></label>{selected.week.reportPdfOriginalName && !reportPdf && <p className="mt-2 text-xs text-slate-500">Existing PDF “{selected.week.reportPdfOriginalName}” will be kept unless you choose a replacement.</p>}</> : <label className="mt-5 block text-sm font-semibold">Rejection reason<textarea required maxLength={1000} rows={4} value={reason} onChange={event => setReason(event.target.value)} className="input mt-2"/></label>}{error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}<div className="mt-5 flex gap-3"><button disabled={busy || !(selected.action === "submit" ? description.trim() : reason.trim())} className="text-sm">{busy ? <LoadingSpinner label="Saving…"/> : selected.action === "submit" ? "Send for Review" : "Confirm Rejection"}</button><button type="button" data-button-variant="outline" disabled={busy} className="text-sm" onClick={() => setSelected(null)}>Cancel</button></div></form></div>}
   </section>;
 }

@@ -20,17 +20,28 @@ public class StudentAttendanceController {
     private final AttendancePolicyService policyService;
     private final AiVerificationService aiVerificationService;
     private final StudentAttendanceDirectoryService directoryService;
+    private final AttendancePhotoUploadService photoUploadService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public StudentAttendanceController(AttendanceService service, PhysicalAttendanceService physicalService,
             RemoteAttendanceService remoteService, AttendancePolicyService policyService,
             AiVerificationService aiVerificationService,
-            StudentAttendanceDirectoryService directoryService) {
+            StudentAttendanceDirectoryService directoryService,
+            AttendancePhotoUploadService photoUploadService) {
         this.service = service;
         this.physicalService = physicalService;
         this.remoteService = remoteService;
         this.policyService = policyService;
         this.aiVerificationService = aiVerificationService;
         this.directoryService = directoryService;
+        this.photoUploadService = photoUploadService;
+    }
+
+    public StudentAttendanceController(AttendanceService service, PhysicalAttendanceService physicalService,
+            RemoteAttendanceService remoteService, AttendancePolicyService policyService,
+            AiVerificationService aiVerificationService,
+            StudentAttendanceDirectoryService directoryService) {
+        this(service, physicalService, remoteService, policyService, aiVerificationService, directoryService, null);
     }
 
     @PostMapping("/today")
@@ -164,4 +175,18 @@ public class StudentAttendanceController {
     public List<AttendanceResponse> history(@AuthenticationPrincipal UserPrincipal principal,@RequestParam(required=false) Long internshipId) {
         return service.history(principal,internshipId);
     }
+
+    @PostMapping(value = "/today/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<AttendanceResponse> submitPhotoUploadToday(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestPart("photo") MultipartFile photo,
+            jakarta.servlet.http.HttpServletRequest request) {
+        Long resolvedId = parseId(firstParam(request, "internshipId"));
+        if (photoUploadService == null) {
+            throw new AttendanceException(HttpStatus.INTERNAL_SERVER_ERROR, "SERVICE_UNAVAILABLE", "Photo upload service unavailable");
+        }
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(photoUploadService.submitUploadedPhoto(principal, resolvedId, photo));
+    }
+
 }

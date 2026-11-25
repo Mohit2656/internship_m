@@ -15,6 +15,8 @@ public interface InternshipDetailsRepository extends JpaRepository<InternshipDet
     @EntityGraph(attributePaths = {"onboarding", "onboarding.student"})
     @Query("select i from InternshipDetails i where i.startDate <= :through "
             + "and i.completionStatus <> 'COMPLETED' "
+            + "and i.completionStatus <> 'TERMINATED_EARLY' "
+            + "and i.deletedAt is null "
             + "and i.onboarding.workflowStatus = edu.institution.ims.internship.WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE "
             + "and i.onboarding.student.active = true "
             + "and i.onboarding.student.role = edu.institution.ims.user.Role.STUDENT")

@@ -219,7 +219,9 @@ public class InternshipDetailsService {
                 entity.getIndustrySupervisorName(), entity.getIndustrySupervisorDesignation(), entity.getIndustrySupervisorContact(),
                 entity.getDurationMonths(), entity.getStartDate(), entity.getEndDate(), displayWeeks(entity), modeName,
                 modeLabel, entity.getStipendPerMonth(), entity.isFullTimeEmploymentOffered(), entity.getCreatedAt(), entity.getUpdatedAt(), workplace,
-                entity.getEffectiveWorkingDaysPerWeek(), entity.getWorkingDaysList());
+                entity.getEffectiveWorkingDaysPerWeek(), entity.getWorkingDaysList(),
+                entity.getLifecycleStatus(), entity.getTerminatedAt(), entity.getTerminationReason(),
+                entity.getDeletedAt(), entity.getDeletionReason());
     }
     private static Integer displayWeeks(InternshipDetails entity) {
         // Existing records remain readable even if their dates predate current validation.

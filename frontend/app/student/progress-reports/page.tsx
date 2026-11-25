@@ -30,6 +30,8 @@ import {
 function MonthlyProgressView({ internshipId }: { internshipId?: number | null }) {
   const [overview, setOverview] = useState<MonthlyProgressOverview | null>(null);
   const [selected, setSelected] = useState<MonthlyProgressPeriod | null>(null);
+  const [manualMonthNumber, setManualMonthNumber] = useState<string>("");
+  const [showSubmittedOnly, setShowSubmittedOnly] = useState(false);
   const [description, setDescription] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [reportPdf, setReportPdf] = useState<File | null>(null);
@@ -166,123 +168,190 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
             </p>
           </section>
 
-          <div className="mt-6 space-y-4">
-            {overview.periods.map((period) => (
-              <article
-                id={`month-${period.monthNumber}`}
-                key={period.monthNumber}
-                className="rounded-2xl border border-slate-200 bg-white p-6"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <h4 className="text-lg font-bold text-slate-900">Month {period.monthNumber}</h4>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {formatDate(period.periodStart)} – {formatDate(period.periodEnd)}
-                    </p>
-                  </div>
-                  <span
-                    className={`rounded-full px-3 py-1.5 text-xs font-bold ${
-                      period.report
-                        ? monthlyStatusClass(period.report.status)
-                        : period.status === "UPCOMING"
-                        ? "bg-slate-100 text-slate-600"
-                        : "bg-blue-50 text-blue-700"
-                    }`}
-                  >
-                    {period.report
-                      ? monthlyStatusLabel(period.report.status)
-                      : period.status === "UPCOMING"
-                      ? "Upcoming"
-                      : "Available"}
-                  </span>
-                </div>
-
-                {period.report ? (
-                  <div id={`report-${period.report.id}`} className="mt-5">
-                    <p className="report-document whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                      {period.report.workDescription}
-                    </p>
-                    {period.report.status === "PENDING_MENTOR_REVIEW" && (
-                      <p className="mt-4 text-sm text-amber-800">
-                        This report is not yet approved. It is awaiting faculty mentor review.
-                      </p>
-                    )}
-                    {period.report.rejectionReason && (
-                      <p className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">
-                        Rejection reason: {period.report.rejectionReason}
-                      </p>
-                    )}
-                    <dl className="report-document mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
-                      <div>
-                        <dt className="text-slate-500">Uploaded</dt>
-                        <dd className="mt-1 font-semibold">{formatDateTime(period.report.submittedAt)}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-slate-500">Mentor decision</dt>
-                        <dd className="mt-1 font-semibold">
-                          {period.report.reviewedAt
-                            ? `${period.report.reviewerEmail ?? "Faculty Mentor"} · ${formatDateTime(
-                                period.report.reviewedAt
-                              )}`
-                            : "Awaiting review"}
-                        </dd>
-                      </div>
-                    </dl>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      {period.report.status === "REJECTED" && (
-                        <button
-                          onClick={() => {
-                            setSelected(period);
-                            setDescription(period.report!.workDescription);
-                            setPhoto(null);
-                            setReportPdf(null);
-                            setNotice("");
-                            setError("");
-                          }}
-                          className="ui-button text-sm"
-                        >
-                          Correct and Resubmit
-                        </button>
-                      )}
-                      <button
-                        data-button-variant="outline"
-                        onClick={() => file(period.report!.id, "photo")}
-                        className="ui-button text-sm"
-                      >
-                        {busy === `${period.report.id}-photo` ? "Opening…" : "View Photograph"}
-                      </button>
-                      {period.report.reportPdfOriginalName && <><button data-button-variant="outline" onClick={() => void attachment(period.report!.id,period.report!.reportPdfOriginalName!,false)} className="ui-button text-sm">View Uploaded PDF</button><button data-button-variant="outline" onClick={() => void attachment(period.report!.id,period.report!.reportPdfOriginalName!,true)} className="ui-button text-sm">Download Uploaded PDF</button></>}
-                      <button
-                        onClick={() =>
-                          file(period.report!.id, "pdf", period.report!.uid, period.monthNumber, period.report!.internshipNumber)
-                        }
-                        className="ui-button text-sm"
-                      >
-                        {busy === `${period.report.id}-pdf` ? "Preparing…" : "Download Report"}
-                      </button>
-                    </div>
-                  </div>
-                ) : period.status === "AVAILABLE" ? (
+          <div className="mt-6 space-y-5">
+            <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 pb-4">
+              {(() => {
+                const availablePeriod = overview.periods.find(p => p.status === "AVAILABLE" || (p.report && p.report.status === "REJECTED"));
+                return (
                   <button
+                    type="button"
+                    disabled={!availablePeriod}
                     onClick={() => {
-                      setSelected(period);
-                      setDescription("");
-                      setPhoto(null);
-                      setReportPdf(null);
-                      setNotice("");
-                      setError("");
+                      if (availablePeriod) {
+                        setSelected(availablePeriod);
+                        setManualMonthNumber(String(availablePeriod.monthNumber));
+                        setDescription(availablePeriod.report ? availablePeriod.report.workDescription : "");
+                        setPhoto(null);
+                        setReportPdf(null);
+                        setNotice("");
+                        setError("");
+                      }
                     }}
-                    className="ui-button mt-5 text-sm"
+                    className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
                   >
-                    Submit Report
+                    Submit Monthly Report
                   </button>
+                );
+              })()}
+              <button
+                type="button"
+                data-button-variant={showSubmittedOnly ? "primary" : "outline"}
+                onClick={() => setShowSubmittedOnly(!showSubmittedOnly)}
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                {showSubmittedOnly ? "Show Available Months" : `View Previously Submitted Reports (${overview.periods.filter(p => p.report).length})`}
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {showSubmittedOnly ? (
+                overview.periods.filter(p => p.report).length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+                    No submitted monthly reports yet.
+                  </div>
                 ) : (
-                  <p className="mt-4 text-sm text-slate-500">
-                    Submission becomes available when this reporting period begins.
-                  </p>
-                )}
-              </article>
-            ))}
+                  overview.periods.filter(p => p.report).map((period) => (
+                    <article
+                      id={`month-${period.monthNumber}`}
+                      key={period.monthNumber}
+                      className="rounded-2xl border border-slate-200 bg-white p-6"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <h4 className="text-lg font-bold text-slate-900">Month {period.monthNumber}</h4>
+                          <p className="mt-1 text-sm text-slate-600">
+                            {formatDate(period.periodStart)} – {formatDate(period.periodEnd)}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                            period.report
+                              ? monthlyStatusClass(period.report.status)
+                              : period.status === "UPCOMING"
+                              ? "bg-slate-100 text-slate-600"
+                              : "bg-blue-50 text-blue-700"
+                          }`}
+                        >
+                          {period.report
+                            ? monthlyStatusLabel(period.report.status)
+                            : period.status === "UPCOMING"
+                            ? "Upcoming"
+                            : "Available"}
+                        </span>
+                      </div>
+
+                      {period.report && (
+                        <div id={`report-${period.report.id}`} className="mt-5">
+                          <p className="report-document whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                            {period.report.workDescription}
+                          </p>
+                          {period.report.status === "PENDING_MENTOR_REVIEW" && (
+                            <p className="mt-4 text-sm text-amber-800">
+                              This report is not yet approved. It is awaiting faculty mentor review.
+                            </p>
+                          )}
+                          {period.report.rejectionReason && (
+                            <p className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">
+                              Rejection reason: {period.report.rejectionReason}
+                            </p>
+                          )}
+                          <dl className="report-document mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
+                            <div>
+                              <dt className="text-slate-500">Uploaded</dt>
+                              <dd className="mt-1 font-semibold">{formatDateTime(period.report.submittedAt)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-slate-500">Mentor decision</dt>
+                              <dd className="mt-1 font-semibold">
+                                {period.report.reviewedAt
+                                  ? `${period.report.reviewerEmail ?? "Faculty Mentor"} · ${formatDateTime(
+                                      period.report.reviewedAt
+                                    )}`
+                                  : "Awaiting review"}
+                              </dd>
+                            </div>
+                          </dl>
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            {period.report.status === "REJECTED" && (
+                              <button
+                                onClick={() => {
+                                  setSelected(period);
+                                  setManualMonthNumber(String(period.monthNumber));
+                                  setDescription(period.report!.workDescription);
+                                  setPhoto(null);
+                                  setReportPdf(null);
+                                  setNotice("");
+                                  setError("");
+                                }}
+                                className="ui-button text-sm"
+                              >
+                                Correct and Resubmit
+                              </button>
+                            )}
+                            <button
+                              data-button-variant="outline"
+                              onClick={() => file(period.report!.id, "photo")}
+                              className="ui-button text-sm"
+                            >
+                              {busy === `${period.report.id}-photo` ? "Opening…" : "View Photograph"}
+                            </button>
+                            {period.report.reportPdfOriginalName && (
+                              <>
+                                <button data-button-variant="outline" onClick={() => void attachment(period.report!.id, period.report!.reportPdfOriginalName!, false)} className="ui-button text-sm">View Uploaded PDF</button>
+                                <button data-button-variant="outline" onClick={() => void attachment(period.report!.id, period.report!.reportPdfOriginalName!, true)} className="ui-button text-sm">Download Uploaded PDF</button>
+                              </>
+                            )}
+                            <button
+                              onClick={() =>
+                                file(period.report!.id, "pdf", period.report!.uid, period.monthNumber, period.report!.internshipNumber)
+                              }
+                              className="ui-button text-sm"
+                            >
+                              {busy === `${period.report.id}-pdf` ? "Preparing…" : "Download Report"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  ))
+                )
+              ) : (
+                overview.periods.filter(p => p.status === "AVAILABLE" || (p.report && p.report.status === "REJECTED")).map((period) => (
+                  <article
+                    id={`month-${period.monthNumber}`}
+                    key={period.monthNumber}
+                    className="rounded-2xl border border-slate-200 bg-white p-6"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <h4 className="text-lg font-bold text-slate-900">Month {period.monthNumber}</h4>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {formatDate(period.periodStart)} – {formatDate(period.periodEnd)}
+                        </p>
+                      </div>
+                      <span className="rounded-full px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-700">
+                        Available
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setSelected(period);
+                        setManualMonthNumber(String(period.monthNumber));
+                        setDescription(period.report ? period.report.workDescription : "");
+                        setPhoto(null);
+                        setReportPdf(null);
+                        setNotice("");
+                        setError("");
+                      }}
+                      className="mt-5 ui-button text-sm"
+                    >
+                      {period.report && period.report.status === "REJECTED" ? "Correct and Resubmit" : "Submit Report"}
+                    </button>
+                  </article>
+                ))
+              )}
+            </div>
           </div>
         </>
       )}
@@ -296,6 +365,17 @@ function MonthlyProgressView({ internshipId }: { internshipId?: number | null })
                   Monthly Progress Report
                 </p>
                 <h3 className="mt-2 text-2xl font-bold">Draft — Month {selected.monthNumber}</h3>
+              <label className="mt-3 block text-sm font-semibold">
+                Monthly Report Number
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  value={manualMonthNumber}
+                  onChange={e => setManualMonthNumber(e.target.value)}
+                  className="mt-1 block w-32 rounded-xl border border-slate-300 p-2 text-sm font-normal"
+                />
+              </label>
                 <p className="mt-1 text-sm text-slate-600">
                   {formatDate(selected.periodStart)} – {formatDate(selected.periodEnd)}
                 </p>

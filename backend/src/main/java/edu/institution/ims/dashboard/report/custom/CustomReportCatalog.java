@@ -118,7 +118,7 @@ public class CustomReportCatalog {
                         new Choice("COMPLETION_PENDING", "Completion Pending"), new Choice("COMPLETED", "Completed")),
                 false, false, CATEGORICAL_OPERATORS, "case when i.id is null then null else " + edu.institution.ims.internship.InternshipCompletionService.STATUS_SQL + " end");
         add("completionDate", "Completion Date", "Internship Information", Kind.DATETIME,
-                null, false, false, DATE_OPERATORS, "i.completed_at");
+                null, false, false, DATE_OPERATORS, edu.institution.ims.internship.InternshipCompletionService.COMPLETION_DATE_SQL);
         add("industrySupervisorName", "Industry Supervisor", "Internship Information", Kind.TEXT,
                 null, false, false, TEXT_OPERATORS, "i.industry_supervisor_name");
         add("industrySupervisorDesignation", "Supervisor Designation", "Internship Information", Kind.TEXT,

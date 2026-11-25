@@ -1,8 +1,7 @@
 -- V59: Internship working schedule and daily attendance exceptions
 
-ALTER TABLE internship_details
-    ADD COLUMN IF NOT EXISTS working_days_per_week INTEGER DEFAULT 5,
-    ADD COLUMN IF NOT EXISTS working_days VARCHAR(100) DEFAULT 'MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY';
+ALTER TABLE internship_details ADD COLUMN IF NOT EXISTS working_days_per_week INTEGER DEFAULT 5;
+ALTER TABLE internship_details ADD COLUMN IF NOT EXISTS working_days VARCHAR(100) DEFAULT 'MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY';
 
 CREATE TABLE IF NOT EXISTS attendance_exceptions (
     id BIGSERIAL PRIMARY KEY,
@@ -49,4 +48,9 @@ FROM attendance_records ar
 WHERE ar.submission_type != 'AUTO_ABSENT'
   AND ar.attendance_result = 'PRESENT'
   AND EXTRACT(DOW FROM ar.attendance_date) IN (0, 6)
-ON CONFLICT (internship_id, exception_date, exception_type) DO NOTHING;
+  AND NOT EXISTS (
+      SELECT 1 FROM attendance_exceptions ae
+      WHERE ae.internship_id = ar.internship_id
+        AND ae.exception_date = ar.attendance_date
+        AND ae.exception_type = 'EXTRA_WORKDAY'
+  );

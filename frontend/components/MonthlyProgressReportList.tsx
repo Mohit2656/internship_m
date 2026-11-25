@@ -58,7 +58,7 @@ export function MonthlyProgressReportList({ scope, internshipId }: { scope: "men
   return <>
     {notice && <p role="status" className="mt-6 text-sm text-emerald-700">{notice}</p>}
     {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
-    {reports.length === 0 ? <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500">No monthly progress reports are available.</section> :
+    {!error && reports.length === 0 ? <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500">No monthly progress reports have been submitted yet.</section> : !error &&
       <div className="mt-8 space-y-5">{reports.map(report => <article key={report.id} className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">Month {report.reportMonthNumber}</p><h2 className="mt-2 text-xl font-bold text-slate-950">{report.studentName ?? "Student profile incomplete"}</h2><p className="mt-1 text-sm text-slate-500">{report.uid ?? "UID unavailable"} · {report.companyName}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-bold ${monthlyStatusClass(report.status)}`}>{monthlyStatusLabel(report.status)}</span></div>
         {report.status === "PENDING_MENTOR_REVIEW" && <p className="mt-4 text-sm text-amber-800">Uploaded and awaiting faculty mentor approval. This report is not yet approved.</p>}

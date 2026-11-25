@@ -36,7 +36,12 @@ public class InternshipCompletionService {
     public record Stats(long totalStudents,long totalInternships,long completedInternships,long activeInternships,long completionPending,double completionPercentage) {}
     public record Page(Long sessionId,Stats stats,List<Map<String,Object>> content,long totalElements,int page) {}
     /** Reused by session exports; end dates never imply an approved completion. */
-    public static final String STATUS_SQL="case when i.completion_status='COMPLETED' or (i.end_date is not null and i.end_date < :completionToday) then 'COMPLETED' when i.start_date is not null and i.start_date > :completionToday then 'NOT_STARTED' else 'IN_PROGRESS' end";
+    public static final String COMPLETION_DATE_SQL = "case "
+            + "when i.completion_status = 'TERMINATED_EARLY' or i.lifecycle_status = 'TERMINATED_EARLY' then coalesce(cast(i.terminated_at as date), cast(i.completed_at as date)) "
+            + "when i.completion_status = 'COMPLETED' and i.completed_at is not null then cast(i.completed_at as date) "
+            + "when i.end_date is not null and i.end_date < :completionToday then i.end_date "
+            + "else null end";
+    public static final String STATUS_SQL="case when i.completion_status='TERMINATED_EARLY' or i.lifecycle_status='TERMINATED_EARLY' then 'TERMINATED_EARLY' when i.completion_status='COMPLETED' or (i.end_date is not null and i.end_date < :completionToday) then 'COMPLETED' when i.start_date is not null and i.start_date > :completionToday then 'NOT_STARTED' else 'IN_PROGRESS' end";
 
     @Transactional(readOnly=true)
     @PreAuthorize("hasRole('ADMIN')")
@@ -119,11 +124,12 @@ public class InternshipCompletionService {
         if(i.getEndDate().isAfter(LocalDate.now(clock))) blockers.add("The internship end date has not been reached");
         if(submitted<required) blockers.add((required-submitted)+" mandatory weekly/monthly reports are missing");
         if(approved<submitted) blockers.add((submitted-approved)+" submitted reports need mentor approval or correction");
-        String status=effectiveStatus((String)row.get("completion_status"),i.getStartDate(),i.getEndDate());
+        String savedStatus = i.isEarlyTerminated() ? "TERMINATED_EARLY" : (String)row.get("completion_status");
+        String status = effectiveStatus(savedStatus, i.getStartDate(), i.getEndDate());
         List<Event> history=jdbc.query("select e.*,u.email from internship_completion_events e join users u on u.id=e.reviewer_id where internship_id=? order by e.revision",
                 (rs,n)->new Event(rs.getInt("revision"),rs.getString("previous_status"),rs.getString("final_status"),rs.getLong("reviewer_id"),rs.getString("email"),rs.getTimestamp("performed_at").toInstant(),rs.getString("remarks")),i.getId());
         return new Completion(i.getId(),i.getOnboarding().getInternshipNumber(),student,(String)row.get("student_name"),(String)row.get("uid"),i.getCompanyName(),i.getStartDate(),i.getEndDate(),weeks,
-                number(row.get("academic_session_id")),(String)row.get("session_name"),status,((Number)row.get("completion_revision")).intValue(),instant(row.get("completed_at")),
+                number(row.get("academic_session_id")),(String)row.get("session_name"),status,((Number)row.get("completion_revision")).intValue(),(row.get("completed_at") != null ? instant(row.get("completed_at")) : ("COMPLETED".equals(status) && i.getEndDate() != null ? i.getEndDate().atStartOfDay(ZoneId.of("Asia/Kolkata")).toInstant() : null)),
                 number(row.get("completion_reviewer_id")),(String)row.get("reviewer"),(String)row.get("completion_remarks"),required,submitted,required-submitted,approved,weeks,months,
                 approved==required && required>0?"APPROVED":"PENDING","NOT_APPLICABLE — no separate final-project report workflow is configured",
                 !"COMPLETED".equals(row.get("completion_status")) && required>0 && blockers.isEmpty(),List.copyOf(blockers),history);
@@ -134,6 +140,7 @@ public class InternshipCompletionService {
                 "APPROVED".equals(rs.getString("review_status")) && rs.getObject("reviewer_id")!=null && rs.getObject("reviewed_at")!=null);
     }
     private String effectiveStatus(String saved,LocalDate start,LocalDate end) {
+        if("TERMINATED_EARLY".equals(saved)) return "TERMINATED_EARLY";
         if("COMPLETED".equals(saved)) return saved;
         LocalDate today=InternshipLifecycle.today(clock);
         return (end!=null && end.isBefore(today))?"COMPLETED":start!=null && start.isAfter(today)?"NOT_STARTED":"IN_PROGRESS";
@@ -158,7 +165,7 @@ public class InternshipCompletionService {
                 +"left join internship_onboarding o on o.student_user_id=u.id left join internship_details i on i.onboarding_id=o.id "
                 +"left join mentor_student_assignments a on a.student_user_id=u.id and a.active=true left join users mu on mu.id=a.mentor_user_id "
                 +"left join mentor_profiles mp on mp.user_id=mu.id left join users reviewer on reviewer.id=i.completion_reviewer_id "
-                +"where u.role='STUDENT' and u.academic_session_id=:session";
+                +"where u.role='STUDENT' and u.academic_session_id=:session and (i.id is null or i.deleted_at is null)";
         Map<String,Object> counts=named.queryForMap("select count(distinct u.id) as students,count(i.id) as total,"
                 +"coalesce(sum(case when i.completion_status='COMPLETED' or (i.id is not null and i.end_date is not null and i.end_date < :completionToday) then 1 else 0 end),0) as completed,"
                 +"coalesce(sum(case when i.id is not null and i.completion_status<>'COMPLETED' and i.end_date is not null and i.end_date < :completionToday then 1 else 0 end),0) as pending,"
@@ -183,14 +190,14 @@ public class InternshipCompletionService {
             case "name" -> "student_name asc,u.id";
             case "company" -> "i.company_name asc,u.id";
             case "startDate" -> "i.start_date desc,u.id";
-            case "completionDate" -> "i.completed_at desc nulls last,u.id";
+            case "completionDate" -> "(" + COMPLETION_DATE_SQL + ") desc nulls last,u.id";
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Unsupported sort");
         };
         int safePage=Math.max(0,Math.min(page,1000000));
         long rows=named.queryForObject("select count(*)"+where,params,Long.class);
         params.addValue("offset",safePage*30);
         List<Map<String,Object>> content=named.queryForList("select u.id as \"studentId\",coalesce(p.student_name,sa.student_name,u.email) as student_name,coalesce(p.uid,sa.uid) as uid,"
-                +"i.company_name as company,coalesce(mp.name,mu.email) as mentor,i.start_date as \"startDate\",i.end_date as \"endDate\",i.completed_at as \"completionDate\","
+                +"i.company_name as company,coalesce(mp.name,mu.email) as mentor,i.start_date as \"startDate\",i.end_date as \"endDate\",("+COMPLETION_DATE_SQL+") as \"completionDate\","
                 +"reviewer.email as reviewer,("+STATUS_SQL+") as status"+where+" order by "+order+" limit 30 offset :offset",params);
         return new Page(selected,stats,content,rows,safePage);
     }

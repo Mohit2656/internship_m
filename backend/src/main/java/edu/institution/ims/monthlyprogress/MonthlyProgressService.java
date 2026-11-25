@@ -293,12 +293,15 @@ public class MonthlyProgressService {
     }
     private static List<Period> periods(InternshipDetails internship) {
         List<Period> result = new ArrayList<>();
+        LocalDate effectiveEnd = internship.isEarlyTerminated() && internship.getTerminatedAt() != null
+                ? internship.getTerminatedAt().atZone(ZoneId.of("Asia/Kolkata")).toLocalDate()
+                : internship.getEndDate();
         LocalDate start = internship.getStartDate();
         for (int month = 1; ; month++) {
             LocalDate periodStart = start.plusMonths(month - 1L);
-            if (periodStart.isAfter(internship.getEndDate())) break;
+            if (periodStart.isAfter(effectiveEnd)) break;
             LocalDate periodEnd = start.plusMonths(month).minusDays(1);
-            if (periodEnd.isAfter(internship.getEndDate())) periodEnd = internship.getEndDate();
+            if (periodEnd.isAfter(effectiveEnd)) periodEnd = effectiveEnd;
             result.add(new Period(month, periodStart, periodEnd));
         }
         return result;

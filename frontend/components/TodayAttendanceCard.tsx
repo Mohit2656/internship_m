@@ -109,6 +109,9 @@ export function TodayAttendanceCard() {
   const [internshipId, setInternshipId] = useState<number|null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [flowOpen, setFlowOpen] = useState(false);
+  const [attendanceMode, setAttendanceMode] = useState<"camera" | "upload">("camera");
+  const [uploadedPhotoFile, setUploadedPhotoFile] = useState<File | null>(null);
+  const [uploadedPhotoPreview, setUploadedPhotoPreview] = useState<string>("");
   const [cameraStatus, setCameraStatus] = useState("");
   const [photo, setPhoto] = useState<Blob | null>(null);
   const [photoUrl, setPhotoUrl] = useState("");
@@ -431,6 +434,30 @@ export function TodayAttendanceCard() {
     } finally { setSubmitting(false); }
   }
 
+  async function submitUploadedPhoto() {
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
+    if (!uploadedPhotoFile) { setError("Please select a photograph to upload."); return; }
+    setSubmitting(true); setError("");
+    const form = new FormData();
+    form.append("photo", uploadedPhotoFile);
+    if (internshipId) form.append("internshipId", String(internshipId));
+    try {
+      const { data } = await api.post<Attendance>("/student/attendance/today/upload", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        params: internshipId ? { internshipId } : undefined,
+      });
+      statusVersionRef.current += 1;
+      setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
+      setUploadedPhotoFile(null);
+      setUploadedPhotoPreview("");
+      setFlowOpen(false);
+    } catch (cause) {
+      setError(parseAttendanceError(cause));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function submitPhysical() {
     if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
     if (!photo) return;
@@ -675,137 +702,219 @@ export function TodayAttendanceCard() {
       {!loading && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && policy && !flowOpen && (!policy.scheduledDayOff || forceExtraWork || policy.approvedExtraWorkday) && !policy.approvedHoliday && <button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || ((!physical && !remote) && (!submissionLocation || locating))} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 text-sm">{submitting ? "Submitting…" : "Mark Today's Attendance"}</button>}
       {!loading && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && policy && !physical && !remote && (!policy.scheduledDayOff || forceExtraWork || policy.approvedExtraWorkday) && !policy.approvedHoliday && locationCaptureControl}
       {!loading && !submitted && !windowClosed && flowOpen && <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <div className="mb-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-950"><p className="font-bold">Edge Verification</p><p className="mt-1">Camera analysis verifies a live attendance capture on this device. Face recognition and identity matching are not performed.</p></div>
-        {!photo ? <video ref={videoRef} playsInline muted style={{ transform: isFrontCamera ? "scaleX(-1)" : "none" }} className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" /> : <img src={photoUrl} alt="Fresh attendance camera capture" className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" />}
-        <canvas ref={canvasRef} className="hidden" />
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-          <span className={cameraStatus === "Camera ready" ? "font-semibold text-emerald-700" : cameraStatus.includes("denied") || cameraStatus.includes("in use") || cameraStatus.includes("No camera") || cameraStatus.includes("failed") ? "font-semibold text-red-700" : "font-medium text-slate-600"}>{cameraStatus || "Camera loading…"}</span>
-        </div>
-        {!photo && aiSession && <div className="mt-4 max-w-xl rounded-xl border border-slate-200 bg-white p-4 text-sm"><p className="font-semibold">Liveness challenge: {challengeLabel(aiSession.challenge)}</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><span>{aiState?.faceDetected ? "✓" : "○"} Face detected</span><span>{aiState?.singleFace && aiState.qualityPassed ? "✓" : "○"} Face positioned</span><span>{aiState?.livenessPassed ? "✓" : "○"} Liveness confirmed</span></div><p className="mt-3 text-slate-600">{aiState?.guidance ?? "Loading face analysis…"}</p></div>}
-        {aiError && <p role="alert" className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">{aiError}</p>}
-        {!loading && !submitted && policy && photo && (
-          <div className="mt-4 text-sm text-slate-600">
-            {hasValidLocation ? (
-              <>
-                <p role="status" className="font-semibold text-emerald-700">Location captured successfully</p>
-                {locationNotice && <p className="mt-1 text-slate-600">{locationNotice}</p>}
-              </>
-            ) : (
-              <>
-                <p className="mt-1">Location is required to submit attendance.{!remote && typeof policy?.maxGpsAccuracyMeters === "number" && ` Required GPS accuracy: ${policy.maxGpsAccuracyMeters} m or better.`}</p>
-                {locationNotice && <p role={poorAccuracy ? "alert" : "status"} className={`mt-2 ${poorAccuracy ? "text-amber-800" : "font-medium text-red-700"}`}>{locationNotice}</p>}
-              </>
-            )}
-          </div>
-        )}
-        {photo && remote && (
-          <div className="mt-4 w-full max-w-xl">
-            <label htmlFor="daily-work-summary" className="block text-sm font-semibold text-slate-700">
-              Today&apos;s work/activity
-            </label>
-            <textarea
-              id="daily-work-summary"
-              value={dailyWorkSummary}
-              onChange={event => setDailyWorkSummary(event.target.value)}
-              minLength={20}
-              maxLength={1000}
-              rows={4}
-              placeholder="Describe the work you completed today (20–1000 characters)."
-              className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
-            />
-            <div className="mt-1 flex justify-between text-xs text-slate-500">
-              <span>{dailyWorkSummary.trim().length < 20 ? `Minimum 20 characters required (${20 - dailyWorkSummary.trim().length} more needed)` : "Minimum character requirement met"}</span>
-              <span>{dailyWorkSummary.trim().length} / 1000 characters</span>
-            </div>
-          </div>
-        )}
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          {photo ? (
-            !hasValidLocation ? (
-              <>
-                <button
-                  type="button"
-                  disabled={submitting || locating}
-                  onClick={includeSubmissionLocation}
-                  className="text-sm"
-                >
-                  {locating ? <LoadingSpinner label="Capturing location…" /> : poorAccuracy ? "Retry GPS capture" : "Capture Location"}
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  disabled={
-                    windowClosed ||
-                    !attendanceSubmissionOpen(today) ||
-                    submitting ||
-                    locating ||
-                    !submissionLocation ||
-                    (remote && dailyWorkSummary.trim().length < 20)
-                  }
-                  onClick={() => void (remote ? submitRemote() : submitPhysical())}
-                  className="text-sm"
-                >
-                  {submitting ? <LoadingSpinner label="Submitting…" /> : "Submit Attendance"}
-                </button>
-                <button
-                  data-button-variant="outline"
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => void startCamera(true)}
-                  className="text-sm"
-                >
-                  Retake Photo
-                </button>
-              </>
-            )
-          ) : (
-            <>
-              {streamRef.current && (
-                <button
-                  type="button"
-                  disabled={!aiState?.livenessPassed || !aiState.qualityPassed}
-                  onClick={() => void capture()}
-                  className="text-sm"
-                >
-                  Capture Attendance
-                </button>
-              )}
-              {(cameraStatus.includes("denied") ||
-                cameraStatus.includes("in use") ||
-                cameraStatus.includes("No camera") ||
-                cameraStatus.includes("failed") ||
-                Boolean(aiError)) && (
-                <button
-                  data-button-variant="outline"
-                  type="button"
-                  onClick={() => void startCamera()}
-                  className="text-sm"
-                >
-                  Retry Camera
-                </button>
-              )}
-            </>
-          )}
+        {/* Mode Selector Tabs: Take Photo vs Upload Photo */}
+        <div className="mb-5 flex border-b border-slate-200 pb-3 gap-3">
           <button
-            data-button-variant="text"
             type="button"
-            disabled={submitting}
-            onClick={() => {
-              stopCamera();
-              setLocating(false);
-              setSubmissionLocation(null);
-              setLocationNotice("");
-              setFlowOpen(false);
-              setError("");
-            }}
-            className="text-sm"
+            onClick={() => { setAttendanceMode("camera"); if (!photo) void startCamera(); }}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${attendanceMode === "camera" ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-700 hover:bg-slate-300"}`}
           >
-            Cancel
+            Take Photo (Camera + Edge AI)
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAttendanceMode("upload"); stopCamera(); }}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${attendanceMode === "upload" ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-700 hover:bg-slate-300"}`}
+          >
+            Upload Photo (Metadata Verification)
           </button>
         </div>
-      </div>}
+
+        {attendanceMode === "upload" ? (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-blue-50 p-4 text-sm text-blue-950">
+              <p className="font-bold">Photo Upload & Metadata Verification</p>
+              <p className="mt-1">Select an original photo taken today at your approved workplace. Supported formats: JPEG, PNG, HEIC/HEIF.</p>
+              <p className="mt-1 text-xs text-blue-800">The server verifies the photo&apos;s original capture date, time, and GPS coordinates against your workplace geofence. The image file is not stored.</p>
+            </div>
+
+            <label className="block">
+              <span className="block text-sm font-semibold text-slate-700 mb-2">Select Workplace Photograph</span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif"
+                disabled={submitting}
+                onChange={e => {
+                  const file = e.target.files?.[0] || null;
+                  setUploadedPhotoFile(file);
+                  if (file) {
+                    const url = URL.createObjectURL(file);
+                    setUploadedPhotoPreview(url);
+                  } else {
+                    setUploadedPhotoPreview("");
+                  }
+                  setError("");
+                }}
+                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+              />
+            </label>
+
+            {uploadedPhotoPreview && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-slate-500 mb-1">Selected Photo Preview:</p>
+                <img src={uploadedPhotoPreview} alt="Selected workplace photo" className="aspect-video w-full max-w-md rounded-xl bg-slate-950 object-cover border border-slate-200" />
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={submitting || !uploadedPhotoFile || windowClosed || !attendanceSubmissionOpen(today)}
+                onClick={() => void submitUploadedPhoto()}
+                className="text-sm"
+              >
+                {submitting ? <LoadingSpinner label="Verifying & Submitting…" /> : "Submit Uploaded Photo"}
+              </button>
+              <button
+                data-button-variant="text"
+                type="button"
+                disabled={submitting}
+                onClick={() => {
+                  setUploadedPhotoFile(null);
+                  setUploadedPhotoPreview("");
+                  setFlowOpen(false);
+                  setError("");
+                }}
+                className="text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="mb-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-950"><p className="font-bold">Edge Verification</p><p className="mt-1">Camera analysis verifies a live attendance capture on this device. Face recognition and identity matching are not performed.</p></div>
+            {!photo ? <video ref={videoRef} playsInline muted style={{ transform: isFrontCamera ? "scaleX(-1)" : "none" }} className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" /> : <img src={photoUrl} alt="Fresh attendance camera capture" className="aspect-video w-full max-w-xl rounded-xl bg-slate-950 object-cover" />}
+            <canvas ref={canvasRef} className="hidden" />
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+              <span className={cameraStatus === "Camera ready" ? "font-semibold text-emerald-700" : cameraStatus.includes("denied") || cameraStatus.includes("in use") || cameraStatus.includes("No camera") || cameraStatus.includes("failed") ? "font-semibold text-red-700" : "font-medium text-slate-600"}>{cameraStatus || "Camera loading…"}</span>
+            </div>
+            {!photo && aiSession && <div className="mt-4 max-w-xl rounded-xl border border-slate-200 bg-white p-4 text-sm"><p className="font-semibold">Liveness challenge: {challengeLabel(aiSession.challenge)}</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><span>{aiState?.faceDetected ? "✓" : "○"} Face detected</span><span>{aiState?.singleFace && aiState.qualityPassed ? "✓" : "○"} Face positioned</span><span>{aiState?.livenessPassed ? "✓" : "○"} Liveness confirmed</span></div><p className="mt-3 text-slate-600">{aiState?.guidance ?? "Loading face analysis…"}</p></div>}
+            {aiError && <p role="alert" className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">{aiError}</p>}
+            {!loading && !submitted && policy && photo && (
+              <div className="mt-4 text-sm text-slate-600">
+                {hasValidLocation ? (
+                  <>
+                    <p role="status" className="font-semibold text-emerald-700">Location captured successfully</p>
+                    {locationNotice && <p className="mt-1 text-slate-600">{locationNotice}</p>}
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-1">Location is required to submit attendance.{!remote && typeof policy?.maxGpsAccuracyMeters === "number" && ` Required GPS accuracy: ${policy.maxGpsAccuracyMeters} m or better.`}</p>
+                    {locationNotice && <p role={poorAccuracy ? "alert" : "status"} className={`mt-2 ${poorAccuracy ? "text-amber-800" : "font-medium text-red-700"}`}>{locationNotice}</p>}
+                  </>
+                )}
+              </div>
+            )}
+            {photo && remote && (
+              <div className="mt-4 w-full max-w-xl">
+                <label htmlFor="daily-work-summary" className="block text-sm font-semibold text-slate-700">
+                  Today&apos;s work/activity
+                </label>
+                <textarea
+                  id="daily-work-summary"
+                  value={dailyWorkSummary}
+                  onChange={event => setDailyWorkSummary(event.target.value)}
+                  minLength={20}
+                  maxLength={1000}
+                  rows={4}
+                  placeholder="Describe the work you completed today (20–1000 characters)."
+                  className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+                <div className="mt-1 flex justify-between text-xs text-slate-500">
+                  <span>{dailyWorkSummary.trim().length < 20 ? `Minimum 20 characters required (${20 - dailyWorkSummary.trim().length} more needed)` : "Minimum character requirement met"}</span>
+                  <span>{dailyWorkSummary.trim().length} / 1000 characters</span>
+                </div>
+              </div>
+            )}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {photo ? (
+                !hasValidLocation ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={submitting || locating}
+                      onClick={includeSubmissionLocation}
+                      className="text-sm"
+                    >
+                      {locating ? <LoadingSpinner label="Capturing location…" /> : poorAccuracy ? "Retry GPS capture" : "Capture Location"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={
+                        windowClosed ||
+                        !attendanceSubmissionOpen(today) ||
+                        submitting ||
+                        locating ||
+                        !submissionLocation ||
+                        (remote && dailyWorkSummary.trim().length < 20)
+                      }
+                      onClick={() => void (remote ? submitRemote() : submitPhysical())}
+                      className="text-sm"
+                    >
+                      {submitting ? <LoadingSpinner label="Submitting…" /> : "Submit Attendance"}
+                    </button>
+                    <button
+                      data-button-variant="outline"
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => void startCamera(true)}
+                      className="text-sm"
+                    >
+                      Retake Photo
+                    </button>
+                  </>
+                )
+              ) : (
+                <>
+                  {streamRef.current && (
+                    <button
+                      type="button"
+                      disabled={!aiState?.livenessPassed || !aiState.qualityPassed}
+                      onClick={() => void capture()}
+                      className="text-sm"
+                    >
+                      Capture Attendance
+                    </button>
+                  )}
+                  {(cameraStatus.includes("denied") ||
+                    cameraStatus.includes("in use") ||
+                    cameraStatus.includes("No camera") ||
+                    cameraStatus.includes("failed") ||
+                    Boolean(aiError)) && (
+                    <button
+                      data-button-variant="outline"
+                      type="button"
+                      onClick={() => void startCamera()}
+                      className="text-sm"
+                    >
+                      Retry Camera
+                    </button>
+                  )}
+                </>
+              )}
+              <button
+                data-button-variant="text"
+                type="button"
+                disabled={submitting}
+                onClick={() => {
+                  stopCamera();
+                  setLocating(false);
+                  setSubmissionLocation(null);
+                  setLocationNotice("");
+                  setFlowOpen(false);
+                  setError("");
+                }}
+                className="text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}      </div>}
       {error && <p role="alert" className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
     </section>
   );

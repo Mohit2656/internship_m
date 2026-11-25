@@ -7,7 +7,13 @@ export type InternshipCompletion = {
 };
 export type CompletionStats = { totalStudents: number; totalInternships: number; completedInternships: number; activeInternships: number; completionPending: number; completionPercentage: number };
 export type CompletionPage = { sessionId: number; stats: CompletionStats; content: { studentId: number; student_name: string; uid: string | null; company: string; mentor: string | null; startDate: string; endDate: string; completionDate: string | null; reviewer: string | null; status: string }[]; totalElements: number; page: number };
-export const completionLabel = (status: string) => status.replaceAll("_", " ");
+export const completionLabel = (status: string) => {
+  if (status === "TERMINATED_EARLY") return "Terminated Early";
+  if (status === "COMPLETED") return "Completed";
+  if (status === "IN_PROGRESS" || status === "ONGOING") return "Ongoing";
+  if (status === "NOT_STARTED") return "Not Started";
+  return status.replaceAll("_", " ");
+};
 export const completionReportFields = ["studentName", "uid", "academicSession", "companyName", "mentorName", "startDate", "endDate", "completionStatus", "completionDate", "completionReviewer"];
 export function completionReportFilters(sessionId: number, status: string, search: string): Record<string, string> {
   return { academicSessionId: String(sessionId), completionStatus: status || "ALL", ...(search.trim() ? { completionSearch: search.trim() } : {}) };

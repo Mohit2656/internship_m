@@ -22,6 +22,8 @@ export type InternshipDetails = {
   endDate?: string | null; totalWeeks?: number | null; internshipMode?: InternshipMode | null; internshipModeLabel?: string | null;
   stipendPerMonth?: number | null; fullTimeEmploymentOffered?: boolean | null; createdAt: string; updatedAt: string;
   workingDaysPerWeek?: number | null; workingDays?: string[] | null;
+  lifecycleStatus?: string | null; terminatedAt?: string | null; terminationReason?: string | null;
+  deletedAt?: string | null; deletionReason?: string | null;
 };
 
 export type InternshipDetailsFormData = {
