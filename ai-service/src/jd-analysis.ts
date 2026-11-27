@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pipeline } from "@huggingface/transformers";
+import { scanSkillsInText } from "./skill-catalog.js";
 
 export type SkillCandidate = { name: string; normalizedName: string };
 export type OpportunityAnalysisResult = {
@@ -15,16 +16,6 @@ export type OpportunityAnalysisResult = {
 export type SemanticEmbedder = (texts: string[]) => Promise<number[][]>;
 
 const modelName = "onnx-community/all-MiniLM-L6-v2-ONNX";
-const skills = new Map<string, string>([
-  ["java", "Java"], ["kotlin", "Kotlin"], ["python", "Python"], ["c++", "C++"], ["c#", "C#"],
-  ["javascript", "JavaScript"], ["typescript", "TypeScript"], ["spring boot", "Spring Boot"],
-  ["node.js", "Node.js"], ["react", "React"], ["angular", "Angular"], ["rest api", "REST APIs"],
-  ["rest APIs", "REST APIs"], ["graphql", "GraphQL"], ["postgresql", "PostgreSQL"], ["mysql", "MySQL"],
-  ["relational database", "Relational Databases"], ["mongodb", "MongoDB"], ["redis", "Redis"],
-  ["docker", "Docker"], ["kubernetes", "Kubernetes"], ["aws", "AWS"], ["azure", "Azure"], ["gcp", "GCP"],
-  ["git", "Git"], ["github", "GitHub"], ["linux", "Linux"], ["jenkins", "Jenkins"], ["terraform", "Terraform"],
-  ["machine learning", "Machine Learning"], ["data engineering", "Data Engineering"], ["cybersecurity", "Cybersecurity"]
-].map(([key, value]) => [key.toLowerCase(), value]));
 const roleLabels = [
   ["Backend Development", "backend software engineering, server-side APIs and scalable services"],
   ["Frontend Development", "frontend web interfaces and client-side application development"],
@@ -61,14 +52,19 @@ function sentences(value: string) {
   return value.split(/(?<=[.!?])\s+|[\r\n]+/).map(item => item.trim()).filter(Boolean);
 }
 function detectSkills(sentence: string): SkillCandidate[] {
-  const lower = sentence.toLowerCase(); const found: SkillCandidate[] = [];
-  for (const [needle, display] of skills) {
-    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const plural = needle === "rest api" || needle === "relational database" ? "s?" : "";
-    if (new RegExp(`(^|[^a-z0-9+#.])${escaped}${plural}([^a-z0-9+#.]|$)`, "i").test(lower))
-      found.push({ name: display, normalizedName: display.toLowerCase() });
-  }
-  return found;
+  return scanSkillsInText(sentence).map(display => ({
+    name: display,
+    normalizedName: display.toLowerCase()
+  }));
+}
+type JdSection = "NEUTRAL" | "REQUIRED" | "PREFERRED" | "RESPONSIBILITIES";
+function detectSectionHeader(line: string): JdSection | null {
+  const cleaned = line.replace(/^[-*•\d.)\s]+/, "").trim().toLowerCase();
+  if (cleaned.length > 80) return null;
+  if (/^(preferred|nice to have|bonus|good to have|optional)\b/.test(cleaned) && /[:\-]?$/.test(cleaned)) return "PREFERRED";
+  if (/^(required|requirements|must have|qualifications|minimum qualifications|technical skills|skills required)\b/.test(cleaned)) return "REQUIRED";
+  if (/^(responsibilities|what you will do|key responsibilities|role overview)\b/.test(cleaned)) return "RESPONSIBILITIES";
+  return null;
 }
 function unique(values: SkillCandidate[]) {
   return [...new Map(values.map(value => [value.normalizedName, value])).values()];
@@ -84,11 +80,16 @@ export async function analyzeOpportunity(title: string, description: string, mod
   if (!cleanTitle || !cleanDescription) throw new Error("EMPTY_JOB_DESCRIPTION");
   const parts = sentences(cleanDescription);
   const technical: SkillCandidate[] = []; const required: SkillCandidate[] = []; const preferred: SkillCandidate[] = [];
+  let activeSection: JdSection = "NEUTRAL";
   for (const part of parts) {
+    const header = detectSectionHeader(part);
+    if (header) activeSection = header;
     const candidates = detectSkills(part); technical.push(...candidates);
     const lower = part.toLowerCase();
-    if (/\b(preferred|nice to have|bonus|advantage|a plus)\b/.test(lower)) preferred.push(...candidates);
+    if (/\b(preferred|nice to have|bonus|advantage|a plus|good to have)\b/.test(lower)) preferred.push(...candidates);
     else if (/\b(required|must|should|strong|proficien|knowledge of|experience with|familiarity with)\b/.test(lower)) required.push(...candidates);
+    else if (activeSection === "PREFERRED") preferred.push(...candidates);
+    else if (activeSection === "REQUIRED") required.push(...candidates);
   }
 
   const embed = injected || await localEmbedder(modelPath);

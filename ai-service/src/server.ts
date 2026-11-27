@@ -8,17 +8,33 @@ import { analyzeResume, type ResumeAnalysisStage, type ResumeAnalysisMetadata } 
 import { createDiagnosticRedactor, describeError, resourceFailure, resourceSnapshot } from "./resume-diagnostics.js";
 import { analyzeOpportunity } from "./jd-analysis.js";
 import { matchOpportunity, matchOpportunities, type OpportunityMatchInput } from "./opportunity-matching.js";
+import { InferenceWorkerPool, WorkerPoolError } from "./worker-pool.js";
 
 const maxBytes = 5 * 1024 * 1024;
 
 export function buildApp(options: { modelPath?: string; analyzer?: typeof analyzeResume; jdModelPath?: string; opportunityAnalyzer?: typeof analyzeOpportunity; opportunityMatcher?: typeof matchOpportunity; opportunityBatchMatcher?: typeof matchOpportunities } = {}) {
   const app = Fastify({ logger: false, bodyLimit: maxBytes + 64 * 1024 });
   const modelPath = resolve(options.modelPath || process.env.RESUME_MODEL_PATH || "./models/resume-ner");
-  const analyzer = options.analyzer || analyzeResume;
   const jdModelPath = resolve(options.jdModelPath || process.env.JD_MODEL_PATH || "./models/jd-embedding");
-  const opportunityAnalyzer = options.opportunityAnalyzer || analyzeOpportunity;
-  const opportunityMatcher = options.opportunityMatcher || matchOpportunity;
-  const opportunityBatchMatcher = options.opportunityBatchMatcher || matchOpportunities;
+  const isCompiledRuntime = !import.meta.url.endsWith(".ts");
+  const useWorkerPool = isCompiledRuntime && process.env.AI_WORKER_POOL_SIZE !== "0" &&
+    !options.analyzer && !options.opportunityAnalyzer && !options.opportunityMatcher && !options.opportunityBatchMatcher;
+  const workerPool = useWorkerPool ? new InferenceWorkerPool() : null;
+  if (workerPool) {
+    app.addHook("onClose", async () => { await workerPool.close(); });
+  }
+  const analyzer: typeof analyzeResume = options.analyzer || (workerPool
+    ? (bytes, file, type, path, reportStage) => workerPool.analyzeResume(bytes, file, type, path, reportStage)
+    : analyzeResume);
+  const opportunityAnalyzer: typeof analyzeOpportunity = options.opportunityAnalyzer || (workerPool
+    ? (title, description, path) => workerPool.analyzeOpportunity(title, description, path)
+    : analyzeOpportunity);
+  const opportunityMatcher: typeof matchOpportunity = options.opportunityMatcher || (workerPool
+    ? (input, path) => workerPool.matchOpportunity(input, path)
+    : matchOpportunity);
+  const opportunityBatchMatcher: typeof matchOpportunities = options.opportunityBatchMatcher || (workerPool
+    ? (inputs, path) => workerPool.matchOpportunities(inputs, path)
+    : matchOpportunities);
   app.register(multipart, { limits: { files: 1, fileSize: maxBytes, fields: 0 } });
 
   app.get("/health", async () => ({ status: "UP", modelReady: existsSync(resolve(modelPath, "onnx/model_quantized.onnx")) }));
@@ -67,7 +83,18 @@ export function buildApp(options: { modelPath?: string; analyzer?: typeof analyz
         ...context(), event: "failed", resourceFailure: resourceFailure(safeError),
         errorName: safeError.name, errorMessage: safeError.message, stack: safeError.stack, cause: safeError.cause
       }, inspect(safeError, { depth: null, colors: false, maxStringLength: null, maxArrayLength: null }));
+      if (error instanceof WorkerPoolError) {
+        const status = error.code === "SERVER_BUSY" ? 503 : error.code === "INFERENCE_TIMEOUT" ? 504 : 500;
+        if (status === 503) reply.header("Retry-After", "5");
+        return reply.code(status).send({ code: error.code, message: error.message });
+      }
       const message = error instanceof Error ? error.message : "";
+      if (message === "INSUFFICIENT_EXTRACTABLE_TEXT") {
+        return reply.code(422).send({
+          code: "INSUFFICIENT_EXTRACTABLE_TEXT",
+          message: "The resume has no extractable text; please upload a text-based PDF or DOCX"
+        });
+      }
       const clientError = message === "UNSUPPORTED_DOCUMENT" || /empty|unreadable|extract text/i.test(message);
       return reply.code(clientError ? 422 : 500).send({
         code: clientError ? "DOCUMENT_ANALYSIS_FAILED" : "INFERENCE_FAILED",
