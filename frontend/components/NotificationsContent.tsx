@@ -68,8 +68,13 @@ export function NotificationsContent({ role = "STUDENT" }: { role?: Notification
     } catch { setError("Notifications could not be updated. Please try again."); }
     finally { setBusy(false); }
   }
-  return <main className="mx-auto max-w-4xl px-5 py-10 sm:px-8">
-    <Link href={`${rolePath}/dashboard`} className="text-sm font-semibold text-blue-700 hover:underline">Back to dashboard</Link>
+  return <main className="mx-auto max-w-4xl px-4 py-6 sm:px-8 sm:py-10">
+    <Link href={`${rolePath}/dashboard`} className="back-pill" aria-label="Back to Dashboard">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+      </svg>
+      <span>Back to Dashboard</span>
+    </Link>
     <div className="mt-6 flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-3xl font-bold tracking-tight text-slate-950">Notifications</h1><p className="mt-2 text-sm leading-6 text-slate-600">{role === "ADMIN" ? "Student resume updates and review activity in one place." : role === "MENTOR" ? "Attendance and progress submissions from your assigned students in one place." : "Internship approvals, new opportunities, report feedback, and deadline reminders in one place."}</p></div><button type="button" data-button-variant="outline" disabled={loading || busy || !inbox?.unreadCount} onClick={() => void markRead()} className="text-sm">Mark all as read</button></div>
     {error && <p role="alert" className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}<button type="button" data-button-variant="text" onClick={() => setRevision(value => value + 1)} className="ml-3">Retry</button></p>}
     {loading ? <p role="status" className="mt-8 rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading notifications...</p> : inbox && <>

@@ -54,6 +54,12 @@ export function AppFrame({ children, activeSection }: { children: React.ReactNod
     if (!menuOpen || !hasSidebar) return;
     requestAnimationFrame(() => studentSidebar.current?.querySelector<HTMLElement>("a[aria-current='page'], a")?.focus());
   }, [menuOpen, hasSidebar]);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1280px)");
+    const onChange = () => { if (media.matches) setMenuOpen(false); };
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
   async function signOut() { await logout(); router.replace("/login"); }
   const home = user?.role === "ADMIN" ? "/admin/dashboard" : user?.role === "MENTOR" ? "/mentor/dashboard" : "/student/dashboard";
   const links = user?.role === "ADMIN" ? [

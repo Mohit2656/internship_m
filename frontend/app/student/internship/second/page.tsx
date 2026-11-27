@@ -5,6 +5,7 @@ import axios from "axios";
 import Link from "next/link";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { BackButton } from "@/components/BackButton";
 import { InternshipDetailsForm } from "@/components/InternshipDetailsForm";
 import { api, ApiError } from "@/lib/api";
 import {
@@ -77,10 +78,8 @@ export default function SecondInternshipPage() {
   return (
     <ProtectedRoute role="STUDENT">
       <AppFrame>
-        <main className="mx-auto max-w-5xl px-5 py-10">
-          <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">
-            ← Back to dashboard
-          </Link>
+        <main className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
+          <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to Dashboard" />
           <p className="mt-4 text-sm font-semibold text-blue-700">Internship 2</p>
           <h1 className="mt-2 text-3xl font-bold">Second Internship</h1>
           {loading ? (

@@ -134,8 +134,13 @@ export function ProfileForm({
     setErrors({});
     setMessage("");
     try {
+      const {
+        facultyMentorName: _ignoredMentorName,
+        facultyMentorContact: _ignoredMentorContact,
+        ...editableForm
+      } = form;
       const payload = {
-        ...form,
+        ...editableForm,
         rollNumber: form.uid,
         branch: form.branch || null,
         semester: form.semester === "" ? null : Number(form.semester),
@@ -268,13 +273,7 @@ export function ProfileForm({
         <Field label="Emergency Contact Number" name="emergencyContact" type="tel" value={form.emergencyContact} error={errors.emergencyContact} onChange={update} />
       </FormSection>
 
-      <FormSection title="Department Contacts" description="Your designated departmental faculty contacts.">
-        <div className="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
-          <p className="font-semibold text-slate-900">Faculty mentor details</p>
-          <p className="mt-1 text-xs text-slate-500">Official faculty mentor assignments are managed by the department. Editing displayed mentor fields will not reassign your official faculty mentor.</p>
-        </div>
-        <Field label="Faculty Mentor Name" name="facultyMentorName" value={form.facultyMentorName} error={errors.facultyMentorName} onChange={update} />
-        <Field label="Faculty Mentor Contact" name="facultyMentorContact" type="tel" value={form.facultyMentorContact} error={errors.facultyMentorContact} onChange={update} />
+      <FormSection title="Department Contacts" description="Faculty mentor assignments are managed by the III Cell and appear automatically on your dashboard.">
         <Field label="Faculty Internship Coordinator Name" name="internshipCoordinatorName" value={form.internshipCoordinatorName} error={errors.internshipCoordinatorName} onChange={update} />
         <Field label="Faculty Internship Coordinator Contact" name="internshipCoordinatorContact" type="tel" value={form.internshipCoordinatorContact} error={errors.internshipCoordinatorContact} onChange={update} />
         <Field label="Department CDC Coordinator Name" name="cdcCoordinatorName" value={form.cdcCoordinatorName} error={errors.cdcCoordinatorName} onChange={update} />

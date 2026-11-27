@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { MouseEvent, useCallback, useEffect, useState } from "react";
 import { formatBackLabel, getPreviousRoute, getRouteTitle, trackRoute, isReloadNavigation } from "@/lib/navigation";
 
@@ -9,6 +9,7 @@ export interface BackButtonProps {
   fallbackHref: string;
   fallbackLabel?: string;
   label?: string;
+  fixedFallback?: boolean;
   className?: string;
   children?: React.ReactNode;
 }
@@ -18,18 +19,18 @@ export interface BackButtonProps {
  * - Navigates to the actual previous page in browser history when valid within the IMS application.
  * - Dynamically derives the button label from the actual in-app navigation origin or route-to-title mapping.
  * - Preserves previous filters, query params, active tabs, and pagination state.
- * - Safely falls back to `fallbackHref` and `fallbackLabel` if direct visit, refresh, or no in-app history exists.
+ * - Safely falls back to `fallbackHref` and `fallbackLabel` if direct visit, refresh, `fixedFallback`, or no in-app history exists.
  */
 export function BackButton({
   fallbackHref,
   fallbackLabel,
   label,
-  className = "inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline",
+  fixedFallback = false,
+  className = "back-pill",
   children,
 }: BackButtonProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   const [displayText, setDisplayText] = useState<string>(() => {
     return formatBackLabel(label || fallbackLabel || getRouteTitle(fallbackHref));
@@ -37,15 +38,15 @@ export function BackButton({
   const [canGoBack, setCanGoBack] = useState(false);
 
   useEffect(() => {
-    // Track current route in the application navigation stack
-    if (pathname) {
-      trackRoute(pathname, searchParams?.toString() || "");
-    }
-
     if (typeof window === "undefined") return;
 
-    // Direct page visit or browser refresh -> fallback
-    if (isReloadNavigation()) {
+    // Track current route in the application navigation stack
+    if (pathname) {
+      trackRoute(pathname, window.location.search);
+    }
+
+    // Fixed fallback (top-level workspace pages), direct visit, or browser refresh -> fallback
+    if (fixedFallback || isReloadNavigation()) {
       setDisplayText(formatBackLabel(fallbackLabel || getRouteTitle(fallbackHref) || label));
       setCanGoBack(false);
       return;
@@ -64,7 +65,7 @@ export function BackButton({
     // Direct visit or no mapped previous route -> use fallback
     setDisplayText(formatBackLabel(fallbackLabel || getRouteTitle(fallbackHref) || label));
     setCanGoBack(false);
-  }, [pathname, searchParams, fallbackHref, fallbackLabel, label]);
+  }, [pathname, fallbackHref, fallbackLabel, label, fixedFallback]);
 
   const handleClick = useCallback(
     (e: MouseEvent<HTMLAnchorElement>) => {
@@ -100,7 +101,16 @@ export function BackButton({
     >
       {children || (
         <>
-          <span aria-hidden="true">←</span>
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="h-4 w-4 shrink-0"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
           <span>{displayText}</span>
         </>
       )}

@@ -143,7 +143,7 @@ export function SettingsDropdown() {
         aria-label="Settings menu"
         title="Settings"
         onClick={() => setOpen((prev) => !prev)}
-        className={`ui-button flex items-center justify-center rounded-xl p-2 transition-colors ${
+        className={`ui-button settings-trigger flex items-center justify-center rounded-xl p-2 transition-colors ${
           open ? "bg-slate-100 text-blue-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
         }`}
         data-button-variant="text"

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
+import { BackButton } from "@/components/BackButton";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 type DocumentTemplate = {
@@ -65,7 +66,8 @@ export default function StudentDocumentsPage() {
     }
   }
 
-  return <ProtectedRoute role="STUDENT"><AppFrame><main className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
+  return <ProtectedRoute role="STUDENT"><AppFrame><main className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-10">
+    <div className="mb-4"><BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to Dashboard" fixedFallback /></div>
     <p className="text-sm font-semibold text-blue-700">Student workspace</p>
     <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Internship Documents &amp; Templates</h1>
     <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Download official, editable Word templates for your internship application and documentation.</p>

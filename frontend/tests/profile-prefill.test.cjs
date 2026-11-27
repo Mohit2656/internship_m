@@ -81,12 +81,16 @@ test("all student profile fields including prefilled fields are editable", () =>
     assert.equal(typeof input.props.onChange, "function");
   }
 
-  for (const name of ["personalEmail", "phoneNumber", "academicYear", "guardianName", "guardianContact", "emergencyContact", "facultyMentorName", "facultyMentorContact", "internshipCoordinatorName", "internshipCoordinatorContact", "cdcCoordinatorName", "cdcCoordinatorContact", "aadhaarNumber"]) {
+  for (const name of ["personalEmail", "phoneNumber", "academicYear", "guardianName", "guardianContact", "emergencyContact", "internshipCoordinatorName", "internshipCoordinatorContact", "cdcCoordinatorName", "cdcCoordinatorContact", "aadhaarNumber"]) {
     const input = h.input(name);
     assert.ok(input, `Expected input for ${name}`);
     assert.equal(input.props.readOnly, false);
     assert.equal(typeof input.props.onChange, "function");
   }
+
+  // Faculty mentor assignment is managed by III Cell, not entered manually by students
+  assert.equal(h.input("facultyMentorName"), undefined);
+  assert.equal(h.input("facultyMentorContact"), undefined);
 
   // Ensure fields are not forced required on HTML form level
   assert.equal(h.input("studentName").props.required, undefined);
