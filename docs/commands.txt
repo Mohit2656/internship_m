@@ -11,6 +11,8 @@ IN backend do
     2. pm2 restart ims-backend
 
 
+    pm2 start /bin/bash --name ims-backend -- -c "cd /var/www/iiic.cse.stvincentngp.edu.in/backend && mvn spring-boot:run"
+
 IN frontend do
 
 
