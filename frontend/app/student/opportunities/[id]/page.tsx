@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { StudentCompletionGate } from "@/components/StudentCompletionGate";
 import { OpportunityMatchPanel } from "@/components/OpportunityMatchPanel";
 import { OpportunityScorePanel } from "@/components/OpportunityScorePanel";
 import { BackButton } from "@/components/BackButton";
@@ -23,11 +24,11 @@ function OpportunityDetailContent() {
       .finally(() => setLoading(false));
   }, [params.id]);
 
-  if (loading) return <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8"><div className="h-96 animate-pulse rounded-2xl border border-slate-200 bg-white" /></main>;
-  if (error || !opportunity) return <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8"><BackButton fallbackHref="/student/opportunities" fallbackLabel="Back to opportunities" /><div className="mt-6 rounded-2xl border border-slate-200 bg-white p-10 text-center"><h1 className="text-xl font-bold">Opportunity unavailable</h1><p className="mt-2 text-sm text-slate-600">{error}</p></div></main>;
+  if (loading) return <main className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10"><div className="h-96 animate-pulse rounded-2xl border border-slate-200 bg-white" /></main>;
+  if (error || !opportunity) return <main className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10"><BackButton fallbackHref="/student/opportunities" fallbackLabel="Back to Opportunities" /><div className="mt-6 rounded-2xl border border-slate-200 bg-white p-10 text-center"><h1 className="text-xl font-bold">Opportunity unavailable</h1><p className="mt-2 text-sm text-slate-600">{error}</p></div></main>;
   const website = safeCompanyUrl(opportunity.companyWebsite);
 
-  return <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8"><BackButton fallbackHref="/student/opportunities" fallbackLabel="Back to opportunities" />
+  return <main className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10"><BackButton fallbackHref="/student/opportunities" fallbackLabel="Back to Opportunities" />
     <article className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white"><header className="border-b border-slate-200 p-6 sm:p-8"><p className="text-sm font-bold text-blue-700">{opportunity.companyName}</p><h1 className="mt-2 text-3xl font-bold tracking-tight">{opportunity.title}</h1><p className="mt-4 text-slate-600">{opportunity.mode} · {opportunity.location || "Location not specified"}</p>{website && <a href={website} target="_blank" rel="noopener noreferrer" className="mt-4 inline-block text-sm font-semibold text-blue-700">Visit company website ↗</a>}</header>
       <div className="space-y-8 p-6 sm:p-8"><section><h2 className="text-xl font-bold">Opportunity Description</h2><p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{opportunity.description}</p></section>
         <OpportunityScorePanel opportunityId={opportunity.id} />
@@ -45,5 +46,5 @@ function SkillList({ title, skills, empty }: { title: string; skills: string[]; 
 }
 
 export default function StudentOpportunityDetailPage() {
-  return <ProtectedRoute role="STUDENT"><AppFrame><OpportunityDetailContent /></AppFrame></ProtectedRoute>;
+  return <ProtectedRoute role="STUDENT"><AppFrame><StudentCompletionGate mode="all" sectionTitle="Opportunity Details"><OpportunityDetailContent /></StudentCompletionGate></AppFrame></ProtectedRoute>;
 }

@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { BackButton } from "@/components/BackButton";
+import { StudentCompletionGate } from "@/components/StudentCompletionGate";
 import { WeeklyProgress } from "@/components/WeeklyProgress";
 import { ApiError, api } from "@/lib/api";
 import {
@@ -501,10 +503,8 @@ function ProgressReportsContent() {
   const activeInternship = internshipTab === 1 ? details1 : details2;
 
   return (
-    <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
-      <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">
-        ← Back to dashboard
-      </Link>
+    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
+      <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to Dashboard" fixedFallback />
       <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-blue-700">Internship records</p>
@@ -647,9 +647,11 @@ export default function StudentProgressReportsPage() {
   return (
     <ProtectedRoute role="STUDENT">
       <AppFrame>
-        <Suspense fallback={<p className="py-20 text-center text-sm text-slate-500">Loading progress reports…</p>}>
-          <ProgressReportsContent />
-        </Suspense>
+        <StudentCompletionGate mode="all" sectionTitle="Progress Reports">
+          <Suspense fallback={<p className="py-20 text-center text-sm text-slate-500">Loading progress reports…</p>}>
+            <ProgressReportsContent />
+          </Suspense>
+        </StudentCompletionGate>
       </AppFrame>
     </ProtectedRoute>
   );

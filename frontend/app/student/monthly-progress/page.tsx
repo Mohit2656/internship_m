@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
+import { BackButton } from "@/components/BackButton";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { StudentCompletionGate } from "@/components/StudentCompletionGate";
 import { ApiError, api } from "@/lib/api";
 import { formatDate, formatDateTime, monthlyStatusLabel, monthlyStatusClass, MonthlyProgressOverview, MonthlyProgressPeriod, openPrivateFile, privateFileErrorMessage } from "@/lib/monthly-progress";
 
@@ -58,8 +59,8 @@ export default function StudentMonthlyProgressPage() {
     catch (cause) { setError(privateFileErrorMessage(cause, kind)); } finally { setBusy(""); }
   }
 
-  return <ProtectedRoute role="STUDENT"><AppFrame><main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
-    <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">← Back to dashboard</Link>
+  return <ProtectedRoute role="STUDENT"><AppFrame><StudentCompletionGate mode="all" sectionTitle="Monthly Progress"><main className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
+    <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to Dashboard" fixedFallback />
     <p className="mt-6 text-sm font-semibold text-blue-700">Internship records</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Monthly Progress</h1><p className="mt-2 text-slate-600">Upload a report for each internship month. Your assigned faculty mentor reviews it before approval.</p>
     {notice && <p role="status" className="mt-6 rounded-xl bg-blue-50 p-4 text-sm text-blue-800">{notice}</p>}
     {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
@@ -76,5 +77,5 @@ export default function StudentMonthlyProgressPage() {
             setPhoto(null); event.target.value = ""; setError(`Choose a JPG, JPEG or PNG photograph of ${maxPhotoMiB} MiB or smaller.`);
           } else { setPhoto(chosen); setError(""); }
         }} className="block w-full rounded-xl border border-slate-300 p-3 text-sm"/><span className="mt-2 block text-xs text-slate-500">JPG, JPEG or PNG, maximum {maxPhotoMiB} MiB. GPS metadata is not required. The server validates image integrity.</span></label><label className="block"><span className="mb-2 block text-sm font-semibold">Work performed during this month</span><textarea required maxLength={3000} rows={7} value={description} onChange={event => setDescription(event.target.value)} className="w-full rounded-xl border border-slate-300 p-4 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"/><span className="mt-1 block text-right text-xs text-slate-500">{description.length}/3000</span></label><p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">Submitting sends this draft for faculty mentor review. Approved reports are read-only; rejected reports may be corrected and resubmitted.</p><button disabled={submitting} className="w-full">{submitting ? "Submitting…" : "Submit Report"}</button></form></div></div>}
-  </main></AppFrame></ProtectedRoute>;
+  </main></StudentCompletionGate></AppFrame></ProtectedRoute>;
 }

@@ -5,6 +5,8 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { BackButton } from "@/components/BackButton";
+import { StudentCompletionGate } from "@/components/StudentCompletionGate";
 import { api, ApiError } from "@/lib/api";
 import { useActionGuard } from "@/lib/action-guard";
 import { formatOpportunityDate, formatOpportunityStipend, OpportunityMode, StudentOpportunityPage } from "@/lib/opportunities";
@@ -50,12 +52,12 @@ function OpportunitiesContent() {
     });
   }
 
-  return <main className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
-    <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">← Back to dashboard</Link>
+  return <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-10">
+    <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to Dashboard" fixedFallback />
     <div className="mt-5"><p className="text-sm font-semibold text-blue-700">Student workspace</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Internship Opportunities</h1><p className="mt-2 text-slate-600">Explore active internship opportunities published by the III Cell.</p></div>
 
     <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5"><div className="grid gap-4 lg:grid-cols-[1fr_220px_220px]">
-      <form onSubmit={submitSearch}><span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Search</span><div className="flex gap-2"><input value={searchDraft} onChange={event => setSearchDraft(event.target.value)} placeholder="Company or opportunity title" className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-600" /><button className="text-sm">Search</button></div></form>
+      <form onSubmit={submitSearch}><span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Search</span><div className="flex gap-2"><input value={searchDraft} onChange={event => setSearchDraft(event.target.value)} placeholder="Search company or title" className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-blue-600" /><button className="shrink-0 text-sm">Search</button></div></form>
       <label><span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Mode</span><select value={mode} onChange={event => { setMode(event.target.value as OpportunityMode | ""); setPage(0); }} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"><option value="">All modes</option><option value="ONSITE">Onsite</option><option value="HYBRID">Hybrid</option><option value="REMOTE">Remote</option></select></label>
       <label><span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Sort</span><select value={sort} onChange={event => { setSort(event.target.value as "NEWEST" | "DEADLINE_SOON"); setPage(0); }} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm"><option value="NEWEST">Newest</option><option value="DEADLINE_SOON">Deadline Soon</option></select></label>
     </div>{search && <button data-button-variant="text" onClick={() => { setSearch(""); setSearchDraft(""); setPage(0); }} className="mt-3 text-xs">Clear search</button>}</section>
@@ -108,5 +110,5 @@ function OpportunitiesContent() {
 }
 
 export default function StudentOpportunitiesPage() {
-  return <ProtectedRoute role="STUDENT"><AppFrame><OpportunitiesContent /></AppFrame></ProtectedRoute>;
+  return <ProtectedRoute role="STUDENT"><AppFrame><StudentCompletionGate mode="all" sectionTitle="Internship Opportunities"><OpportunitiesContent /></StudentCompletionGate></AppFrame></ProtectedRoute>;
 }

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { BackButton } from "@/components/BackButton";
+import { StudentCompletionGate } from "@/components/StudentCompletionGate";
 import { api } from "@/lib/api";
 import {
   Attendance,
@@ -153,35 +155,22 @@ export default function StudentAttendancePage() {
   return (
     <ProtectedRoute role="STUDENT">
       <AppFrame>
-        <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-          {/* Breadcrumb Navigation */}
-          <nav aria-label="Breadcrumb" className="mb-4 text-xs font-semibold text-slate-500">
-            <Link href="/student/dashboard" className="text-blue-700 hover:underline">
-              Dashboard
-            </Link>
-            <span className="mx-2">/</span>
-            <span className="text-slate-700">Attendance History</span>
-          </nav>
+        <StudentCompletionGate mode="all" sectionTitle="Attendance History">
+          <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+          <div className="mb-4">
+            <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to Dashboard" fixedFallback />
+          </div>
 
           {/* Page Header */}
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-blue-700">Daily verification</p>
-              <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">
-                Attendance History
-              </h1>
-              <p className="mt-2 text-sm text-slate-600 max-w-2xl">
-                Review your complete daily attendance log, liveness checks, workplace GPS verification,
-                and mentor approval history.
-              </p>
-            </div>
-            <Link
-              href="/student/dashboard"
-              className="ui-button text-xs font-medium"
-              data-button-variant="outline"
-            >
-              ← Back to Dashboard
-            </Link>
+          <div>
+            <p className="text-sm font-semibold text-blue-700">Daily verification</p>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">
+              Attendance History
+            </h1>
+            <p className="mt-2 text-sm text-slate-600 max-w-2xl">
+              Review your complete daily attendance log, liveness checks, workplace GPS verification,
+              and mentor approval history.
+            </p>
           </div>
 
           {/* Internship Tabs */}
@@ -245,36 +234,42 @@ export default function StudentAttendancePage() {
           )}
 
           {/* Attendance Stats Cards */}
-          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div className="rounded-2xl border border-blue-200/80 bg-blue-50/40 p-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-blue-800">
-                Total Submitted Days
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+            <div className="flex flex-col justify-between rounded-2xl border border-blue-200/80 bg-blue-50/40 p-4 sm:p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-800 sm:text-xs">
+                Submitted Days
               </p>
-              <p className="mt-2 text-2xl font-bold text-blue-700">
-                {totalSubmittedDays === 1 ? "1 Submitted Day" : `${totalSubmittedDays} Days`}
-              </p>
-              <p className="mt-1 text-xs text-blue-600">Student submissions</p>
+              <div className="mt-3">
+                <p className="text-2xl font-bold tabular-nums text-blue-700">{totalSubmittedDays}</p>
+                <p className="mt-1 text-xs text-blue-600">Student submissions</p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-800">
+            <div className="flex flex-col justify-between rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 sm:p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800 sm:text-xs">
                 Present Days
               </p>
-              <p className="mt-2 text-2xl font-bold text-emerald-700">{presentCount}</p>
-              <p className="mt-1 text-xs text-emerald-600">Verified attendances</p>
+              <div className="mt-3">
+                <p className="text-2xl font-bold tabular-nums text-emerald-700">{presentCount}</p>
+                <p className="mt-1 text-xs text-emerald-600">Verified attendances</p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-red-200/80 bg-red-50/40 p-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-red-800">
+            <div className="flex flex-col justify-between rounded-2xl border border-red-200/80 bg-red-50/40 p-4 sm:p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-red-800 sm:text-xs">
                 Absent Days
               </p>
-              <p className="mt-2 text-2xl font-bold text-red-700">{absentCount}</p>
-              <p className="mt-1 text-xs text-red-600">Unsubmitted or absent</p>
+              <div className="mt-3">
+                <p className="text-2xl font-bold tabular-nums text-red-700">{absentCount}</p>
+                <p className="mt-1 text-xs text-red-600">Unsubmitted or absent</p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-amber-200/80 bg-amber-50/40 p-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-amber-800">
+            <div className="flex flex-col justify-between rounded-2xl border border-amber-200/80 bg-amber-50/40 p-4 sm:p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800 sm:text-xs">
                 Pending Review
               </p>
-              <p className="mt-2 text-2xl font-bold text-amber-700">{pendingCount}</p>
-              <p className="mt-1 text-xs text-amber-600">Awaiting mentor</p>
+              <div className="mt-3">
+                <p className="text-2xl font-bold tabular-nums text-amber-700">{pendingCount}</p>
+                <p className="mt-1 text-xs text-amber-600">Awaiting mentor</p>
+              </div>
             </div>
           </div>
 
@@ -288,8 +283,9 @@ export default function StudentAttendancePage() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
+                  aria-pressed={filter === "ALL"}
                   onClick={() => setFilter("ALL")}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`compact-btn transition-colors ${
                     filter === "ALL"
                       ? "bg-slate-900 text-white"
                       : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -299,8 +295,9 @@ export default function StudentAttendancePage() {
                 </button>
                 <button
                   type="button"
+                  aria-pressed={filter === "PRESENT"}
                   onClick={() => setFilter("PRESENT")}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`compact-btn transition-colors ${
                     filter === "PRESENT"
                       ? "bg-emerald-700 text-white"
                       : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
@@ -310,8 +307,9 @@ export default function StudentAttendancePage() {
                 </button>
                 <button
                   type="button"
+                  aria-pressed={filter === "ABSENT"}
                   onClick={() => setFilter("ABSENT")}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`compact-btn transition-colors ${
                     filter === "ABSENT"
                       ? "bg-red-700 text-white"
                       : "bg-red-50 text-red-800 hover:bg-red-100"
@@ -322,8 +320,9 @@ export default function StudentAttendancePage() {
                 {pendingCount > 0 && (
                   <button
                     type="button"
+                    aria-pressed={filter === "PENDING"}
                     onClick={() => setFilter("PENDING")}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    className={`compact-btn transition-colors ${
                       filter === "PENDING"
                         ? "bg-amber-600 text-white"
                         : "bg-amber-50 text-amber-800 hover:bg-amber-100"
@@ -334,17 +333,17 @@ export default function StudentAttendancePage() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex w-full items-center gap-2 sm:w-auto">
                 <label className="sr-only" htmlFor="date-filter-input">
                   Filter by date
                 </label>
                 <input
                   id="date-filter-input"
                   type="text"
-                  placeholder="Filter by date (YYYY-MM)..."
+                  placeholder="Filter by date (YYYY-MM)"
                   value={dateSearch}
                   onChange={(e) => setDateSearch(e.target.value)}
-                  className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 w-48"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 sm:w-56"
                 />
                 {dateSearch && (
                   <button
@@ -473,7 +472,8 @@ export default function StudentAttendancePage() {
               </div>
             )}
           </section>
-        </main>
+          </main>
+        </StudentCompletionGate>
       </AppFrame>
     </ProtectedRoute>
   );

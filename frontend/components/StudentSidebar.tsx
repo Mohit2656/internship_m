@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 type Item = {
   href: string;
@@ -60,6 +61,22 @@ export function StudentSidebar({
   onNavigate: () => void;
   onSignOut: () => void;
 }) {
+  const [lockedRoutes, setLockedRoutes] = useState<string[]>([]);
+
+  useEffect(() => {
+    const sync = () => {
+      try {
+        const raw = sessionStorage.getItem("ims_student_locked_routes");
+        const parsed = raw ? JSON.parse(raw) : [];
+        setLockedRoutes(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        setLockedRoutes([]);
+      }
+    };
+    sync();
+    window.addEventListener("ims-student-completion-changed", sync);
+    return () => window.removeEventListener("ims-student-completion-changed", sync);
+  }, []);
   return (
     <>
       <button
@@ -104,15 +121,30 @@ export function StudentSidebar({
                 </h2>
                 {group.items.map((item) => {
                   const isCurrent = active(item, pathname);
+                  const isLocked = lockedRoutes.includes(item.href);
                   return (
                     <div key={item.href} className="space-y-1">
                       <Link
                         href={item.href}
-                        className="student-sidebar-link"
+                        className={`student-sidebar-link justify-between gap-2 ${isLocked ? "opacity-75" : ""}`}
                         aria-current={isCurrent ? "page" : undefined}
+                        title={isLocked ? "Complete your profile to unlock" : undefined}
                         onClick={onNavigate}
                       >
-                        {item.label}
+                        <span>{item.label}</span>
+                        {isLocked && (
+                          <svg
+                            aria-label="Locked until profile is complete"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            className="h-3.5 w-3.5 shrink-0 text-slate-400"
+                          >
+                            <rect x="4" y="11" width="16" height="10" rx="2" />
+                            <path strokeLinecap="round" d="M8 11V7a4 4 0 0 1 8 0v4" />
+                          </svg>
+                        )}
                       </Link>
                     </div>
                   );

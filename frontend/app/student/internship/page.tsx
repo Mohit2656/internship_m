@@ -7,6 +7,7 @@ import { AppFrame } from "@/components/AppFrame";
 import { InternshipSlotsSection } from "@/components/InternshipSlotsSection";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { BackButton } from "@/components/BackButton";
+import { StudentCompletionGate } from "@/components/StudentCompletionGate";
 import { WorkflowBadge } from "@/components/WorkflowBadge";
 import { ApiError, api } from "@/lib/api";
 import {
@@ -195,8 +196,9 @@ export default function InternshipOnboardingPage() {
   return (
     <ProtectedRoute role="STUDENT">
       <AppFrame>
-        <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
-          <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to dashboard" />
+        <StudentCompletionGate mode="core" sectionTitle="My Internships">
+          <main className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
+          <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to Dashboard" fixedFallback />
           <div className="mt-5">
             <p className="text-sm font-semibold text-blue-700">Internship registration</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Internship Onboarding &amp; Documents</h1>
@@ -392,6 +394,7 @@ export default function InternshipOnboardingPage() {
             </div>
           )}
         </main>
+        </StudentCompletionGate>
       </AppFrame>
     </ProtectedRoute>
   );
