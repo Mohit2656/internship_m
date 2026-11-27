@@ -1,0 +1,524 @@
+"use client";
+
+import axios from "axios";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { InternshipDetailsForm } from "@/components/InternshipDetailsForm";
+import { InternshipDetailsView } from "@/components/InternshipDetailsView";
+import { InternshipLocationManager } from "@/components/InternshipLocationManager";
+import { notifyStudentCompletionChanged } from "@/components/StudentCompletionGate";
+import { ApiError, api } from "@/lib/api";
+import {
+  emptyInternshipDetails,
+  InternshipDetails,
+  InternshipDetailsFormData,
+  toFormData,
+} from "@/lib/internship-details";
+import { InternshipOnboarding } from "@/lib/internship-onboarding";
+import type { InternshipLocation } from "@/lib/attendance";
+import { internshipDisplayLabel } from "@/lib/internship-label";
+import {
+  getSelectedInternship,
+  setSelectedInternship,
+  getStatusBadgeClass,
+  deriveInternshipStatus,
+  InternshipStatusBadge,
+} from "@/lib/internship-selection";
+
+type SecondRequest = {
+  id: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  rejectionReason: string | null;
+  requestedAt: string;
+};
+
+/**
+ * Reusable Internship Details panel supporting primary and secondary internship slots.
+ * Shared by `/student/internship/details` and the inline `/student/settings` switcher.
+ */
+export function InternshipDetailsPanel({
+  onDetailsUpdated,
+  showDashboardBackAction = true,
+}: {
+  onDetailsUpdated?: (primaryDetails: InternshipDetails | null) => void;
+  showDashboardBackAction?: boolean;
+}) {
+  const [activeTab, setActiveTab] = useState<1 | 2>(1);
+
+  // Slot 1 state
+  const [onboarding1, setOnboarding1] = useState<InternshipOnboarding | null>(null);
+  const [details1, setDetails1] = useState<InternshipDetails | null>(null);
+  const [location1, setLocation1] = useState<InternshipLocation | null>(null);
+  const [editing1, setEditing1] = useState(false);
+
+  // Slot 2 state
+  const [onboarding2, setOnboarding2] = useState<InternshipOnboarding | null>(null);
+  const [details2, setDetails2] = useState<InternshipDetails | null>(null);
+  const [location2, setLocation2] = useState<InternshipLocation | null>(null);
+  const [editing2, setEditing2] = useState(false);
+  const [secondRequests, setSecondRequests] = useState<SecondRequest[]>([]);
+  const [requestingSlot2, setRequestingSlot2] = useState(false);
+
+  // Global UI state
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [geofenceRadiusMeters, setGeofenceRadiusMeters] = useState<number | null>(null);
+
+  useEffect(() => {
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const tabParam = params?.get("tab") || params?.get("internshipNumber");
+    const initialTab: 1 | 2 = tabParam === "2" ? 2 : tabParam === "1" ? 1 : getSelectedInternship();
+    setActiveTab(initialTab);
+    setSelectedInternship(initialTab);
+
+    Promise.all([
+      api.get<InternshipOnboarding>("/student/internship-onboarding?internshipNumber=1")
+        .then((r) => r.data)
+        .catch(() => null),
+      api.get<InternshipOnboarding>("/student/internship-onboarding?internshipNumber=2")
+        .then((r) => r.data)
+        .catch(() => null),
+      api.get<InternshipDetails[]>("/student/internship/all")
+        .then((r) => r.data)
+        .catch(() => []),
+      api.get<InternshipLocation>("/student/internship/location")
+        .then((r) => r.data)
+        .catch(() => null),
+      api.get<SecondRequest[]>("/student/second-internship-requests")
+        .then((r) => r.data)
+        .catch(() => []),
+    ])
+      .then(async ([wf1, wf2, allDetails, loc1, requests]) => {
+        setOnboarding1(wf1);
+        setOnboarding2(wf2);
+        const d1 = allDetails.find((d) => d.internshipNumber === 1) ?? null;
+        const d2 = allDetails.find((d) => d.internshipNumber === 2) ?? null;
+        setDetails1(d1);
+        setDetails2(d2);
+        setLocation1(loc1);
+        setGeofenceRadiusMeters(loc1?.geofenceRadiusMeters ?? null);
+        setSecondRequests(requests);
+
+        if (d2?.id) {
+          try {
+            const loc2 = await api.get<InternshipLocation>("/student/internship/location", {
+              params: { internshipId: d2.id },
+            });
+            setLocation2(loc2.data);
+          } catch {
+            setLocation2(null);
+          }
+        }
+
+        if (window.location.hash === "#edit") {
+          const currentTab = getSelectedInternship();
+          if (currentTab === 1 && d1) setEditing1(true);
+          if (currentTab === 2 && d2) setEditing2(true);
+        }
+      })
+      .catch(() => setError("Internship details could not be loaded."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  function handleTabChange(tab: 1 | 2) {
+    setActiveTab(tab);
+    setSelectedInternship(tab);
+    setError("");
+    setFieldErrors({});
+  }
+
+  const latestSecondRequest = secondRequests.length > 0 ? secondRequests[0] : null;
+  const hasApprovedSecondInternship = latestSecondRequest?.status === "APPROVED";
+
+  const status1: InternshipStatusBadge = deriveInternshipStatus(
+    details1,
+    location1?.status,
+    onboarding1?.workflowStatus === "NOT_SECURED" ? "Not Requested" : "Approved"
+  );
+
+  const status2: InternshipStatusBadge = deriveInternshipStatus(
+    details2,
+    location2?.status,
+    latestSecondRequest?.status ?? null
+  );
+
+  function buildPayload(data: InternshipDetailsFormData) {
+    return {
+      ...data,
+      companyName: data.companyName ? data.companyName.trim() : null,
+      companyType: data.companyType || null,
+      otherCompanyType: data.companyType === "OTHER" ? data.otherCompanyType?.trim() || null : null,
+      companyAddress: data.companyAddress ? data.companyAddress.trim() : null,
+      companyPhone: data.companyPhone ? data.companyPhone.trim() : null,
+      industrySupervisorName: data.industrySupervisorName ? data.industrySupervisorName.trim() : null,
+      industrySupervisorDesignation: data.industrySupervisorDesignation
+        ? data.industrySupervisorDesignation.trim()
+        : null,
+      industrySupervisorContact: data.industrySupervisorContact
+        ? data.industrySupervisorContact.trim()
+        : null,
+      durationMonths: data.durationMonths ? Number(data.durationMonths) : null,
+      startDate: data.startDate || null,
+      endDate: data.endDate || null,
+      totalWeeks: data.totalWeeks ? Number(data.totalWeeks) : null,
+      internshipMode: data.internshipMode || null,
+      stipendPerMonth: data.stipendPerMonth !== "" ? Number(data.stipendPerMonth) : null,
+      fullTimeEmploymentOffered:
+        data.fullTimeEmploymentOffered === "true"
+          ? true
+          : data.fullTimeEmploymentOffered === "false"
+          ? false
+          : null,
+      workplace: data.workplace || null,
+    };
+  }
+
+  async function submitSlot1(data: InternshipDetailsFormData) {
+    setSaving(true);
+    setError("");
+    setFieldErrors({});
+    const payload = buildPayload(data);
+    try {
+      const response = details1
+        ? await api.put<InternshipDetails>("/student/internship", payload)
+        : await api.post<InternshipDetails>("/student/internship", payload);
+      setDetails1(response.data);
+      setEditing1(false);
+      onDetailsUpdated?.(response.data);
+      notifyStudentCompletionChanged();
+      api
+        .get<InternshipOnboarding>("/student/internship-onboarding?internshipNumber=1")
+        .then((r) => setOnboarding1(r.data))
+        .catch(() => {});
+    } catch (cause) {
+      if (axios.isAxiosError<ApiError>(cause)) {
+        setError(cause.response?.data?.message ?? "Internship details could not be saved.");
+        setFieldErrors(cause.response?.data?.fieldErrors ?? {});
+      } else {
+        setError("Internship details could not be saved.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitSlot2(data: InternshipDetailsFormData) {
+    setSaving(true);
+    setError("");
+    setFieldErrors({});
+    const payload = buildPayload(data);
+    try {
+      const response = details2
+        ? await api.put<InternshipDetails>("/student/internship/second", payload)
+        : await api.post<InternshipDetails>("/student/internship/second", payload);
+      setDetails2(response.data);
+      setEditing2(false);
+      onDetailsUpdated?.(details1);
+      notifyStudentCompletionChanged();
+      api
+        .get<InternshipOnboarding>("/student/internship-onboarding?internshipNumber=2")
+        .then((r) => setOnboarding2(r.data))
+        .catch(() => {});
+    } catch (cause) {
+      if (axios.isAxiosError<ApiError>(cause)) {
+        setError(cause.response?.data?.message ?? "Internship 2 details could not be saved.");
+        setFieldErrors(cause.response?.data?.fieldErrors ?? {});
+      } else {
+        setError("Internship 2 details could not be saved.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function raiseSecondRequest() {
+    setRequestingSlot2(true);
+    setError("");
+    try {
+      const response = await api.post<SecondRequest>("/student/second-internship-requests");
+      setSecondRequests([response.data, ...secondRequests]);
+    } catch (cause) {
+      if (axios.isAxiosError<ApiError>(cause)) {
+        setError(cause.response?.data?.message ?? "Failed to request second internship.");
+      } else {
+        setError("Failed to request second internship.");
+      }
+    } finally {
+      setRequestingSlot2(false);
+    }
+  }
+
+  const allowedSlot1 =
+    onboarding1?.workflowStatus === "DIARY_ISSUED" ||
+    onboarding1?.workflowStatus === "INTERNSHIP_DETAILS_COMPLETE" ||
+    Boolean(details1);
+
+  return (
+    <div>
+      {/* Internship Tabs */}
+      <div>
+        <div
+          className="inline-flex w-full sm:w-auto flex-wrap items-center gap-1 rounded-lg bg-slate-100/90 p-1 border border-slate-200/80 shadow-xs"
+          role="tablist"
+          aria-label="Internship slots"
+        >
+          <button
+            id="tab-details-slot-1"
+            role="tab"
+            aria-selected={activeTab === 1}
+            onClick={() => handleTabChange(1)}
+            className={`segmented-tab flex w-full sm:w-auto min-w-0 items-center justify-between sm:justify-start gap-2 rounded-md px-3 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
+              activeTab === 1
+                ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
+            }`}
+          >
+            <span className="truncate">{internshipDisplayLabel(1, hasApprovedSecondInternship)}</span>
+            <span
+              className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                activeTab === 1 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status1)
+              }`}
+            >
+              {status1}
+            </span>
+          </button>
+          <button
+            id="tab-details-slot-2"
+            role="tab"
+            aria-selected={activeTab === 2}
+            onClick={() => handleTabChange(2)}
+            className={`segmented-tab flex w-full sm:w-auto min-w-0 items-center justify-between sm:justify-start gap-2 rounded-md px-3 py-1.5 text-xs sm:text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 ${
+              activeTab === 2
+                ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/90 shadow-xs"
+                : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 border border-transparent font-medium"
+            }`}
+          >
+            <span className="truncate">{hasApprovedSecondInternship ? "Internship 2" : "Second Internship Request"}</span>
+            <span
+              className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                activeTab === 2 ? "border-blue-200 bg-blue-100 text-blue-800" : getStatusBadgeClass(status2)
+              }`}
+            >
+              {status2}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+
+      {loading ? (
+        <p className="py-12 text-center text-sm text-slate-500">Loading internship details…</p>
+      ) : activeTab === 1 ? (
+        <div className="mt-6">
+          {!allowedSlot1 ? (
+            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6 sm:p-8">
+              <h2 className="font-bold text-amber-900">Internship diary required</h2>
+              <p className="mt-2 text-sm text-amber-800">
+                Complete Phase 2.2 and confirm receipt of your internship diary before entering internship details.
+              </p>
+              <Link href="/student/internship" className="ui-button mt-5 inline-block text-sm">
+                Return to Internship Onboarding
+              </Link>
+            </section>
+          ) : details1 && !editing1 ? (
+            <div>
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-500">Lifecycle Status</p>
+                  <p className="mt-1 font-semibold text-slate-900">
+                    {status1 === "Completed"
+                      ? "Completed"
+                      : status1 === "Upcoming"
+                      ? "Upcoming — Starts on " + details1.startDate
+                      : status1 === "Pending Approval"
+                      ? "Pending Mentor Review"
+                      : status1 === "Rejected"
+                      ? "Workplace Rejected — Please update coordinates"
+                      : "Active"}
+                  </p>
+                </div>
+                <span className={`rounded-full border px-3 py-1 text-xs font-bold ${getStatusBadgeClass(status1)}`}>
+                  {status1}
+                </span>
+              </div>
+
+              <InternshipDetailsView details={details1} />
+              <div className="mt-6">
+                <InternshipLocationManager
+                  key={details1.updatedAt}
+                  scope="student"
+                  internshipId={details1.id}
+                />
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button onClick={() => setEditing1(true)} className="ui-button text-sm">
+                  Edit Details
+                </button>
+                {showDashboardBackAction && (
+                  <Link data-button-variant="outline" href="/student/dashboard" className="ui-button text-sm">
+                    Back to Dashboard
+                  </Link>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <InternshipDetailsForm
+                key={details1?.updatedAt ?? "new-1"}
+                initial={details1 ? toFormData(details1) : emptyInternshipDetails}
+                saving={saving}
+                fieldErrors={fieldErrors}
+                geofenceRadiusMeters={geofenceRadiusMeters}
+                onSubmit={submitSlot1}
+                onCancel={details1 ? () => setEditing1(false) : undefined}
+              />
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mt-6">
+          {!details1 ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 sm:p-8 text-amber-900">
+              <h2 className="font-bold">Primary Internship Required</h2>
+              <p className="mt-2 text-sm text-amber-800">
+                Complete your mandatory internship before requesting or setting up a second internship.
+              </p>
+            </div>
+          ) : details2 && !editing2 ? (
+            <div>
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-500">Lifecycle Status</p>
+                  <p className="mt-1 font-semibold text-slate-900">
+                    {status2 === "Completed"
+                      ? "Completed"
+                      : status2 === "Upcoming"
+                      ? "Upcoming — Starts on " + details2.startDate
+                      : status2 === "Pending Approval"
+                      ? "Pending Mentor Review"
+                      : status2 === "Rejected"
+                      ? "Workplace Rejected — Please update coordinates"
+                      : "Active"}
+                  </p>
+                </div>
+                <span className={`rounded-full border px-3 py-1 text-xs font-bold ${getStatusBadgeClass(status2)}`}>
+                  {status2}
+                </span>
+              </div>
+
+              <InternshipDetailsView details={details2} />
+              <div className="mt-6">
+                <InternshipLocationManager
+                  key={details2.updatedAt}
+                  scope="student"
+                  internshipId={details2.id}
+                />
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button onClick={() => setEditing2(true)} className="ui-button text-sm">
+                  Edit Details
+                </button>
+                {showDashboardBackAction && (
+                  <Link data-button-variant="outline" href="/student/dashboard" className="ui-button text-sm">
+                    Back to Dashboard
+                  </Link>
+                )}
+              </div>
+            </div>
+          ) : editing2 && details2 ? (
+            <div>
+              <InternshipDetailsForm
+                key={details2.updatedAt}
+                initial={toFormData(details2)}
+                saving={saving}
+                fieldErrors={fieldErrors}
+                geofenceRadiusMeters={geofenceRadiusMeters}
+                onSubmit={submitSlot2}
+                onCancel={() => setEditing2(false)}
+              />
+            </div>
+          ) : latestSecondRequest?.status === "APPROVED" ? (
+            onboarding2?.workflowStatus !== "DIARY_ISSUED" &&
+            onboarding2?.workflowStatus !== "INTERNSHIP_DETAILS_COMPLETE" ? (
+              <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6 sm:p-8">
+                <h2 className="font-bold text-amber-900">Internship 2 diary required</h2>
+                <p className="mt-2 text-sm text-amber-800">
+                  Complete Step 1 (Source, Required Documents, and Diary Confirmation) before entering company details for Internship 2.
+                </p>
+                <Link
+                  href="/student/internship?tab=2"
+                  onClick={() => setSelectedInternship(2)}
+                  className="ui-button mt-5 inline-block text-sm"
+                >
+                  Return to Internship 2 Onboarding
+                </Link>
+              </section>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
+                <div className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">
+                  <p className="font-semibold">III Cell Approval Granted</p>
+                  <p className="mt-1 text-emerald-800">
+                    Your request for a second internship has been approved. Please enter your Internship 2 details below.
+                  </p>
+                </div>
+                <div className="mt-6">
+                  <InternshipDetailsForm
+                    key="new-2"
+                    initial={emptyInternshipDetails}
+                    saving={saving}
+                    fieldErrors={fieldErrors}
+                    geofenceRadiusMeters={geofenceRadiusMeters}
+                    onSubmit={submitSlot2}
+                  />
+                </div>
+              </div>
+            )
+          ) : latestSecondRequest?.status === "PENDING" ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 sm:p-8 text-amber-900">
+              <h2 className="font-bold">Request Pending Approval</h2>
+              <p className="mt-2 text-sm text-amber-800">
+                Your second internship request was submitted and is currently awaiting approval from the III Cell.
+              </p>
+              <p className="mt-4 text-xs text-amber-700">
+                Submitted on: {new Date(latestSecondRequest.requestedAt).toLocaleDateString()}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
+              {latestSecondRequest?.status === "REJECTED" && (
+                <div className="mb-6 rounded-xl bg-red-50 p-4 text-sm text-red-900">
+                  <p className="font-semibold">Previous Request Rejected</p>
+                  <p className="mt-1 text-red-800">
+                    Reason: {latestSecondRequest.rejectionReason || "No rejection reason provided."}
+                  </p>
+                </div>
+              )}
+              <h2 className="text-xl font-bold text-slate-900">Second Internship Slot</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Students who have secured or completed their primary internship can request authorization from the III Cell for a second internship.
+              </p>
+              <div className="mt-6">
+                <button
+                  id="raise-request-slot-2"
+                  disabled={requestingSlot2}
+                  onClick={raiseSecondRequest}
+                  className="ui-button text-sm"
+                >
+                  {requestingSlot2 ? "Submitting Request…" : "Internship Secured"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+

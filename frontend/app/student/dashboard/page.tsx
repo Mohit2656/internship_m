@@ -11,8 +11,10 @@ import { DailyAttendanceHistory } from "@/components/DailyAttendanceHistory";
 import { api } from "@/lib/api";
 import type { InternshipDetails } from "@/lib/internship-details";
 import type { InternshipOnboarding } from "@/lib/internship-onboarding";
-import type { StudentProfile } from "@/lib/student-profile";
-import type { ProfessionalProfile } from "@/lib/professional-profile";
+import type { ProfilePrefill, StudentProfile } from "@/lib/student-profile";
+import type { ProfessionalProfile, SkillProfile } from "@/lib/professional-profile";
+import { calculateProfileCompletion, type ProfileCompletionResult } from "@/lib/profile-completion";
+import { syncStudentLockedRoutes } from "@/components/StudentCompletionGate";
 import { formatDateTime } from "@/lib/monthly-progress";
 
 import { getSelectedInternship, setSelectedInternship, deriveInternshipStatus } from "@/lib/internship-selection";
@@ -47,141 +49,29 @@ type NotificationItem = {
   readAt: string | null;
 };
 
-function hasDashboardValue(val: unknown): boolean {
-  if (val === null || val === undefined) return false;
-  if (typeof val === "string") return val.trim().length > 0;
-  if (typeof val === "number") return !Number.isNaN(val);
-  return true;
-}
-
-function calculateDashboardProfileCompletion(params: {
-  profile: StudentProfile | null;
-  professionalProfile: ProfessionalProfile | null;
-  onboarding: InternshipOnboarding | null;
-  details: InternshipDetails | null;
-}) {
-  const { profile, professionalProfile, onboarding, details } = params;
-
-  const personalChecks = [
-    { label: "Personal Email", done: hasDashboardValue(profile?.personalEmail) },
-    { label: "Phone Number", done: hasDashboardValue(profile?.phoneNumber) },
-    { label: "Blood Group", done: hasDashboardValue(profile?.bloodGroup) },
-    { label: "UID / Roll Number", done: hasDashboardValue(profile?.uid) || hasDashboardValue(profile?.rollNumber) },
-    { label: "Academic Year", done: hasDashboardValue(profile?.academicYear) },
-    { label: "Semester", done: hasDashboardValue(profile?.semester) },
-    { label: "Permanent Address", done: hasDashboardValue(profile?.permanentAddress) },
-    { label: "Parent / Guardian Name", done: hasDashboardValue(profile?.guardianName) },
-    { label: "Parent / Guardian Contact", done: hasDashboardValue(profile?.guardianContact) },
-    { label: "Emergency Contact", done: hasDashboardValue(profile?.emergencyContact) },
-    { label: "Aadhaar Identity", done: hasDashboardValue(profile?.maskedAadhaar) },
-  ];
-  const personalDone = personalChecks.filter((c) => c.done).length;
-  const personalTotal = personalChecks.length;
-  const personalRatio = personalTotal > 0 ? personalDone / personalTotal : 0;
-  const personalMissing = personalChecks.filter((c) => !c.done).map((c) => c.label);
-
-  const professionalChecks = [
-    { label: "Professional Headline", done: hasDashboardValue(professionalProfile?.headline) },
-    { label: "Career Interests", done: hasDashboardValue(professionalProfile?.careerInterests) },
-    { label: "Uploaded Resume", done: Boolean(professionalProfile?.resume) },
-    { label: "Confirmed Skills", done: Boolean(professionalProfile?.skillsUpdatedAt) },
-  ];
-  const professionalDone = professionalChecks.filter((c) => c.done).length;
-  const professionalTotal = professionalChecks.length;
-  const professionalRatio = professionalTotal > 0 ? professionalDone / professionalTotal : 0;
-  const professionalMissing = professionalChecks.filter((c) => !c.done).map((c) => c.label);
-
-  const nonApplicableStatuses = ["PRE_COMMENCEMENT", "NOT_STARTED"];
-  const isInternshipApplicable = Boolean(
-    details ||
-      (onboarding?.workflowStatus && !nonApplicableStatuses.includes(onboarding.workflowStatus))
-  );
-
-  let internshipRatio = 0;
-  let internshipDone = 0;
-  let internshipTotal = 7;
-  let internshipMissing: string[] = [];
-
-  if (isInternshipApplicable) {
-    const internshipChecks = [
-      { label: "Company Name", done: hasDashboardValue(details?.companyName) },
-      { label: "Company Address", done: hasDashboardValue(details?.companyAddress) },
-      { label: "Supervisor Name", done: hasDashboardValue(details?.industrySupervisorName) },
-      { label: "Supervisor Contact", done: hasDashboardValue(details?.industrySupervisorContact) },
-      { label: "Internship Mode", done: hasDashboardValue(details?.internshipMode) },
-      { label: "Start Date", done: hasDashboardValue(details?.startDate) },
-      { label: "End Date", done: hasDashboardValue(details?.endDate) },
-    ];
-    internshipDone = internshipChecks.filter((c) => c.done).length;
-    internshipTotal = internshipChecks.length;
-    internshipRatio = internshipTotal > 0 ? internshipDone / internshipTotal : 0;
-    internshipMissing = internshipChecks.filter((c) => !c.done).map((c) => c.label);
-  }
-
-  let percentage: number;
-  if (isInternshipApplicable) {
-    percentage = Math.round(
-      personalRatio * 40 + professionalRatio * 30 + internshipRatio * 30
-    );
-  } else {
-    percentage = Math.round(personalRatio * 60 + professionalRatio * 40);
-  }
-
-  if (
-    personalDone === personalTotal &&
-    professionalDone === professionalTotal &&
-    (!isInternshipApplicable || internshipDone === internshipTotal)
-  ) {
-    percentage = 100;
-  }
-  percentage = Math.max(0, Math.min(100, percentage));
-  const remainingPercentage = 100 - percentage;
-  const isComplete = percentage === 100;
-
-  const incompleteMissing = [
-    ...personalMissing,
-    ...professionalMissing,
-    ...(isInternshipApplicable ? internshipMissing : []),
-  ];
-
-  let nextAction = { label: "Complete Profile", href: "/student/settings?tab=profile&edit=true" };
-  if (personalDone === personalTotal && professionalDone < professionalTotal) {
-    nextAction = { label: "Update Professional Profile", href: "/student/professional-profile" };
-  } else if (personalDone === personalTotal && professionalDone === professionalTotal && isInternshipApplicable && internshipDone < internshipTotal) {
-    nextAction = { label: "Complete Internship Details", href: "/student/internship/details" };
-  }
-
-  return {
-    percentage,
-    remainingPercentage,
-    isComplete,
-    missingFields: incompleteMissing,
-    nextAction: isComplete ? null : nextAction,
-  };
-}
-
 function CompactProfileCompletion({
   completion,
 }: {
-  completion: ReturnType<typeof calculateDashboardProfileCompletion>;
+  completion: ProfileCompletionResult;
 }) {
-  const { percentage, remainingPercentage, isComplete, nextAction, missingFields } = completion;
+  const { percentage, remainingPercentage, isComplete, nextAction, incompleteSections } = completion;
   if (isComplete) return null;
 
+  const missingFields = incompleteSections.flatMap((section) => section.missingFields);
   const missingSummary = missingFields.slice(0, 2).join(", ");
 
   return (
-    <section className="rounded-2xl border border-blue-200/80 bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-blue-200/80 bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-white p-4 shadow-sm sm:p-5 dark:border-[#345782] dark:from-[#162742] dark:via-[#14233b] dark:to-[#142136]">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex-1 min-w-[240px]">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
               %
             </span>
             <h2 className="text-base font-bold text-slate-900">
               Profile Completion — {percentage}%
             </h2>
-            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800">
+            <span className="whitespace-nowrap shrink-0 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
               {remainingPercentage}% remaining
             </span>
           </div>
@@ -208,7 +98,7 @@ function CompactProfileCompletion({
         {nextAction && (
           <Link
             href={nextAction.href}
-            className="ui-button text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap"
+            className="ui-button w-full sm:w-auto text-xs font-semibold inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
           >
             <span>Complete Profile</span>
             <svg
@@ -229,7 +119,9 @@ function CompactProfileCompletion({
 
 export default function StudentDashboard() {
   const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [prefill, setPrefill] = useState<ProfilePrefill | null>(null);
   const [professionalProfile, setProfessionalProfile] = useState<ProfessionalProfile | null>(null);
+  const [skillsProfile, setSkillsProfile] = useState<SkillProfile | null>(null);
   const [onboarding, setOnboarding] = useState<InternshipOnboarding | null>(null);
   const [details, setDetails] = useState<InternshipDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -253,7 +145,9 @@ export default function StudentDashboard() {
     setActiveTabState(getSelectedInternship());
     Promise.all([
       api.get<StudentProfile>("/student/profile").then((r) => r.data).catch(() => null),
+      api.get<ProfilePrefill>("/student/profile/prefill").then((r) => r.data).catch(() => null),
       api.get<ProfessionalProfile>("/student/professional-profile").then((r) => r.data).catch(() => null),
+      api.get<SkillProfile>("/student/professional-profile/skills").then((r) => r.data).catch(() => null),
       api.get<InternshipOnboarding>("/student/internship-onboarding").then((r) => r.data),
       api.get<InternshipOnboarding>("/student/internship-onboarding", { params: { internshipNumber: 2 } }).then((r) => r.data).catch(() => null),
       api.get<InternshipDetails>("/student/internship").then((r) => r.data).catch(() => null),
@@ -262,9 +156,11 @@ export default function StudentDashboard() {
       api.get<{ content: NotificationItem[] }>("/student/notifications", { params: { page: 0 } }).then((r) => r.data?.content ?? []).catch(() => []),
       api.get<StudentMentorInfo>("/student/mentor").then((r) => r.data).catch(() => null),
     ])
-      .then(([studentProfile, professional, internship, secondOb, internshipDetails, allDetails, requests, notifs, mentor]) => {
+      .then(([studentProfile, profilePrefill, professional, skills, internship, secondOb, internshipDetails, allDetails, requests, notifs, mentor]) => {
         setProfile(studentProfile);
+        setPrefill(profilePrefill);
         setProfessionalProfile(professional);
+        setSkillsProfile(skills);
         setOnboarding(internship);
         setSecondOnboarding(secondOb);
         setDetails(internshipDetails);
@@ -311,7 +207,8 @@ export default function StudentDashboard() {
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const selectedDetails = activeTab === 2 ? secondDetails : details;
   const isInternshipStarted = Boolean(selectedDetails?.startDate && selectedDetails.startDate <= todayStr);
-  const studentFirstName = profile?.studentName?.trim().split(/\s+/)[0] || "Student";
+  const studentDisplayName = (profile?.studentName || prefill?.studentName || "").trim();
+  const studentFirstName = studentDisplayName ? studentDisplayName.split(/\s+/)[0] : "Student";
 
   // Actionable items
   const pendingActions: Array<{ id: string; title: string; description: string; href: string; label: string }> = [];
@@ -321,7 +218,7 @@ export default function StudentDashboard() {
         id: "profile",
         title: "Complete Institutional Profile",
         description: "Your student profile must be completed before registering an internship.",
-        href: "/student/profile",
+        href: "/student/settings?tab=profile&edit=true&panel=personal",
         label: "Complete Profile",
       });
     }
@@ -378,63 +275,82 @@ export default function StudentDashboard() {
   function renderRecentNotifications() {
     if (recentNotifications.length === 0) return null;
     return (
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-bold text-slate-900">Recent Notifications</h2>
-          <Link href="/student/notifications" className="text-sm font-semibold text-blue-700 hover:underline">
-            All notifications →
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-bold text-slate-900 sm:text-lg">Recent Notifications</h2>
+          <Link
+            href="/student/notifications"
+            className="whitespace-nowrap shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+          >
+            View all
           </Link>
         </div>
-        <ul className="mt-4 divide-y divide-slate-100">
-          {recentNotifications.map((item) => (
-            <li key={item.id} className="py-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Link
-                  href={item.actionUrl?.startsWith("/student/") ? item.actionUrl : "/student/notifications"}
-                  className="text-sm font-semibold text-blue-700 hover:underline"
-                >
-                  {item.title}
-                </Link>
-                <span className="text-xs text-slate-500">
-                  {item.readAt ? "Read" : "Unread"} · {formatDateTime(item.createdAt)}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">{item.message}</p>
-            </li>
-          ))}
+        <ul className="mt-4 space-y-2.5">
+          {recentNotifications.map((item) => {
+            const isUnread = !item.readAt;
+            return (
+              <li
+                key={item.id}
+                className={`rounded-xl border p-3.5 sm:p-4 ${
+                  isUnread
+                    ? "border-blue-200/80 bg-blue-50/40"
+                    : "border-slate-200/80 bg-slate-50/60"
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <Link
+                    href={item.actionUrl?.startsWith("/student/") ? item.actionUrl : "/student/notifications"}
+                    className="min-w-0 flex-1 text-sm font-semibold text-blue-700 hover:underline"
+                  >
+                    {item.title}
+                  </Link>
+                  <span
+                    className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      isUnread
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-slate-200/70 text-slate-600"
+                    }`}
+                  >
+                    {isUnread ? "Unread" : "Read"}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{item.message}</p>
+                <p className="mt-2 text-xs text-slate-500">{formatDateTime(item.createdAt)}</p>
+              </li>
+            );
+          })}
         </ul>
       </section>
     );
   }
 
-  const completion = calculateDashboardProfileCompletion({
+  const completion = calculateProfileCompletion({
     profile,
     professionalProfile,
+    skillsCount: skillsProfile?.skills?.length ?? 0,
     onboarding,
     details,
   });
 
+  const completionIncompleteKey = completion.incompleteSections.map((s) => s.id).join(",");
+  useEffect(() => {
+    if (!loading) {
+      syncStudentLockedRoutes(completion);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, completion.percentage, completion.isComplete, completionIncompleteKey]);
+
   return (
     <ProtectedRoute role="STUDENT">
       <AppFrame>
-        <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
+        <main className="mx-auto max-w-7xl px-4 py-5 sm:px-8 sm:py-8">
           {/* Header */}
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-semibold text-blue-700">Student workspace</p>
-              <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">
-                Welcome back, {studentFirstName}!
-              </h1>
-              <p className="mt-1 text-sm text-slate-600">
-                {isInternshipStarted
-                  ? `Active internship at ${selectedDetails?.companyName}. Track attendance and reports.`
-                  : "Institutional internship registration and preparation portal."}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
               {!loading && (
                 <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap ${
                     isInternshipStarted
                       ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                       : "bg-blue-50 text-blue-800 border border-blue-200"
@@ -449,6 +365,16 @@ export default function StudentDashboard() {
                 </span>
               )}
             </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+                Welcome back, {studentFirstName}!
+              </h1>
+              <p className="mt-1 text-sm text-slate-600">
+                {isInternshipStarted
+                  ? `Active internship at ${selectedDetails?.companyName}. Track attendance and reports.`
+                  : "Institutional internship registration and preparation portal."}
+              </p>
+            </div>
           </div>
 
           {error && (
@@ -461,6 +387,65 @@ export default function StudentDashboard() {
           <div className="mt-6">
             <CompactProfileCompletion completion={completion} />
           </div>
+
+          {/* Assigned Faculty Mentor (auto-populated from III Cell assignment) */}
+          {!loading && (() => {
+            const assignedMentorName =
+              mentorInfo?.mentorName?.trim() ||
+              mentorInfo?.internship1MentorName?.trim() ||
+              mentorInfo?.internship2MentorName?.trim() ||
+              "";
+            const assignedMentorEmail = mentorInfo?.mentorEmail?.trim() || "";
+            const hasDistinctSlotMentors =
+              Boolean(mentorInfo?.internship1MentorName && mentorInfo?.internship2MentorName) &&
+              mentorInfo?.internship1MentorName !== mentorInfo?.internship2MentorName;
+
+            return (
+              <section
+                aria-label="Assigned faculty mentor"
+                className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">
+                    Faculty Mentor
+                  </p>
+                  <span
+                    className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      assignedMentorName
+                        ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border border-slate-200 bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {assignedMentorName ? "Assigned" : "Not assigned yet"}
+                  </span>
+                </div>
+                {assignedMentorName ? (
+                  <div className="mt-3 space-y-1">
+                    <p className="text-base font-bold text-slate-900">{assignedMentorName}</p>
+                    {assignedMentorEmail && (
+                      <p className="text-sm text-slate-600">
+                        <a
+                          href={`mailto:${assignedMentorEmail}`}
+                          className="font-medium text-blue-700 hover:underline break-all"
+                        >
+                          {assignedMentorEmail}
+                        </a>
+                      </p>
+                    )}
+                    {hasDistinctSlotMentors && (
+                      <p className="pt-1 text-xs text-slate-500">
+                        Internship 1: {mentorInfo?.internship1MentorName} · Internship 2: {mentorInfo?.internship2MentorName}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-600">
+                    Your assigned faculty mentor will appear here automatically once assigned by the III Cell.
+                  </p>
+                )}
+              </section>
+            );
+          })()}
 
           {/* Pending Actions (only rendered if actionable items exist) */}
           {pendingActions.length > 0 && (
@@ -478,7 +463,7 @@ export default function StudentDashboard() {
                       <p className="font-semibold text-slate-900">{action.title}</p>
                       <p className="mt-0.5 text-xs text-slate-600">{action.description}</p>
                     </div>
-                    <Link href={action.href} className="ui-button text-xs whitespace-nowrap">
+                    <Link href={action.href} className="ui-button w-full sm:w-auto justify-center text-xs whitespace-nowrap">
                       {action.label}
                     </Link>
                   </div>

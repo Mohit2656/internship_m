@@ -128,7 +128,7 @@ export function calculateProfileCompletion(params: {
     percentage: Math.round(personalRatio * 100),
     missingFields: personalMissing,
     actionLabel: "Complete Personal Profile",
-    actionHref: "/student/settings?tab=profile&edit=true",
+    actionHref: "/student/settings?tab=profile&edit=true&panel=personal",
     applicable: true,
   };
 
@@ -141,7 +141,7 @@ export function calculateProfileCompletion(params: {
     percentage: Math.round(professionalRatio * 100),
     missingFields: professionalMissing,
     actionLabel: "Update Professional Profile",
-    actionHref: "/student/professional-profile",
+    actionHref: "/student/settings?tab=profile&edit=true&panel=professional",
     applicable: true,
   };
 
@@ -154,7 +154,7 @@ export function calculateProfileCompletion(params: {
     percentage: isInternshipApplicable ? Math.round(internshipRatio * 100) : 100,
     missingFields: internshipMissing,
     actionLabel: "Complete Internship Details",
-    actionHref: "/student/internship/details",
+    actionHref: "/student/settings?tab=profile&edit=true&panel=internship",
     applicable: isInternshipApplicable,
   };
 
@@ -166,7 +166,10 @@ export function calculateProfileCompletion(params: {
   let nextAction: { label: string; href: string } | null = null;
   if (incompleteSections.length > 0) {
     const first = incompleteSections[0];
-    nextAction = { label: first.actionLabel, href: first.actionHref };
+    nextAction = {
+      label: "Complete Profile",
+      href: `/student/settings?tab=profile&edit=true&panel=${first.id}`,
+    };
   }
 
   return {

@@ -1,21 +1,23 @@
 "use client";
 
-import Link from "next/link";
-import { FormEvent, Suspense, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AxiosError } from "axios";
 import { AppFrame } from "@/components/AppFrame";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { BackButton } from "@/components/BackButton";
 import { ProfileDetails } from "@/components/ProfileDetails";
 import { ProfileForm } from "@/components/ProfileForm";
+import { ProfessionalProfilePanel } from "@/components/ProfessionalProfilePanel";
+import { InternshipDetailsPanel } from "@/components/InternshipDetailsPanel";
 import { ApiError, api } from "@/lib/api";
 import { ProfilePrefill, StudentProfile } from "@/lib/student-profile";
 import { ProfessionalProfile, SkillProfile } from "@/lib/professional-profile";
 import { InternshipOnboarding } from "@/lib/internship-onboarding";
 import { InternshipDetails } from "@/lib/internship-details";
-import { calculateProfileCompletion } from "@/lib/profile-completion";
+import { calculateProfileCompletion, type ProfileCompletionSection } from "@/lib/profile-completion";
 import { ProfileCompletionTracker } from "@/components/ProfileCompletionTracker";
-import { formatDateTime } from "@/lib/monthly-progress";
+import { notifyStudentCompletionChanged, syncStudentLockedRoutes } from "@/components/StudentCompletionGate";
 
 type DocumentTemplate = {
   path: string;
@@ -45,12 +47,21 @@ const templates: DocumentTemplate[] = [
   },
 ];
 
+const PROFILE_CARD_ORDER: ProfileCompletionSection["id"][] = ["personal", "professional", "internship"];
+
 function SettingsContent() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") ?? searchParams.get("section") ?? "profile";
+  const initialCard = searchParams.get("panel");
   const [activeSection, setActiveSection] = useState<"profile" | "security" | "documents">(
     initialTab === "security" ? "security" : initialTab === "documents" ? "documents" : "profile"
   );
+  const [activeProfileCard, setActiveProfileCard] = useState<ProfileCompletionSection["id"]>(
+    initialCard === "professional" || initialCard === "internship" ? initialCard : "personal"
+  );
+  const [slideDirection, setSlideDirection] = useState<"left" | "right">("right");
+  const panelContainerRef = useRef<HTMLDivElement>(null);
+  const touchStartXRef = useRef<number | null>(null);
 
   // Sync active section when tab query parameter changes
   useEffect(() => {
@@ -58,7 +69,33 @@ function SettingsContent() {
     if (tab === "security" || tab === "documents" || tab === "profile") {
       setActiveSection(tab);
     }
+    const panel = searchParams.get("panel");
+    if (panel === "personal" || panel === "professional" || panel === "internship") {
+      setActiveProfileCard(panel);
+    }
   }, [searchParams]);
+
+  function handleSelectProfileCard(next: ProfileCompletionSection["id"]) {
+    if (next === activeProfileCard) {
+      if (next === "personal") setEditing(true);
+      panelContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    const prevIdx = PROFILE_CARD_ORDER.indexOf(activeProfileCard);
+    const nextIdx = PROFILE_CARD_ORDER.indexOf(next);
+    setSlideDirection(nextIdx >= prevIdx ? "right" : "left");
+    setActiveProfileCard(next);
+    if (next === "personal") setEditing(true);
+    requestAnimationFrame(() => {
+      panelContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+
+  function refreshSkillsSummary() {
+    api.get<SkillProfile>("/student/professional-profile/skills")
+      .then((res) => setSkillsProfile(res.data))
+      .catch(() => {});
+  }
 
   // Profile State
   const [profile, setProfile] = useState<StudentProfile | null>(null);
@@ -95,12 +132,31 @@ function SettingsContent() {
       api.get<InternshipDetails>("/student/internship/details").catch(() => null),
     ])
       .then(([current, institutional, prof, skills, onb, det]) => {
-        setProfile(current?.data ?? null);
+        const nextProfile = current?.data ?? null;
+        const nextProf = prof?.data ?? null;
+        const nextSkills = skills?.data ?? null;
+        const nextOnb = onb?.data ?? null;
+        const nextDet = det?.data ?? null;
+        setProfile(nextProfile);
         setPrefill(institutional?.data ?? null);
-        setProfessionalProfile(prof?.data ?? null);
-        setSkillsProfile(skills?.data ?? null);
-        setOnboarding(onb?.data ?? null);
-        setDetails(det?.data ?? null);
+        setProfessionalProfile(nextProf);
+        setSkillsProfile(nextSkills);
+        setOnboarding(nextOnb);
+        setDetails(nextDet);
+
+        const explicitPanel = searchParams.get("panel");
+        if (!explicitPanel) {
+          const computed = calculateProfileCompletion({
+            profile: nextProfile,
+            professionalProfile: nextProf,
+            skillsCount: nextSkills?.skills?.length ?? 0,
+            onboarding: nextOnb,
+            details: nextDet,
+          });
+          if (computed.incompleteSections.length > 0) {
+            setActiveProfileCard(computed.incompleteSections[0].id);
+          }
+        }
       })
       .catch(() => setProfileError("Unable to load profile data."))
       .finally(() => setProfileLoading(false));
@@ -113,6 +169,14 @@ function SettingsContent() {
     onboarding,
     details,
   });
+
+  const completionIncompleteKey = completion.incompleteSections.map((s) => s.id).join(",");
+  useEffect(() => {
+    if (!profileLoading) {
+      syncStudentLockedRoutes(completion);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileLoading, completion.percentage, completion.isComplete, completionIncompleteKey]);
 
   async function handlePasswordChange(e: FormEvent) {
     e.preventDefault();
@@ -169,10 +233,8 @@ function SettingsContent() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
-      <Link href="/student/dashboard" className="text-sm font-semibold text-blue-700">
-        ← Back to dashboard
-      </Link>
+    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
+      <BackButton fallbackHref="/student/dashboard" fallbackLabel="Back to Dashboard" fixedFallback />
       <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-blue-700">Account &amp; Preferences</p>
@@ -235,78 +297,133 @@ function SettingsContent() {
         {/* SECTION 1: MY PROFILE */}
         {activeSection === "profile" && (
           <div id="panel-profile" role="tabpanel" aria-labelledby="tab-profile" className="mt-6 space-y-6">
-            <ProfileCompletionTracker completion={completion} />
+            <ProfileCompletionTracker
+              completion={completion}
+              activeSection={activeProfileCard}
+              onSelectSection={handleSelectProfileCard}
+            />
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">Institutional Profile</h2>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Your institutional details used by the III Cell and faculty mentors.
-                  </p>
-                </div>
-                {profile && !editing && (
-                  <button onClick={() => setEditing(true)} className="ui-button text-sm">
-                    Edit Profile
-                  </button>
+            <div
+              ref={panelContainerRef}
+              className="overflow-hidden"
+              onTouchStart={(e) => {
+                touchStartXRef.current = e.touches[0]?.clientX ?? null;
+              }}
+              onTouchEnd={(e) => {
+                if (touchStartXRef.current === null) return;
+                const endX = e.changedTouches[0]?.clientX ?? touchStartXRef.current;
+                const deltaX = endX - touchStartXRef.current;
+                touchStartXRef.current = null;
+                if (Math.abs(deltaX) < 64) return;
+                const currentIdx = PROFILE_CARD_ORDER.indexOf(activeProfileCard);
+                if (deltaX < 0 && currentIdx < PROFILE_CARD_ORDER.length - 1) {
+                  handleSelectProfileCard(PROFILE_CARD_ORDER[currentIdx + 1]);
+                } else if (deltaX > 0 && currentIdx > 0) {
+                  handleSelectProfileCard(PROFILE_CARD_ORDER[currentIdx - 1]);
+                }
+              }}
+            >
+              <div
+                key={activeProfileCard}
+                data-slide-direction={slideDirection}
+                className={slideDirection === "right" ? "settings-panel-enter-right" : "settings-panel-enter-left"}
+              >
+                {activeProfileCard === "personal" && (
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-8">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
+                          Personal Profile
+                        </p>
+                        <h2 className="mt-1 text-xl font-bold text-slate-900">Institutional Profile</h2>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Your institutional details used by the III Cell and faculty mentors.
+                        </p>
+                      </div>
+                      {profile && !editing && (
+                        <button onClick={() => setEditing(true)} className="ui-button text-sm">
+                          Edit Profile
+                        </button>
+                      )}
+                    </div>
+
+                    {profileError && (
+                      <p role="alert" className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">
+                        {profileError}
+                      </p>
+                    )}
+
+                    {profileLoading ? (
+                      <p className="mt-6 text-sm text-slate-500">Loading profile details…</p>
+                    ) : profile && !editing ? (
+                      <div className="mt-6">
+                        <ProfileDetails profile={profile} />
+                      </div>
+                    ) : (
+                      <div className="mt-6">
+                        <ProfileForm
+                          existing={profile ?? undefined}
+                          institutional={prefill ?? undefined}
+                          onCancel={profile ? () => setEditing(false) : undefined}
+                          onSaved={(saved) => {
+                            setProfile(saved);
+                            setEditing(false);
+                            notifyStudentCompletionChanged();
+                          }}
+                        />
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {activeProfileCard === "professional" && (
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-8">
+                    <div className="mb-6">
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
+                        Career Workspace
+                      </p>
+                      <h2 className="mt-1 text-xl font-bold text-slate-900">
+                        Professional Profile &amp; Skills
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Manage your headline, career interests, uploaded resume, and skill profile.
+                      </p>
+                    </div>
+                    <ProfessionalProfilePanel
+                      onProfileUpdated={(updated) => {
+                        setProfessionalProfile(updated);
+                        notifyStudentCompletionChanged();
+                      }}
+                      onSkillsUpdated={() => {
+                        refreshSkillsSummary();
+                        notifyStudentCompletionChanged();
+                      }}
+                    />
+                  </section>
+                )}
+
+                {activeProfileCard === "internship" && (
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-8">
+                    <div className="mb-6">
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
+                        Internship Registration
+                      </p>
+                      <h2 className="mt-1 text-xl font-bold text-slate-900">Internship Details</h2>
+                      <p className="mt-1 text-sm text-slate-600">
+                        View and manage complete details for your primary and secondary internships.
+                      </p>
+                    </div>
+                    <InternshipDetailsPanel
+                      showDashboardBackAction={false}
+                      onDetailsUpdated={(primaryDetails) => {
+                        setDetails(primaryDetails);
+                        notifyStudentCompletionChanged();
+                      }}
+                    />
+                  </section>
                 )}
               </div>
-
-              {profileError && (
-                <p role="alert" className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">
-                  {profileError}
-                </p>
-              )}
-
-              {profileLoading ? (
-                <p className="mt-6 text-sm text-slate-500">Loading profile details…</p>
-              ) : profile && !editing ? (
-                <div className="mt-6">
-                  <ProfileDetails profile={profile} />
-                </div>
-              ) : (
-                <div className="mt-6">
-                  <ProfileForm
-                    existing={profile ?? undefined}
-                    institutional={prefill ?? undefined}
-                    onCancel={profile ? () => setEditing(false) : undefined}
-                    onSaved={(saved) => {
-                      setProfile(saved);
-                      setEditing(false);
-                    }}
-                  />
-                </div>
-              )}
-            </section>
-
-            {/* Professional Profile & Resume Summary */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">Professional Resume</h2>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Resume and career preferences used for AI opportunity matching.
-                  </p>
-                </div>
-                <Link href="/student/professional-profile" className="ui-button text-sm">
-                  {professionalProfile?.resume ? "Manage Resume" : "Upload Resume"}
-                </Link>
-              </div>
-              {professionalProfile?.resume ? (
-                <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm">
-                  <p className="font-semibold text-slate-900">
-                    {professionalProfile.resume.originalFilename}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Uploaded on {formatDateTime(professionalProfile.resume.uploadedAt)}
-                  </p>
-                </div>
-              ) : (
-                <p className="mt-4 text-sm text-slate-500">
-                  No resume uploaded yet. Upload a PDF or DOCX resume to unlock opportunity recommendations.
-                </p>
-              )}
-            </section>
+            </div>
           </div>
         )}
 
