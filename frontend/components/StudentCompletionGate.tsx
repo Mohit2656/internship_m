@@ -71,7 +71,7 @@ export function useStudentCompletionStatus(): StudentCompletionState {
         api.get<ProfessionalProfile>("/student/professional-profile").then((r) => r.data).catch(() => null),
         api.get<SkillProfile>("/student/professional-profile/skills").then((r) => r.data).catch(() => null),
         api.get<InternshipOnboarding>("/student/internship-onboarding").then((r) => r.data).catch(() => null),
-        api.get<InternshipDetails>("/student/internship/details").then((r) => r.data).catch(() => null),
+        api.get<InternshipDetails>("/student/internship").then((r) => r.data).catch(() => null),
       ]);
       const computed = calculateProfileCompletion({
         profile,

@@ -129,7 +129,7 @@ function SettingsContent() {
       api.get<ProfessionalProfile>("/student/professional-profile").catch(() => null),
       api.get<SkillProfile>("/student/professional-profile/skills").catch(() => null),
       api.get<InternshipOnboarding>("/student/internship-onboarding").catch(() => null),
-      api.get<InternshipDetails>("/student/internship/details").catch(() => null),
+      api.get<InternshipDetails>("/student/internship").catch(() => null),
     ])
       .then(([current, institutional, prof, skills, onb, det]) => {
         const nextProfile = current?.data ?? null;

@@ -105,13 +105,21 @@ class AttendanceIntegrationTest {
         assertThat(stored.getStudent().getId()).isEqualTo(studentA.getId());
         assertThat(attendance.findByStudentIdAndAttendanceDate(studentB.getId(), TODAY)).isEmpty();
 
+        // 2nd daily submission succeeds; 3rd daily submission on same date is rejected
+        mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567").cookie(studentSession))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.submissionSlot").value(2));
+
         mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567").cookie(studentSession))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ATTENDANCE_ALREADY_SUBMITTED"));
 
-        assertThatThrownBy(() -> attendance.saveAndFlush(new AttendanceRecord(studentA, internshipA, TODAY,
-                AttendanceResult.PRESENT, VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC, NOW)))
-                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> {
+            AttendanceRecord dupSlot = new AttendanceRecord(studentA, internshipA, TODAY,
+                    AttendanceResult.PRESENT, VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC, NOW);
+            dupSlot.setActiveSlot(1);
+            attendance.saveAndFlush(dupSlot);
+        }).isInstanceOf(DataIntegrityViolationException.class);
 
         Cookie studentCSession = loginCookie(studentC.getEmail(), "StudentPassword!25");
         mvc.perform(post("/api/v1/student/attendance/today").param("latitude","18.5204").param("longitude","73.8567")
@@ -120,9 +128,11 @@ class AttendanceIntegrationTest {
 
         mvc.perform(get("/api/v1/student/attendance/today").cookie(studentSession))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.attendance.attendanceDate").value(TODAY.toString()))
-                .andExpect(jsonPath("$.attendance.livenessStatus").value("NOT_PERFORMED"));
+                .andExpect(jsonPath("$.attendance.livenessStatus").value("NOT_PERFORMED"))
+                .andExpect(jsonPath("$.submissionsCount").value(2))
+                .andExpect(jsonPath("$.submissionOpen").value(false));
         mvc.perform(get("/api/v1/student/attendance").cookie(studentSession))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].internshipId").value(internshipA.getId()));
     }
 

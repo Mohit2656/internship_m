@@ -64,9 +64,9 @@ public class AttendanceExceptionService {
 
         // Prevent ordinary students from retroactively changing finalized attendance to HOLIDAY without authorized correction
         LocalDate today = LocalDate.now(clock);
-        var existingAttendance = attendance.findByStudentIdAndInternshipIdAndAttendanceDate(studentId, internship.getId(), date);
-        if (existingAttendance.isPresent()) {
-            AttendanceRecord record = existingAttendance.get();
+        var existingAttendance = attendance.findAllByStudentIdAndInternshipIdAndAttendanceDateOrderByActiveSlotAscIdAsc(
+                studentId, internship.getId(), date);
+        for (AttendanceRecord record : existingAttendance) {
             if (record.getAttendanceResult() == AttendanceResult.PRESENT || record.getVerificationStatus() == VerificationStatus.VERIFIED) {
                 throw new AttendanceException(HttpStatus.CONFLICT, "ATTENDANCE_ALREADY_RECORDED",
                         "Attendance is already marked as PRESENT for this date. Contact your faculty mentor for an authorized correction.");
@@ -143,14 +143,16 @@ public class AttendanceExceptionService {
         entity.review(reviewer, newStatus, remarks != null ? remarks.trim() : null);
         exceptions.saveAndFlush(entity);
 
-        // If an approved holiday exception was approved, purge any auto-absence record on that date
+        // If an approved holiday exception was approved, purge any auto-absence records on that date
         if (newStatus == AttendanceExceptionStatus.APPROVED && entity.getExceptionType() == AttendanceExceptionType.COMPANY_HOLIDAY) {
-            var autoAbsent = attendance.findByStudentIdAndInternshipIdAndAttendanceDate(
+            var autoAbsents = attendance.findAllByStudentIdAndInternshipIdAndAttendanceDateOrderByActiveSlotAscIdAsc(
                     entity.getStudent().getId(), entity.getInternship().getId(), entity.getExceptionDate());
-            if (autoAbsent.isPresent() && autoAbsent.get().isAutomaticAbsent()) {
-                attendance.delete(autoAbsent.get());
-                log.info("Purged auto-absence record on approved holiday date {} for internship {}",
-                        entity.getExceptionDate(), entity.getInternship().getId());
+            for (AttendanceRecord rec : autoAbsents) {
+                if (rec.isAutomaticAbsent()) {
+                    attendance.delete(rec);
+                    log.info("Purged auto-absence record on approved holiday date {} for internship {}",
+                            entity.getExceptionDate(), entity.getInternship().getId());
+                }
             }
         }
 

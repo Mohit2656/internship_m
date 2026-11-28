@@ -23,6 +23,9 @@ public interface InternshipDetailsRepository extends JpaRepository<InternshipDet
     List<InternshipDetails> findEligibleForAbsenceProcessing(LocalDate through);
     @Query("select i from InternshipDetails i where i.onboarding.student.id=:studentId and i.onboarding.internshipNumber=1") Optional<InternshipDetails> findByOnboardingStudentId(Long studentId);
     Optional<InternshipDetails> findByIdAndOnboardingStudentId(Long id,Long studentId);
+    @EntityGraph(attributePaths = {"onboarding", "onboarding.student"})
+    @Query("select i from InternshipDetails i where i.id = :id")
+    Optional<InternshipDetails> findByIdWithOnboardingAndStudent(Long id);
     @EntityGraph(attributePaths = {"onboarding", "onboarding.student", "workplace"})
     List<InternshipDetails> findAllByOnboardingStudentIdOrderByOnboardingInternshipNumber(Long studentId);
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)

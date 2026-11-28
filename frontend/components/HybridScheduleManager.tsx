@@ -5,10 +5,27 @@ import { AxiosError } from "axios";
 import { api, ApiError } from "@/lib/api";
 import { HybridSchedule, HybridScheduleEntry, HybridWorkMode } from "@/lib/attendance";
 
-const weekdays = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
+const ALL_DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+const DEFAULT_DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
 
-export function HybridScheduleManager({ studentId }: { studentId: number }) {
-  const [entries, setEntries] = useState<HybridScheduleEntry[]>(weekdays.map(dayOfWeek => ({ dayOfWeek, workMode: "OFFICE" })));
+function orderedDays(workingDays?: string[] | null, savedEntries?: HybridScheduleEntry[]): string[] {
+  const allowed = new Set<string>();
+  const source = workingDays && workingDays.length > 0 ? workingDays : DEFAULT_DAYS;
+  source.forEach((d) => allowed.add(d.toUpperCase()));
+  savedEntries?.forEach((e) => allowed.add(e.dayOfWeek.toUpperCase()));
+  return ALL_DAYS.filter((day) => allowed.has(day));
+}
+
+export function HybridScheduleManager({
+  studentId,
+  workingDays,
+}: {
+  studentId: number;
+  workingDays?: string[] | null;
+}) {
+  const [entries, setEntries] = useState<HybridScheduleEntry[]>(
+    orderedDays(workingDays).map(dayOfWeek => ({ dayOfWeek, workMode: "OFFICE" }))
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -18,11 +35,12 @@ export function HybridScheduleManager({ studentId }: { studentId: number }) {
     api.get<HybridSchedule>(`/admin/students/${studentId}/internship/hybrid-schedule`)
       .then(response => {
         const existing = new Map(response.data.entries.map(entry => [entry.dayOfWeek, entry.workMode]));
-        setEntries(weekdays.map(dayOfWeek => ({ dayOfWeek, workMode: existing.get(dayOfWeek) ?? "OFFICE" })));
+        const days = orderedDays(workingDays, response.data.entries);
+        setEntries(days.map(dayOfWeek => ({ dayOfWeek, workMode: existing.get(dayOfWeek) ?? "OFFICE" })));
       })
       .catch(() => setError("Hybrid schedule could not be loaded."))
       .finally(() => setLoading(false));
-  }, [studentId]);
+  }, [studentId, workingDays]);
 
   function change(dayOfWeek: string, workMode: HybridWorkMode) {
     setSaved(false);

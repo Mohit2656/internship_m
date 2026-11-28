@@ -64,6 +64,7 @@ public class StudentChangeNotificationIntegrationTest {
         jdbc.update("delete from mentor_notifications");
         jdbc.update("delete from student_edit_permission_audit");
         jdbc.update("delete from student_edit_permissions");
+        jdbc.update("delete from attendance_records");
         jdbc.update("delete from second_internship_requests");
         locations.deleteAll();
         details.deleteAll();

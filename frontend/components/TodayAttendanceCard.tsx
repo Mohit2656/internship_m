@@ -146,13 +146,6 @@ export function TodayAttendanceCard() {
     if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); stopCamera(); setLocating(false); setFlowOpen(false); return; }
     setWindowClosed(false);
     if (!today?.submissionDeadlineAt) return;
-    if (today.latePermissionEnabled) {
-      if (typeof window === "undefined") return;
-      const timer = window.setInterval(() => {
-        if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); stopCamera(); setLocating(false); setFlowOpen(false); }
-      }, 1000);
-      return () => window.clearInterval(timer);
-    }
     const timer = setTimeout(() => { setWindowClosed(true); stopCamera(); setLocating(false); setFlowOpen(false); }, Math.min(2_147_483_647, Math.max(0, Date.parse(today.submissionDeadlineAt) - Date.now())));
     return () => clearTimeout(timer);
   }, [today]);
@@ -207,8 +200,9 @@ export function TodayAttendanceCard() {
   }, [flowOpen, photo]);
 
   useEffect(() => {
-    const isSubmitted = Boolean(today?.attendance && !isAutomaticAbsence(today.attendance));
-    if (isSubmitted && flowOpen) {
+    const count = today?.submissionsCount ?? (today?.todaySubmissions?.length ?? (today?.attendance && !isAutomaticAbsence(today.attendance) ? 1 : 0));
+    const maxDaily = today?.maxDailySubmissions ?? 2;
+    if (count >= maxDaily && flowOpen) {
       stopCamera();
       setFlowOpen(false);
     }
@@ -247,16 +241,17 @@ export function TodayAttendanceCard() {
   }
 
   async function startCamera(preserveLocation = false) {
-    const isSubmitted = Boolean(today?.attendance && !isAutomaticAbsence(today.attendance));
-    if (isSubmitted) {
+    const count = today?.submissionsCount ?? (today?.todaySubmissions?.length ?? (today?.attendance && !isAutomaticAbsence(today.attendance) ? 1 : 0));
+    const maxDaily = today?.maxDailySubmissions ?? 2;
+    if (count >= maxDaily) {
       stopCamera();
       setFlowOpen(false);
-      setError("Today's attendance has already been submitted for this internship.");
+      setError("All 2 daily attendance submissions have already been recorded for today.");
       return;
     }
     if (!attendanceSubmissionOpen(today)) {
       setWindowClosed(true);
-      setError("Today's attendance submission window has closed.");
+      setError("Today's attendance submission is not available.");
       return;
     }
     const isLocationValid = Boolean(
@@ -406,8 +401,28 @@ export function TodayAttendanceCard() {
     if (submissionLocation.capturedAt) form.append("locationCapturedAt", submissionLocation.capturedAt);
   }
 
+  function recordSubmittedAttendance(data: Attendance) {
+    setToday(current => {
+      const base = current?.todaySubmissions && current.todaySubmissions.length > 0
+        ? current.todaySubmissions
+        : (current?.attendance && !isAutomaticAbsence(current.attendance) ? [current.attendance] : []);
+      const filtered = base.filter(item => item.id !== data.id);
+      const next = [...filtered, data];
+      const maxDaily = current?.maxDailySubmissions ?? 2;
+      return {
+        ...current,
+        attendanceDate: data.attendanceDate,
+        attendance: data,
+        todaySubmissions: next,
+        submissionsCount: next.length,
+        maxDailySubmissions: maxDaily,
+        submissionOpen: next.length < maxDaily,
+      };
+    });
+  }
+
   async function submitBasic() {
-    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's daily attendance limit has been reached."); return; }
     if (policy?.verificationMethod !== "BASIC" && policy?.verificationMethod !== "UNAVAILABLE") {
       setError("Use today's required attendance evidence flow.");
       return;
@@ -416,6 +431,7 @@ export function TodayAttendanceCard() {
       setError("Capture your submission location before submitting attendance."); return;
     }
     setSubmitting(true); setError("");
+    const submittedAt = new Date().toISOString();
     try {
       const { data } = await api.post<Attendance>("/student/attendance/today", null, {
         params: {
@@ -423,11 +439,12 @@ export function TodayAttendanceCard() {
           latitude: submissionLocation.latitude,
           longitude: submissionLocation.longitude,
           ...(Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? { accuracy: submissionLocation.accuracy } : {}),
-          ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {})
+          ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {}),
+          submittedAt,
         }
       });
       statusVersionRef.current += 1;
-      setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
+      recordSubmittedAttendance(data);
       stopCamera(); setFlowOpen(false);
     } catch (cause) {
       setError(parseAttendanceError(cause));
@@ -435,19 +452,21 @@ export function TodayAttendanceCard() {
   }
 
   async function submitUploadedPhoto() {
-    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's daily attendance limit has been reached."); return; }
     if (!uploadedPhotoFile) { setError("Please select a photograph to upload."); return; }
     setSubmitting(true); setError("");
+    const submittedAt = new Date().toISOString();
     const form = new FormData();
     form.append("photo", uploadedPhotoFile);
+    form.append("submittedAt", submittedAt);
     if (internshipId) form.append("internshipId", String(internshipId));
     try {
       const { data } = await api.post<Attendance>("/student/attendance/today/upload", form, {
         headers: { "Content-Type": "multipart/form-data" },
-        params: internshipId ? { internshipId } : undefined,
+        params: { ...(internshipId ? { internshipId } : {}), submittedAt },
       });
       statusVersionRef.current += 1;
-      setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
+      recordSubmittedAttendance(data);
       setUploadedPhotoFile(null);
       setUploadedPhotoPreview("");
       setFlowOpen(false);
@@ -459,14 +478,16 @@ export function TodayAttendanceCard() {
   }
 
   async function submitPhysical() {
-    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's daily attendance limit has been reached."); return; }
     if (!photo) return;
     if (!submissionLocation || !validSubmissionCoordinates(submissionLocation.latitude, submissionLocation.longitude)) {
       setError("Capture your submission location before submitting attendance."); return;
     }
     setSubmitting(true); setError("");
+    const submittedAt = new Date().toISOString();
     const form = new FormData();
     form.append("photo", photo, "attendance-capture.jpg");
+    form.append("submittedAt", submittedAt);
     appendAiEvidence(form);
     appendSubmissionLocation(form);
     if(internshipId) form.append("internshipId",String(internshipId));
@@ -480,11 +501,12 @@ export function TodayAttendanceCard() {
             longitude: submissionLocation.longitude,
             ...(Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? { accuracy: submissionLocation.accuracy } : {}),
             ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {})
-          } : {})
+          } : {}),
+          submittedAt,
         },
       });
       statusVersionRef.current += 1;
-      setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
+      recordSubmittedAttendance(data);
       stopCamera();
       setFlowOpen(false);
     } catch (cause) {
@@ -493,7 +515,7 @@ export function TodayAttendanceCard() {
   }
 
   async function submitRemote() {
-    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's attendance submission window has closed."); return; }
+    if (!attendanceSubmissionOpen(today)) { setWindowClosed(true); setError("Today's daily attendance limit has been reached."); return; }
     if (!photo) return;
     const summary = dailyWorkSummary.trim();
     if (summary.length < 20 || summary.length > 1000) {
@@ -503,8 +525,10 @@ export function TodayAttendanceCard() {
       setError("Capture your submission location before submitting attendance."); return;
     }
     setSubmitting(true); setError("");
+    const submittedAt = new Date().toISOString();
     const form = new FormData();
     form.append("photo", photo, "attendance-capture.jpg");
+    form.append("submittedAt", submittedAt);
     appendAiEvidence(form);
     appendSubmissionLocation(form);
     form.append("dailyWorkSummary", summary);
@@ -520,13 +544,15 @@ export function TodayAttendanceCard() {
             longitude: submissionLocation.longitude,
             ...(Number.isFinite(submissionLocation.accuracy) && submissionLocation.accuracy >= 0 ? { accuracy: submissionLocation.accuracy } : {}),
             ...(submissionLocation.capturedAt ? { locationCapturedAt: submissionLocation.capturedAt } : {})
-          } : {})
+          } : {}),
+          submittedAt,
         },
       });
       statusVersionRef.current += 1;
-      setToday(current => ({ ...current, attendanceDate: data.attendanceDate, attendance: data, submissionOpen: false }));
+      recordSubmittedAttendance(data);
       stopCamera();
       setFlowOpen(false);
+      setDailyWorkSummary("");
     } catch (cause) {
       setError(parseAttendanceError(cause));
     } finally { setSubmitting(false); }
@@ -573,21 +599,52 @@ export function TodayAttendanceCard() {
   const isLifecycleEnded = policy?.lifecycleStatus === "ENDED" || policy?.lifecycleStatus === "COMPLETED" || (Boolean(policy?.internshipEndDate) && Boolean(today?.attendanceDate) && policy!.internshipEndDate < today!.attendanceDate);
   const isLifecycleNotStarted = policy?.lifecycleStatus === "NOT_STARTED" || (Boolean(policy?.internshipStartDate) && Boolean(today?.attendanceDate) && policy!.internshipStartDate > today!.attendanceDate);
   const automatic = attendance ? isAutomaticAbsence(attendance) : false;
-  const submitted = Boolean(attendance && !automatic);
-  const latePermissionActive = Boolean(today?.latePermissionEnabled && attendanceSubmissionOpen(today));
-  const deadline = today?.submissionDeadlineAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: today.attendanceZone }).format(new Date(today.submissionDeadlineAt)) : null;
+  const todaySubmissions: Attendance[] = (today?.todaySubmissions && today.todaySubmissions.length > 0)
+    ? today.todaySubmissions
+    : (attendance && !automatic ? [attendance] : []);
+  const submissionsCount = today?.submissionsCount ?? todaySubmissions.length;
+  const maxDailySubmissions = today?.maxDailySubmissions ?? 2;
+  const submitted = submissionsCount >= maxDailySubmissions;
+  const hasAnySubmission = todaySubmissions.length > 0;
   const locationCaptureControl = <div className="mt-4 text-sm text-slate-600"><button data-button-variant="text" type="button" disabled={submitting || locating} onClick={includeSubmissionLocation} className="hover:underline">{locating ? "Capturing submission location..." : poorAccuracy ? "Retry GPS capture" : "Capture submission location (required)"}</button><p className="mt-1">Location is required to submit attendance.{!remote && typeof policy?.maxGpsAccuracyMeters === "number" && ` Required GPS accuracy: ${policy.maxGpsAccuracyMeters} m or better.`}</p>{locationNotice && <p role={poorAccuracy ? "alert" : "status"} className={`mt-2 ${poorAccuracy ? "text-amber-800" : ""}`}>{locationNotice}</p>}</div>;
   return (
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-7 lg:col-span-2">
       {internships.length>1&&<label className="mb-5 block text-sm font-semibold">Attendance internship<select className="input mt-2" value={internshipId??""} onChange={e=>{stopCamera();setFlowOpen(false);setError("");setAiError("");setSubmissionLocation(null);setLocationNotice("");setLocating(false);setInternshipId(Number(e.target.value));setToday(null);setPolicy(null);setLoading(true)}}>{internships.map(i=><option key={i.id} value={i.id}>Internship {i.internshipNumber} — {i.companyName}</option>)}</select></label>}
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Today&apos;s Attendance</p><h2 className="mt-3 text-xl font-bold">{loading ? "Checking attendance…" : attendance ? attendanceLabel(attendance) : isLifecycleEnded ? "Internship Completed" : isLifecycleNotStarted ? "Internship Not Started" : "Not submitted"}</h2></div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Today&apos;s Attendance</p>
+          <h2 className="mt-3 text-xl font-bold">
+            {loading ? "Checking attendance…" : attendance ? attendanceLabel(attendance) : isLifecycleEnded ? "Internship Completed" : isLifecycleNotStarted ? "Internship Not Started" : "Not submitted"}
+          </h2>
+          {!loading && !isLifecycleEnded && !isLifecycleNotStarted && (
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              Daily submissions: {submissionsCount} / {maxDailySubmissions} recorded today
+            </p>
+          )}
+        </div>
         {attendance && attendance.attendanceResult === "PRESENT" && <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${attendance.livenessStatus === "VERIFIED" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>{livenessLabel(attendance.livenessStatus)}</span>}
       </div>
-      {!loading && attendance ? <p className="mt-3 text-sm text-slate-600">{automatic ? "Automatically marked absent for the full working day because attendance was not submitted before the deadline." : <>Submitted at {new Date(attendance.serverSubmittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: today?.attendanceZone })} using server time.</>}</p> : !loading && isLifecycleEnded ? <p className="mt-3 text-sm text-slate-600">This internship concluded on {policy?.internshipEndDate}. Attendance is no longer active.</p> : !loading && isLifecycleNotStarted ? <p className="mt-3 text-sm text-slate-600">Attendance tracking starts on {policy?.internshipStartDate}.</p> : !loading && <p className="mt-3 text-sm text-slate-600">Attendance can be submitted once per working day during your registered internship period.{deadline && <> Submit before {deadline} ({today?.attendanceZone}). Missing attendance is marked absent for the full working day after this deadline.</>}</p>}
-      {!loading && latePermissionActive && <p role="status" className="mt-4 rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-800">Your faculty mentor has enabled late attendance submission for {today?.attendanceDate} ({today?.attendanceZone}). Permission expires at the end of this day. Complete the required attendance validation to submit.{automatic && " A valid submission will update today's automatic absence."}</p>}
-      {!loading && attendance?.submittedLate && <p className="mt-3 text-sm font-semibold text-blue-700">Submitted late with faculty mentor permission.</p>}
-      {!loading && windowClosed && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && <p role="status" className="mt-3 text-sm text-amber-800">Today's submission window has closed. Any missing attendance will be recorded as absent automatically.</p>}
+      {!loading && attendance && !hasAnySubmission ? <p className="mt-3 text-sm text-slate-600">{automatic ? "Automatically marked absent for the missed working day." : null}</p> : !loading && hasAnySubmission ? (
+        <div className="mt-3 space-y-2">
+          <p className="text-sm text-slate-600">
+            Submitted at {new Date(attendance!.serverSubmittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: today?.attendanceZone })} using server time.
+          </p>
+          {todaySubmissions.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs space-y-1.5">
+              {todaySubmissions.map((entry, idx) => (
+                <div key={entry.id ?? idx} className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-slate-800">
+                    Submission #{entry.submissionSlot ?? idx + 1} · {attendanceLabel(entry)}
+                  </span>
+                  <span className="text-slate-600">
+                    {new Date(entry.serverSubmittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit", timeZone: today?.attendanceZone })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : !loading && isLifecycleEnded ? <p className="mt-3 text-sm text-slate-600">This internship concluded on {policy?.internshipEndDate}. Attendance is no longer active.</p> : !loading && isLifecycleNotStarted ? <p className="mt-3 text-sm text-slate-600">Attendance tracking starts on {policy?.internshipStartDate}.</p> : !loading && <p className="mt-3 text-sm text-slate-600">Submit up to 2 attendance records at any time during a working day in {today?.attendanceZone ?? "Asia/Kolkata"}. Every submission records your timestamp automatically.</p>}
       {!loading && attendance && !automatic && <AttendanceLocations evidence={attendance.evidence} />}
       {!loading && attendance && !automatic && <LocationVerificationResult evidence={attendance.evidence} maxGpsAccuracyMeters={policy?.maxGpsAccuracyMeters}/>}
       {!loading && attendance?.attendanceResult === "PENDING_MENTOR_REVIEW" && <p role="alert" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Your evidence was saved and is pending mentor review. {attendance.evidence?.locationVerificationStatus && attendance.evidence.locationVerificationStatus !== "VERIFIED" && attendance.evidence.locationVerificationStatus !== "NOT_APPLICABLE" ? `Location issue: ${attendance.evidence.locationVerificationStatus.replaceAll("_", " ").toLowerCase()}.` : attendance.livenessStatus !== "VERIFIED" ? `Verification issue: ${attendance.evidence?.verificationReason?.replaceAll("_", " ").toLowerCase() || livenessLabel(attendance.livenessStatus)}.` : "A mandatory verification check requires review."}</p>}
@@ -699,7 +756,7 @@ export function TodayAttendanceCard() {
 
       {!loading && !submitted && !policy && <p role="alert" className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s attendance policy could not be confirmed. Reload the dashboard before submitting attendance.</p>}
       {!loading && !submitted && policy && !policy.configurationReady && <p className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">Today&apos;s work mode has not been configured. Attendance can be recorded; liveness will be marked as not performed.</p>}
-      {!loading && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && policy && !flowOpen && (!policy.scheduledDayOff || forceExtraWork || policy.approvedExtraWorkday) && !policy.approvedHoliday && <button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || ((!physical && !remote) && (!submissionLocation || locating))} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 text-sm">{submitting ? "Submitting…" : "Mark Today's Attendance"}</button>}
+      {!loading && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && policy && !flowOpen && (!policy.scheduledDayOff || forceExtraWork || policy.approvedExtraWorkday) && !policy.approvedHoliday && <button type="button" disabled={windowClosed || !attendanceSubmissionOpen(today) || submitting || ((!physical && !remote) && (!submissionLocation || locating))} onClick={() => { if (physical || remote) void startCamera(); else void submitBasic(); }} className="mt-6 text-sm">{submitting ? "Submitting…" : submissionsCount > 0 ? `Mark Today's Attendance (${submissionsCount + 1} of ${maxDailySubmissions})` : "Mark Today's Attendance"}</button>}
       {!loading && !submitted && !isLifecycleEnded && !isLifecycleNotStarted && policy && !physical && !remote && (!policy.scheduledDayOff || forceExtraWork || policy.approvedExtraWorkday) && !policy.approvedHoliday && locationCaptureControl}
       {!loading && !submitted && !windowClosed && flowOpen && <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         {/* Mode Selector Tabs: Take Photo vs Upload Photo */}

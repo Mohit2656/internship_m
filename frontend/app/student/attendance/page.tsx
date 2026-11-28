@@ -67,28 +67,38 @@ export default function StudentAttendancePage() {
       return;
     }
 
-    api
-      .get<{ totals: AttendanceTotals }>("/student/attendance/summary", {
-        params: { internshipId: targetInternship.id },
-        signal: abort.signal,
-      })
-      .then(({ data }) => setSummary(data.totals))
-      .catch(() => {});
-
-    api
-      .get<Attendance[]>("/student/attendance", {
-        params: { internshipId: targetInternship.id },
-        signal: abort.signal,
-      })
-      .then(({ data }) => {
+    Promise.all([
+      api
+        .get<{ totals: AttendanceTotals }>("/student/attendance/summary", {
+          params: { internshipId: targetInternship.id },
+          signal: abort.signal,
+        })
+        .then(({ data }) => data.totals)
+        .catch(() => null),
+      api
+        .get<Attendance[]>("/student/attendance", {
+          params: { internshipId: targetInternship.id },
+          signal: abort.signal,
+        })
+        .then(({ data }) => data),
+    ])
+      .then(([totals, data]) => {
+        if (abort.signal.aborted) return;
+        setSummary(totals);
         setRecords(
-          [...data].sort((a, b) => b.attendanceDate.localeCompare(a.attendanceDate))
+          [...data].sort(
+            (a, b) =>
+              b.attendanceDate.localeCompare(a.attendanceDate) ||
+              (b.submissionSlot ?? 1) - (a.submissionSlot ?? 1) ||
+              b.id - a.id
+          )
         );
       })
       .catch((cause) => {
         if (!abort.signal.aborted) {
           if (axios.isAxiosError(cause) && (cause.response?.status === 409 || cause.response?.status === 404)) {
             setRecords([]);
+            setSummary(null);
           } else {
             setError("Attendance history could not be loaded. Please try again.");
           }
@@ -109,27 +119,18 @@ export default function StudentAttendancePage() {
   }
 
   const totalRecordedDays = records.length;
-  // Attendance counts - count distinct days to prevent duplicate counts
-  // Total submitted days = all student-submitted days (excluding automatic absences)
-  const submittedDates = new Set(
-    records.filter((r) => !isAutomaticAbsence(r)).map((r) => r.attendanceDate)
-  );
-  const totalSubmittedDays = summary?.submittedDays ?? submittedDates.size;
+  // Attendance counts - each daily submission counts individually (up to 2 per working day)
+  const presentCount =
+    summary?.presentDays ??
+    records.filter((r) => r.attendanceResult === "PRESENT").length;
 
-  const presentDates = new Set(
-    records.filter((r) => r.attendanceResult === "PRESENT").map((r) => r.attendanceDate)
-  );
-  const presentCount = summary?.presentDays ?? presentDates.size;
+  const absentCount =
+    summary?.absentDays ??
+    records.filter((r) => r.attendanceResult === "ABSENT" || isAutomaticAbsence(r)).length;
 
-  const absentDates = new Set(
-    records.filter((r) => r.attendanceResult === "ABSENT" || isAutomaticAbsence(r)).map((r) => r.attendanceDate)
-  );
-  const absentCount = summary?.absentDays ?? absentDates.size;
-
-  const pendingDates = new Set(
-    records.filter((r) => r.attendanceResult === "PENDING_MENTOR_REVIEW").map((r) => r.attendanceDate)
-  );
-  const pendingCount = summary?.pendingDays ?? pendingDates.size;
+  const pendingCount =
+    summary?.pendingDays ??
+    records.filter((r) => r.attendanceResult === "PENDING_MENTOR_REVIEW").length;
 
   const filtered = records.filter((record) => {
     if (filter === "PRESENT" && record.attendanceResult !== "PRESENT") return false;
@@ -222,44 +223,44 @@ export default function StudentAttendancePage() {
           {/* Active Internship Info banner */}
           {activeInternship && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600 border border-slate-200">
-              <div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-semibold text-slate-900">{activeInternship.companyName}</span>
-                <span className="mx-2 text-slate-300">•</span>
+                <span className="text-slate-300">•</span>
                 <span>{activeInternship.internshipModeLabel}</span>
-                <span className="mx-2 text-slate-300">•</span>
+                <span className="text-slate-300">•</span>
                 <span>{activeInternship.startDate} to {activeInternship.endDate}</span>
+                {summary?.workingDays != null && (
+                  <>
+                    <span className="text-slate-300">•</span>
+                    <span className="font-semibold text-slate-700">
+                      {summary.workingDays} {summary.workingDays === 1 ? "Working Day" : "Working Days"}
+                      {summary.percentage != null ? ` (${summary.percentage.toFixed(1)}% Present)` : ""}
+                    </span>
+                  </>
+                )}
               </div>
               <span className="font-medium text-slate-500">Internship ID: {activeInternship.id}</span>
             </div>
           )}
 
           {/* Attendance Stats Cards */}
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-            <div className="flex flex-col justify-between rounded-2xl border border-blue-200/80 bg-blue-50/40 p-4 sm:p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-800 sm:text-xs">
-                Submitted Days
-              </p>
-              <div className="mt-3">
-                <p className="text-2xl font-bold tabular-nums text-blue-700">{totalSubmittedDays}</p>
-                <p className="mt-1 text-xs text-blue-600">Student submissions</p>
-              </div>
-            </div>
+          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
             <div className="flex flex-col justify-between rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 sm:p-5">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800 sm:text-xs">
-                Present Days
+                Present Entries
               </p>
               <div className="mt-3">
                 <p className="text-2xl font-bold tabular-nums text-emerald-700">{presentCount}</p>
-                <p className="mt-1 text-xs text-emerald-600">Verified attendances</p>
+                <p className="mt-1 text-xs text-emerald-600">Verified submissions (2/day)</p>
               </div>
             </div>
             <div className="flex flex-col justify-between rounded-2xl border border-red-200/80 bg-red-50/40 p-4 sm:p-5">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-red-800 sm:text-xs">
-                Absent Days
+                Absent Entries
               </p>
               <div className="mt-3">
                 <p className="text-2xl font-bold tabular-nums text-red-700">{absentCount}</p>
-                <p className="mt-1 text-xs text-red-600">Unsubmitted or absent</p>
+                <p className="mt-1 text-xs text-red-600">Missed or rejected (2/day)</p>
               </div>
             </div>
             <div className="flex flex-col justify-between rounded-2xl border border-amber-200/80 bg-amber-50/40 p-4 sm:p-5">
@@ -396,9 +397,9 @@ export default function StudentAttendancePage() {
                 <table className="w-full min-w-[800px] text-left text-sm text-slate-900 border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-500">
-                      <th className="p-3 whitespace-nowrap">Date</th>
+                      <th className="p-3 whitespace-nowrap">Date &amp; Slot</th>
                       <th className="p-3">Status &amp; Verification</th>
-                      <th className="p-3 whitespace-nowrap">Recorded By</th>
+                      <th className="p-3 whitespace-nowrap">Submission Time</th>
                       <th className="p-3">Location &amp; Liveness</th>
                       <th className="p-3 whitespace-nowrap">Mentor Approval</th>
                     </tr>
@@ -409,6 +410,14 @@ export default function StudentAttendancePage() {
                         record.attendanceResult === "ABSENT" || isAutomaticAbsence(record);
                       const isPending =
                         record.attendanceResult === "PENDING_MENTOR_REVIEW";
+                      const submittedAtText =
+                        !isAutomaticAbsence(record) && record.serverSubmittedAt
+                          ? new Intl.DateTimeFormat("en-IN", {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                              timeZone: "Asia/Kolkata",
+                            }).format(new Date(record.serverSubmittedAt))
+                          : null;
 
                       return (
                         <tr
@@ -416,7 +425,10 @@ export default function StudentAttendancePage() {
                           className="hover:bg-slate-50/50 transition-colors align-top"
                         >
                           <td className="p-3 font-semibold text-slate-900 whitespace-nowrap">
-                            {record.attendanceDate}
+                            <span>{record.attendanceDate}</span>
+                            <span className="ml-2 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+                              #{record.submissionSlot ?? 1}
+                            </span>
                           </td>
                           <td className="p-3">
                             <span
@@ -442,13 +454,17 @@ export default function StudentAttendancePage() {
                             )}
                           </td>
                           <td className="p-3 text-xs text-slate-600 whitespace-nowrap">
-                            {isAutomaticAbsence(record)
-                              ? "Automatic — deadline elapsed"
-                              : "Student submission"}
-                            {record.submittedLate && (
-                              <span className="mt-1 block font-semibold text-blue-700">
-                                Late submission
-                              </span>
+                            {isAutomaticAbsence(record) ? (
+                              <span>Automatic — day elapsed</span>
+                            ) : (
+                              <>
+                                <span className="block font-medium text-slate-800">
+                                  {submittedAtText ?? "Submitted"}
+                                </span>
+                                <span className="mt-0.5 block text-[11px] text-slate-500">
+                                  Student submission
+                                </span>
+                              </>
                             )}
                           </td>
                           <td className="p-3 text-xs text-slate-600">

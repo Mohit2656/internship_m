@@ -63,3 +63,20 @@ test("mentor attendance history does not display review audit history control", 
   const h = harness({}, { role: "MENTOR" });
   assert.doesNotMatch(h.html(), /Review audit history/);
 });
+
+test("mentor can override finalized absent or automatic absence to present and vice versa", async () => {
+  const calls = []; let changed = 0;
+  const autoAbsent = { ...record, id: 92, attendanceResult: "ABSENT", automaticAbsent: true, submissionType: "AUTO_ABSENT", review: { status: "NOT_APPLICABLE", revision: 0, approvalAllowed: true } };
+  const absentHarness = harness({ async post(url, body) { calls.push({ url, body }); return { data: {} }; } }, { record: autoAbsent, onChanged() { changed++; } });
+  assert.ok(absentHarness.button("Change to Present"));
+  absentHarness.button("Change to Present").props.onClick(); await flush();
+  assert.deepEqual(calls[0], { url: "/mentor/attendance/92/review", body: { status: "APPROVED", revision: 0, reason: null } });
+
+  const finalizedPresent = { ...record, id: 93, attendanceResult: "PRESENT", review: { status: "APPROVED", revision: 1, approvalAllowed: false } };
+  const presentHarness = harness({ async post(url, body) { calls.push({ url, body }); return { data: {} }; } }, { record: finalizedPresent, onChanged() { changed++; } });
+  assert.ok(presentHarness.button("Change to Absent"));
+  presentHarness.reason("Student was not on site");
+  presentHarness.button("Change to Absent").props.onClick(); await flush();
+  assert.deepEqual(calls[1], { url: "/mentor/attendance/93/review", body: { status: "REJECTED", revision: 1, reason: "Student was not on site" } });
+  assert.equal(changed, 2);
+});

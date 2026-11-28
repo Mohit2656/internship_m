@@ -29,6 +29,7 @@ class DashboardIntegrationTest {
     Cookie adminCookie; Cookie studentCookie;
 
     @BeforeEach void setUp() throws Exception {
+        jdbc.update("delete from attendance_records");
         details.deleteAll(); documents.deleteAll(); onboardings.deleteAll(); profiles.deleteAll(); accounts.deleteAll(); users.deleteAll();
         String sessionName="DASHBOARD-"+UUID.randomUUID();
         jdbc.update("insert into academic_sessions(name,start_date,end_date) values(?,DATE '2026-07-01',DATE '2027-06-30')",sessionName);

@@ -133,6 +133,13 @@ class OnlineHybridAttendanceIntegrationTest {
         assertThat(stored.getVerificationReason()).isEqualTo(VerificationReason.EDGE_AI_VERIFIED);
         assertThat(locations.findAll()).isEmpty();
 
+        // 2nd daily remote submission succeeds; 3rd is blocked
+        mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
+                        .file(aiEvidence(session,1,true,true)).param("dailyWorkSummary",SUMMARY)
+                        .param("latitude","18.5204").param("longitude","73.8567")
+                        .param("verificationStatus", "VERIFIED").cookie(session))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.submissionSlot").value(2));
+
         mvc.perform(multipart("/api/v1/student/attendance/today/remote").file(photo())
                         .param("dailyWorkSummary", SUMMARY).param("latitude","18.5204").param("longitude","73.8567").cookie(session))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_ALREADY_SUBMITTED"));

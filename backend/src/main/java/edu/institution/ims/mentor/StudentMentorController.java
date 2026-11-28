@@ -7,7 +7,9 @@ import edu.institution.ims.internship.InternshipDetailsRepository;
 import edu.institution.ims.security.UserPrincipal;
 import edu.institution.ims.studentprofile.StudentProfile;
 import edu.institution.ims.studentprofile.StudentProfileRepository;
+import edu.institution.ims.user.User;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,15 +45,16 @@ public class StudentMentorController {
     }
 
     @GetMapping
+    @Transactional(readOnly = true)
     public StudentMentorResponse get(@AuthenticationPrincipal UserPrincipal principal) {
         String generalMentor = null;
         String generalEmail = null;
 
         var activeAssignment = assignments.findByStudentIdAndActiveTrue(principal.id()).orElse(null);
         if (activeAssignment != null) {
-            var mp = mentorProfiles.findByUserId(activeAssignment.getMentor().getId()).orElse(null);
-            generalMentor = mp != null ? mp.getName() : activeAssignment.getMentor().getEmail();
-            generalEmail = activeAssignment.getMentor().getEmail();
+            User assignedMentor = activeAssignment.getMentor();
+            generalMentor = resolveMentorName(assignedMentor);
+            generalEmail = assignedMentor.getEmail();
         } else {
             StudentProfile sp = studentProfiles.findByUserId(principal.id()).orElse(null);
             if (sp != null && sp.getFacultyMentorName() != null && !sp.getFacultyMentorName().isBlank()) {
@@ -67,8 +70,7 @@ public class StudentMentorController {
         if (int1 != null) {
             InternshipLocation loc1 = locations.findByInternshipId(int1.getId()).orElse(null);
             if (loc1 != null && loc1.getMentorReviewer() != null) {
-                var mp1 = mentorProfiles.findByUserId(loc1.getMentorReviewer().getId()).orElse(null);
-                int1Mentor = mp1 != null ? mp1.getName() : loc1.getMentorReviewer().getEmail();
+                int1Mentor = resolveMentorName(loc1.getMentorReviewer());
             }
         }
 
@@ -77,11 +79,16 @@ public class StudentMentorController {
         if (int2 != null) {
             InternshipLocation loc2 = locations.findByInternshipId(int2.getId()).orElse(null);
             if (loc2 != null && loc2.getMentorReviewer() != null) {
-                var mp2 = mentorProfiles.findByUserId(loc2.getMentorReviewer().getId()).orElse(null);
-                int2Mentor = mp2 != null ? mp2.getName() : loc2.getMentorReviewer().getEmail();
+                int2Mentor = resolveMentorName(loc2.getMentorReviewer());
             }
         }
 
         return new StudentMentorResponse(generalMentor, generalEmail, int1Mentor, int2Mentor);
+    }
+
+    private String resolveMentorName(User mentor) {
+        return mentorProfiles.findByUserId(mentor.getId())
+                .map(MentorProfile::getName)
+                .orElse(mentor.getEmail());
     }
 }

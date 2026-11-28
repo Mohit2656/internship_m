@@ -59,9 +59,12 @@ public class AttendancePolicyService {
         boolean scheduledWorkingDay = isWorkingDay && !approvedHoliday;
         boolean scheduledDayOff = !isWorkingDay || approvedHoliday;
 
+        long activeSubmissionsToday = attendance.findAllByStudentIdAndInternshipIdAndAttendanceDateOrderByActiveSlotAscIdAsc(
+                        principal.id(), internship.getId(), today).stream()
+                .filter(record -> !canReplaceAutomaticAbsence(record, principal.id(), internship.getId(), today))
+                .count();
         return new AttendancePolicyResponse(internship.getInternshipMode(), policy.todayWorkMode(),
-                policy.verificationMethod(), attendance.findByStudentIdAndInternshipIdAndAttendanceDate(principal.id(),internship.getId(), today)
-                        .map(record -> !canReplaceAutomaticAbsence(record, principal.id(), internship.getId(), today)).orElse(false),
+                policy.verificationMethod(), activeSubmissionsToday >= AttendanceAbsenceService.DAILY_SUBMISSION_SLOTS,
                 policy.configurationReady(), locationVerification.workplaceStatus(internship, policy.verificationMethod()),
                 lifecycle, internship.getStartDate(), internship.getEndDate(), lifecycle == AttendanceLifecycleStatus.ACTIVE,
                 today, locationVerification.maxGpsAccuracyMeters(),
@@ -86,10 +89,28 @@ public class AttendancePolicyService {
         };
     }
 
+    public boolean hasConfiguredHybridSchedule(Long internshipId) {
+        if (internshipId == null) return false;
+        if (!schedules.findAllByInternshipId(internshipId).isEmpty()) return true;
+        for (DayOfWeek day : DayOfWeek.values()) {
+            if (schedules.findByInternshipIdAndDayOfWeek(internshipId, day).isPresent()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean isTrackedWorkingDayPolicy(InternshipDetails internship, LocalDate date) {
+        if (internship == null || date == null) return false;
+        if (resolve(internship, date).configurationReady()) return true;
+        return internship.getInternshipMode() == InternshipMode.HYBRID
+                && !hasConfiguredHybridSchedule(internship.getId());
+    }
+
     public void requireSubmissionOpen(LocalDate date) {
         if (AttendanceSubmissionWindow.isClosed(date, clock)) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_WINDOW_CLOSED",
-                    "Daily attendance submission closes at 12:00 noon in the attendance time zone");
+                    "Attendance submission for that date has closed after midnight");
         }
     }
 
@@ -98,10 +119,7 @@ public class AttendancePolicyService {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_DATE_CHANGED",
                     "The attendance date has changed. Refresh today's attendance and try again");
         }
-        boolean allowed = internshipId != null
-                ? permissions.isEnabled(studentId, internshipId, date)
-                : permissions.isEnabled(studentId, date);
-        if (AttendanceSubmissionWindow.isClosed(date, clock) && !allowed) {
+        if (AttendanceSubmissionWindow.isClosed(date, clock)) {
             requireSubmissionOpen(date);
         }
     }
@@ -113,6 +131,9 @@ public class AttendancePolicyService {
     public AttendanceLifecycleStatus lifecycle(InternshipDetails internship, LocalDate date) {
         if (internship == null || internship.getStartDate() == null || internship.getEndDate() == null) {
             return AttendanceLifecycleStatus.NOT_STARTED;
+        }
+        if (internship.isDeleted() || internship.isEarlyTerminated()) {
+            return AttendanceLifecycleStatus.ENDED;
         }
         if (internship.getOnboarding() == null || internship.getOnboarding().getWorkflowStatus() != WorkflowStatus.INTERNSHIP_DETAILS_COMPLETE) {
             return AttendanceLifecycleStatus.NOT_STARTED;
@@ -137,11 +158,8 @@ public class AttendancePolicyService {
     }
 
     boolean canReplaceAutomaticAbsence(AttendanceRecord record, Long studentId, Long internshipId, LocalDate date) {
-        boolean allowed = internshipId != null
-                ? permissions.isEnabled(studentId, internshipId, date)
-                : permissions.isEnabled(studentId, date);
         return record.isAutomaticAbsent() && record.getEvidence() == null
-                && date.equals(record.getAttendanceDate()) && allowed;
+                && date.equals(record.getAttendanceDate());
     }
 
     boolean canReplaceAutomaticAbsence(AttendanceRecord record, Long studentId, LocalDate date) {

@@ -21,10 +21,14 @@ public interface AttendanceRepository extends JpaRepository<AttendanceRecord, Lo
     List<java.sql.Date> findRecordedDatesIncludingDeleted(Long internshipId);
     @Query(value = "select count(*) from attendance_records where internship_id = :internshipId and attendance_date = :date", nativeQuery = true)
     long countIncludingDeleted(Long internshipId, LocalDate date);
+    @Query(value = "select active_slot from attendance_records where internship_id = :internshipId and attendance_date = :date and deleted_at is null and active_slot is not null", nativeQuery = true)
+    List<Integer> findActiveSlots(Long internshipId, LocalDate date);
     @EntityGraph(attributePaths = {"internship", "evidence", "review"})
     Optional<AttendanceRecord> findByStudentIdAndAttendanceDate(Long studentUserId, LocalDate attendanceDate);
     @EntityGraph(attributePaths = {"internship", "evidence", "review"})
     Optional<AttendanceRecord> findByStudentIdAndInternshipIdAndAttendanceDate(Long studentUserId, Long internshipId, LocalDate attendanceDate);
+    @EntityGraph(attributePaths = {"internship", "evidence", "review"})
+    List<AttendanceRecord> findAllByStudentIdAndInternshipIdAndAttendanceDateOrderByActiveSlotAscIdAsc(Long studentUserId, Long internshipId, LocalDate attendanceDate);
     @EntityGraph(attributePaths = {"internship", "evidence", "review"})
     List<AttendanceRecord> findAllByStudentIdOrderByAttendanceDateDescServerSubmittedAtDesc(Long studentUserId);
     @EntityGraph(attributePaths = {"internship", "evidence", "review"})

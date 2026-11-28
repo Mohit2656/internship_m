@@ -89,11 +89,16 @@ class MentorNotificationIntegrationTest {
         assertThat(notice.actionUrl()).isEqualTo("/mentor/attendance");
         assertThat(notice.createdAt()).isEqualTo(NOW);
         assertThat(notice.readAt()).isNull();
+        // 2nd daily submission succeeds and notifies; 3rd submission on the same day is blocked
+        mvc.perform(post("/api/v1/student/attendance/today").with(user(principal(student)))
+                        .param("latitude", "18.5204").param("longitude", "73.8567"))
+                .andExpect(status().isCreated());
         mvc.perform(post("/api/v1/student/attendance/today").with(user(principal(student)))
                         .param("latitude", "18.5204").param("longitude", "73.8567"))
                 .andExpect(status().isConflict());
-        notifications.attendanceSubmitted(attendance.findByStudentIdAndAttendanceDate(student.getId(), TODAY).orElseThrow());
-        assertThat(new MentorNotificationService(jdbc, clock).list(principal(mentor), 0).content()).containsExactly(notice);
+        notifications.attendanceSubmitted(attendance.findAllByStudentIdAndInternshipIdAndAttendanceDateOrderByActiveSlotAscIdAsc(
+                student.getId(), internship.getId(), TODAY).get(0));
+        assertThat(new MentorNotificationService(jdbc, clock).list(principal(mentor), 0).content()).hasSize(2);
         assertThat(notifications.unread(principal(otherMentor)).unreadCount()).isZero();
         assertThat(jdbc.queryForObject("select count(*) from student_notifications", Long.class)).isZero();
     }
@@ -138,19 +143,22 @@ class MentorNotificationIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from mentor_notifications", Long.class)).isZero();
     }
 
-    @Test void automaticAbsenceDoesNotNotifyAndPermittedLateReplacementNotifiesOnce() {
-        clock.now = Instant.parse("2026-10-27T14:00:00Z");
+    @Test void automaticAbsenceDoesNotNotifyAndAnyTimeSubmissionNotifiesWithoutLatePermission() {
+        clock.now = Instant.parse("2026-10-27T14:00:00Z"); // 7:30 PM IST
         var absent = attendance.saveAndFlush(AttendanceRecord.automaticAbsent(student, internship, TODAY, clock.instant()));
         notifications.attendanceSubmitted(absent);
         assertThat(notifications.unread(principal(mentor)).unreadCount()).isZero();
-        permissions.setForMentor(student.getId(), true, principal(mentor));
         var submitted = basic.submitToday(principal(student), new BigDecimal("18"), new BigDecimal("73"), BigDecimal.TEN);
         assertThat(submitted.id()).isEqualTo(absent.getId());
-        assertThat(submitted.submittedLate()).isTrue();
+        assertThat(submitted.submittedLate()).isFalse();
         assertThat(notifications.list(principal(mentor), 0).content()).hasSize(1);
+        // 2nd submission on the same day is allowed and creates its own notification; 3rd is rejected
+        var second = basic.submitToday(principal(student), new BigDecimal("18"), new BigDecimal("73"), BigDecimal.TEN);
+        assertThat(second.submissionSlot()).isEqualTo(2);
+        assertThat(notifications.list(principal(mentor), 0).content()).hasSize(2);
         assertThatThrownBy(() -> basic.submitToday(principal(student), new BigDecimal("18"), new BigDecimal("73"), BigDecimal.TEN))
                 .isInstanceOf(AttendanceException.class);
-        assertThat(notifications.unread(principal(mentor)).unreadCount()).isEqualTo(1);
+        assertThat(notifications.unread(principal(mentor)).unreadCount()).isEqualTo(2);
     }
 
     @Test void readRoutesAreOwnedIdempotentAndCannotChangeAnotherMentorsInbox() throws Exception {

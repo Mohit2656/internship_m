@@ -16,6 +16,7 @@ public interface MentorStudentAssignmentRepository extends JpaRepository<MentorS
     @EntityGraph(attributePaths = {"student", "student.studentProfile", "student.studentAccount"})
     List<MentorStudentAssignment> findAllByMentorIdAndActiveTrueOrderByStudentEmailAsc(Long mentorUserId);
 
+    @EntityGraph(attributePaths = {"mentor"})
     Optional<MentorStudentAssignment> findByStudentIdAndActiveTrue(Long studentUserId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -210,8 +210,9 @@ for (const role of ["ADMIN", "MENTOR"]) test(`${role} history preserves chronolo
   assert.match(html, /1 present/); assert.match(html, /1 absent/); assert.match(html, /50.0%/);
   assert.ok(html.indexOf("2026-10-19") < html.indexOf("2026-10-20"));
   assert.match(html, /PRESENT/); assert.match(html, /ABSENT/);
-  assert.match(html, /Back to student list/); assert.match(html, /mentor permission/); assert.match(html, /Liveness verified/);
+  assert.match(html, /Back to student list/); assert.match(html, /#1/); assert.match(html, /Liveness verified/);
   assert.match(html, /automatic absence/); assert.match(html, /Asia\/Kolkata/);
+  assert.doesNotMatch(html, /mentor permission/);
   const deletionButtons = findAll(h.tree(), node => node.type === "button" && "data-delete-id" in node.props);
   assert.equal(deletionButtons.length, role === "MENTOR" ? 2 : 0);
   if (role === "MENTOR") {

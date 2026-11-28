@@ -43,6 +43,7 @@ export type Attendance = {
   submittedLate?: boolean;
   submissionType: AttendanceSubmissionType;
   serverSubmittedAt: string;
+  submissionSlot?: number | null;
   evidence?: AttendanceLocationEvidence | null;
   review?: AttendanceReview | null;
   acknowledgement?: AttendanceAcknowledgement | null;
@@ -75,15 +76,17 @@ export type TodayAttendance = {
   submissionOpen?: boolean;
   attendanceZone?: string;
   latePermissionEnabled?: boolean;
+  lifecycleStatus?: string;
+  todaySubmissions?: Attendance[];
+  submissionsCount?: number;
+  maxDailySubmissions?: number;
 };
 
 export function attendanceSubmissionOpen(today: TodayAttendance | null, now = Date.now()) {
   if (today?.submissionOpen === false) return false;
-  if (today?.latePermissionEnabled) {
-    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: today.attendanceZone ?? "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(now));
-    const part = (type: string) => parts.find(value => value.type === type)?.value;
-    return `${part("year")}-${part("month")}-${part("day")}` === today.attendanceDate;
-  }
+  const maxDaily = today?.maxDailySubmissions ?? 2;
+  const count = today?.submissionsCount ?? (today?.todaySubmissions?.length ?? (today?.attendance && !isAutomaticAbsence(today.attendance) ? 1 : 0));
+  if (count >= maxDaily) return false;
   return !today?.submissionDeadlineAt || now < Date.parse(today.submissionDeadlineAt);
 }
 

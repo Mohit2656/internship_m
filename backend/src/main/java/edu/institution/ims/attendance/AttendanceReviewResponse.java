@@ -12,8 +12,7 @@ public record AttendanceReviewResponse(AttendanceReviewStatus status, int revisi
                     review.getReviewerName(), review.getReviewedAt(), review.getReason(), approvalAllowed(record));
     }
     public static boolean approvalAllowed(AttendanceRecord record) {
-        return record.getAttendanceResult() == AttendanceResult.PENDING_MENTOR_REVIEW
-                && !record.isAutomaticAbsent() && record.getEvidence() != null;
+        return record.getAttendanceResult() != AttendanceResult.PRESENT;
     }
     public static boolean submissionVerificationPassed(AttendanceRecord record) {
         if (record.getEvidence() == null) return false;

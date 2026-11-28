@@ -13,12 +13,11 @@ export function DailyAttendanceHistory() {
   useEffect(() => {
     const abort = new AbortController();
     api.get<Attendance[]>("/student/attendance", { signal: abort.signal })
-      .then(({ data }) => setRecords([...data].sort((a, b) => b.attendanceDate.localeCompare(a.attendanceDate))))
+      .then(({ data }) => setRecords([...data].sort((a, b) => b.attendanceDate.localeCompare(a.attendanceDate) || (b.submissionSlot ?? 1) - (a.submissionSlot ?? 1) || b.id - a.id)))
       .catch(() => { if (!abort.signal.aborted) setError("Daily attendance history could not be loaded."); })
       .finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
   }, []);
-  const submitted = records.filter(record => !isAutomaticAbsence(record)).length;
   const present = records.filter(record => record.attendanceResult === "PRESENT").length;
   const absent = records.filter(record => record.attendanceResult === "ABSENT").length;
   const pending = records.filter(record => record.attendanceResult === "PENDING_MENTOR_REVIEW").length;
@@ -26,8 +25,8 @@ export function DailyAttendanceHistory() {
     <h2 className="text-xl font-bold">Daily Attendance History</h2>
     <p className="mt-2 text-sm text-slate-600">Each record covers one working day. Automatic absences are included in your attendance totals.</p>
     {loading ? <p className="mt-4 text-sm text-slate-500">Loading attendance history…</p> : error ? <p role="alert" className="mt-4 text-sm text-red-700">{error}</p> : <>
-      <p className="mt-4 text-sm font-semibold">{records.length} daily records · {submitted} submitted · {present} present · {absent} absent{pending > 0 ? ` · ${pending} pending review` : ""}</p>
-      <div className="mt-4 max-h-96 overflow-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="p-3">Date</th><th className="p-3">Attendance</th><th className="p-3">Recorded by</th><th className="p-3">Mentor approval</th></tr></thead><tbody>{records.map(record => <tr key={record.id} className="border-b border-slate-100"><td className="p-3">{record.attendanceDate}</td><td className={`p-3 ${record.attendanceResult === "ABSENT" ? "font-semibold text-red-700" : "text-slate-700"}`}>{attendanceLabel(record)}{record.attendanceResult === "PRESENT" && <LocationVerificationResult evidence={record.evidence}/>}</td><td className="p-3">{isAutomaticAbsence(record) ? "Automatic — no submission before deadline" : "Student submission"}</td><td className="p-3"><AttendanceReviewFeedback record={record} /></td></tr>)}</tbody></table>{records.length === 0 && <p className="p-3 text-slate-500">No daily attendance records yet.</p>}</div>
+      <p className="mt-4 text-sm font-semibold">{records.length} daily records · {present} present · {absent} absent{pending > 0 ? ` · ${pending} pending review` : ""}</p>
+      <div className="mt-4 max-h-96 overflow-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="p-3">Date</th><th className="p-3">Attendance</th><th className="p-3">Submission time</th><th className="p-3">Mentor approval</th></tr></thead><tbody>{records.map(record => <tr key={record.id} className="border-b border-slate-100"><td className="p-3">{record.attendanceDate}{record.submissionSlot ? <span className="ml-1.5 text-xs text-slate-500">#{record.submissionSlot}</span> : null}</td><td className={`p-3 ${record.attendanceResult === "ABSENT" ? "font-semibold text-red-700" : "text-slate-700"}`}>{attendanceLabel(record)}{record.attendanceResult === "PRESENT" && <LocationVerificationResult evidence={record.evidence}/>}</td><td className="p-3">{isAutomaticAbsence(record) ? "Automatic — no submission before deadline" : <>Student submission{record.serverSubmittedAt ? <span className="block text-xs text-slate-500">{new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }).format(new Date(record.serverSubmittedAt))}</span> : null}</>}</td><td className="p-3"><AttendanceReviewFeedback record={record} /></td></tr>)}</tbody></table>{records.length === 0 && <p className="p-3 text-slate-500">No daily attendance records yet.</p>}</div>
     </>}
   </section>;
 }

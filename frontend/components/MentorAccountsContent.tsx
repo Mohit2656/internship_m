@@ -20,6 +20,7 @@ const emptyForm: MentorAccountInput = {
 export function MentorAccountsContent({ embedded = false }: { embedded?: boolean } = {}) {
   const [mentors, setMentors] = useState<MentorAccount[]>([]);
   const [selectedMentor, setSelectedMentor] = useState<MentorAccount | null>(null);
+  const [scrollRequest, setScrollRequest] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -27,6 +28,7 @@ export function MentorAccountsContent({ embedded = false }: { embedded?: boolean
   const [success, setSuccess] = useState("");
   const [deletionNotice, setDeletionNotice] = useState("");
   const deletionNoticeRef = useRef<HTMLParagraphElement>(null);
+  const assignmentSectionRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -46,6 +48,63 @@ export function MentorAccountsContent({ embedded = false }: { embedded?: boolean
   useEffect(() => {
     if (deletionNotice) deletionNoticeRef.current?.focus();
   }, [deletionNotice]);
+
+  useEffect(() => {
+    if (!selectedMentor || scrollRequest === 0 || typeof window === "undefined") return;
+    const section = assignmentSectionRef.current;
+    if (!section) return;
+
+    const behavior: ScrollBehavior = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth";
+    let cancelled = false;
+    let observer: ResizeObserver | undefined;
+
+    const scrollToSection = () => {
+      if (!cancelled) {
+        section.scrollIntoView({ behavior, block: "start" });
+      }
+    };
+
+    const stopObserving = () => {
+      cancelled = true;
+      observer?.disconnect();
+    };
+
+    let frameId = window.requestAnimationFrame(scrollToSection);
+
+    let lastHeight = section.getBoundingClientRect().height;
+    let timerId: number | undefined;
+    if (typeof ResizeObserver === "function") {
+      // Wait briefly for the assignment card to expand once student data loads so short initial height does not clip the scroll.
+      observer = new ResizeObserver(() => {
+        const nextHeight = section.getBoundingClientRect().height;
+        const grew = nextHeight > lastHeight + 24;
+        lastHeight = nextHeight;
+        if (grew && section.getBoundingClientRect().top > 120) {
+          window.cancelAnimationFrame(frameId);
+          frameId = window.requestAnimationFrame(scrollToSection);
+        }
+      });
+      observer.observe(section);
+      window.addEventListener("wheel", stopObserving, { passive: true, once: true });
+      window.addEventListener("touchstart", stopObserving, { passive: true, once: true });
+      timerId = window.setTimeout(() => observer?.disconnect(), 1500);
+    }
+
+    return () => {
+      stopObserving();
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("wheel", stopObserving);
+      window.removeEventListener("touchstart", stopObserving);
+      if (timerId !== undefined) window.clearTimeout(timerId);
+    };
+  }, [selectedMentor, scrollRequest]);
+
+  function openAssignmentSection(mentor: MentorAccount) {
+    setSelectedMentor(mentor);
+    setScrollRequest((current) => current + 1);
+  }
 
   function update(field: keyof MentorAccountInput, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -176,7 +235,7 @@ export function MentorAccountsContent({ embedded = false }: { embedded?: boolean
                       <p className="text-xl font-bold">{mentor.assignedStudentCount}</p>
                     </div>
                   </div>
-                  <button type="button" onClick={() => setSelectedMentor(mentor)} className="mt-4 text-sm">
+                  <button type="button" onClick={() => openAssignmentSection(mentor)} className="mt-4 text-sm">
                     Manage Students
                   </button>{" "}
                   {mentor.active && (
@@ -190,7 +249,9 @@ export function MentorAccountsContent({ embedded = false }: { embedded?: boolean
         </section>
       </div>
       {selectedMentor && (
-        <MentorAssignmentManager mentor={selectedMentor} onClose={() => setSelectedMentor(null)} onCountChanged={updateCount} />
+        <div ref={assignmentSectionRef} className="scroll-mt-24">
+          <MentorAssignmentManager mentor={selectedMentor} onClose={() => setSelectedMentor(null)} onCountChanged={updateCount} />
+        </div>
       )}
     </>
   );

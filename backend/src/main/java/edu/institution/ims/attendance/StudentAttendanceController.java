@@ -50,7 +50,8 @@ public class StudentAttendanceController {
             @RequestParam(required = false) BigDecimal latitude,
             @RequestParam(required = false) BigDecimal longitude,
             @RequestParam(required = false) BigDecimal accuracy,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant locationCapturedAt) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant locationCapturedAt,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant submittedAt) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.submitToday(principal,internshipId, latitude, longitude, accuracy, locationCapturedAt));
     }
 

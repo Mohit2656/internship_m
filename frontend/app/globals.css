@@ -715,15 +715,15 @@ html[data-theme="dark"] :is(.text-slate-500, .text-slate-400):not(.login-page, .
 html[data-theme="dark"] :is(.bg-blue-50, .bg-blue-100, [class~="bg-blue-50/40"], [class~="bg-blue-50/45"], [class~="bg-blue-50/60"], [class~="bg-blue-100/55"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #182f50; }
 html[data-theme="dark"] .bg-blue-200:not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #36577f; }
 html[data-theme="dark"] :is(.border-blue-100, .border-blue-200, [class~="border-blue-200/80"], [class~="border-blue-200/90"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #345782; }
-html[data-theme="dark"] :is(.text-blue-700, .text-blue-800, .text-blue-900, .text-blue-950, [class~="text-blue-700/80"], [class~="text-blue-700/90"]):not(.login-page, .login-page *, .report-document, .report-document *) { color: #99c7ff; }
-html[data-theme="dark"] :is(.bg-emerald-50, .bg-emerald-100, [class~="bg-emerald-50/50"], [class~="bg-emerald-50/70"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #113a34; }
+html[data-theme="dark"] :is(.text-blue-600, .text-blue-700, .text-blue-800, .text-blue-900, .text-blue-950, [class~="text-blue-700/80"], [class~="text-blue-700/90"]):not(.login-page, .login-page *, .report-document, .report-document *) { color: #99c7ff; }
+html[data-theme="dark"] :is(.bg-emerald-50, .bg-emerald-100, [class~="bg-emerald-50/40"], [class~="bg-emerald-50/50"], [class~="bg-emerald-50/70"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #113a34; }
 html[data-theme="dark"] :is(.border-emerald-200, [class~="border-emerald-200/80"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #286452; }
 html[data-theme="dark"] :is(.text-emerald-600, .text-emerald-700, .text-emerald-800, .text-emerald-950):not(.login-page, .login-page *, .report-document, .report-document *) { color: #8ce0bc; }
-html[data-theme="dark"] :is(.bg-amber-50, .bg-amber-100, [class~="bg-amber-50/50"], [class~="bg-amber-50/60"], [class~="bg-amber-50/70"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #3b2d1b; }
+html[data-theme="dark"] :is(.bg-amber-50, .bg-amber-100, [class~="bg-amber-50/40"], [class~="bg-amber-50/50"], [class~="bg-amber-50/60"], [class~="bg-amber-50/70"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #3b2d1b; }
 html[data-theme="dark"] :is(.border-amber-200, [class~="border-amber-200/80"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #765a30; }
-html[data-theme="dark"] :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950):not(.login-page, .login-page *, .report-document, .report-document *) { color: #f2cd83; }
-html[data-theme="dark"] :is(.bg-red-50, .bg-rose-50):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #41262e; }
-html[data-theme="dark"] :is(.border-red-100, .border-red-200):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #79414e; }
+html[data-theme="dark"] :is(.text-amber-600, .text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950):not(.login-page, .login-page *, .report-document, .report-document *) { color: #f2cd83; }
+html[data-theme="dark"] :is(.bg-red-50, .bg-rose-50, [class~="bg-red-50/40"]):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #41262e; }
+html[data-theme="dark"] :is(.border-red-100, .border-red-200, [class~="border-red-200/80"]):not(.login-page, .login-page *, .report-document, .report-document *) { border-color: #79414e; }
 html[data-theme="dark"] :is(.text-red-600, .text-red-700, .text-red-800, .text-rose-700, .text-rose-800):not(.login-page, .login-page *, .report-document, .report-document *) { color: #ffafb9; }
 
 html[data-theme="dark"] :is(.input, input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]), select, textarea):not(.login-page, .login-page *, .report-document, .report-document *) { background-color: #101c2f; border-color: #40536e; color: #e2e8f0; }

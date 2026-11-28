@@ -121,35 +121,68 @@ export function InternshipDetailsView({
 
       <LastStudentUpdate value={details.updatedAt ?? details.createdAt} />
 
-      <div className="mt-7 grid gap-7 md:grid-cols-2">
-        <Group title="Company Information" values={[
-          ["Company Name", details.companyName || "Not specified"],
-          ["Company Type", companyType],
-          ["Company Address", details.companyAddress || "Not specified"],
-          ["Company Phone", details.companyPhone || "Not specified"]
-        ]} />
-        <Group title="Industry Supervisor" values={[
-          ["Supervisor Name", details.industrySupervisorName || "Not specified"],
-          ["Designation", details.industrySupervisorDesignation || "Not specified"],
-          ["Contact Number", details.industrySupervisorContact || "Not specified"]
-        ]} />
-        <Group title="Internship Duration" values={[
-          ["Duration", details.durationMonths != null ? `${details.durationMonths} months` : "Not specified"],
-          ["Start Date", details.startDate || "Not specified"],
-          ["End Date", details.endDate || "Not specified"],
-          ["Total Weeks", details.totalWeeks != null ? String(details.totalWeeks) : "Not calculated"]
-        ]} />
-        <Group title="Internship Arrangement" values={[
-          ["Mode", details.internshipModeLabel || details.internshipMode || "Not specified"],
-          ["Stipend Per Month", details.stipendPerMonth != null ? (Number(details.stipendPerMonth) === 0 ? "Unpaid" : `₹${Number(details.stipendPerMonth).toLocaleString("en-IN")}`) : "Not specified"],
-          ["Full-Time Employment Opportunity", details.fullTimeEmploymentOffered === true ? "Yes" : details.fullTimeEmploymentOffered === false ? "No" : "Not specified"]
-        ]} />
-        <Group title="Company Working Schedule" values={[
-          ["Working Weekdays", details.workingDays && details.workingDays.length > 0
-            ? `${details.workingDays.map(d => d.charAt(0) + d.slice(1).toLowerCase()).join(", ")} (${details.workingDaysPerWeek ?? details.workingDays.length} days/week)`
-            : "Monday – Friday (5 days/week) [Default schedule]"],
-          ["Days Per Week", `${details.workingDaysPerWeek ?? details.workingDays?.length ?? 5} days`]
-        ]} />
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <Group
+          title="Company Information"
+          dlClassName="mt-3 grid gap-4 sm:grid-cols-3"
+          values={[
+            { label: "Company Name", value: details.companyName || "Not specified" },
+            { label: "Company Type", value: companyType },
+            { label: "Company Phone", value: details.companyPhone || "Not specified" },
+            { label: "Company Address", value: details.companyAddress || "Not specified", className: "sm:col-span-3" },
+          ]}
+        />
+        <Group
+          title="Industry Supervisor"
+          dlClassName="mt-3 grid gap-4 sm:grid-cols-2"
+          values={[
+            { label: "Supervisor Name", value: details.industrySupervisorName || "Not specified", className: "sm:col-span-2" },
+            { label: "Designation", value: details.industrySupervisorDesignation || "Not specified" },
+            { label: "Contact Number", value: details.industrySupervisorContact || "Not specified" },
+          ]}
+        />
+        <Group
+          title="Internship Duration"
+          dlClassName="mt-3 grid grid-cols-2 gap-4"
+          values={[
+            { label: "Duration", value: details.durationMonths != null ? `${details.durationMonths} months` : "Not specified" },
+            { label: "Total Weeks", value: details.totalWeeks != null ? String(details.totalWeeks) : "Not calculated" },
+            { label: "Start Date", value: details.startDate || "Not specified" },
+            { label: "End Date", value: details.endDate || "Not specified" },
+          ]}
+        />
+        <Group
+          title="Internship Arrangement"
+          dlClassName="mt-3 grid gap-4 sm:grid-cols-2"
+          values={[
+            { label: "Mode", value: details.internshipModeLabel || details.internshipMode || "Not specified" },
+            {
+              label: "Stipend Per Month",
+              value: details.stipendPerMonth != null
+                ? (Number(details.stipendPerMonth) === 0 ? "Unpaid" : `₹${Number(details.stipendPerMonth).toLocaleString("en-IN")}`)
+                : "Not specified",
+            },
+            {
+              label: "Full-Time Employment Opportunity",
+              value: details.fullTimeEmploymentOffered === true ? "Yes" : details.fullTimeEmploymentOffered === false ? "No" : "Not specified",
+              className: "sm:col-span-2",
+            },
+          ]}
+        />
+        <Group
+          title="Company Working Schedule"
+          className="md:col-span-2"
+          dlClassName="mt-3 grid gap-4 sm:grid-cols-[140px_minmax(0,1fr)]"
+          values={[
+            { label: "Days Per Week", value: `${details.workingDaysPerWeek ?? details.workingDays?.length ?? 5} days` },
+            {
+              label: "Working Weekdays",
+              value: details.workingDays && details.workingDays.length > 0
+                ? `${details.workingDays.map(d => d.charAt(0) + d.slice(1).toLowerCase()).join(", ")} (${details.workingDaysPerWeek ?? details.workingDays.length} days/week)`
+                : "Monday – Friday (5 days/week) [Default schedule]",
+            },
+          ]}
+        />
       </div>
 
       {actionType && (
@@ -201,15 +234,31 @@ export function InternshipDetailsView({
   );
 }
 
-function Group({ title, values }: { title: string; values: [string, string][] }) {
+type GroupItem = {
+  label: string;
+  value: string;
+  className?: string;
+};
+
+function Group({
+  title,
+  values,
+  className = "",
+  dlClassName = "mt-3 space-y-3",
+}: {
+  title: string;
+  values: GroupItem[];
+  className?: string;
+  dlClassName?: string;
+}) {
   return (
-    <div>
-      <h3 className="font-bold text-slate-900">{title}</h3>
-      <dl className="mt-3 space-y-3">
-        {values.map(([label, value]) => (
-          <div key={label}>
-            <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
-            <dd className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{value}</dd>
+    <div className={`min-w-0 rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 sm:p-5 ${className}`.trim()}>
+      <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+      <dl className={dlClassName}>
+        {values.map(({ label, value, className: itemClassName }) => (
+          <div key={label} className={`min-w-0 ${itemClassName ?? ""}`.trim()}>
+            <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</dt>
+            <dd className="mt-1 break-words whitespace-pre-wrap text-sm font-medium text-slate-800">{value}</dd>
           </div>
         ))}
       </dl>

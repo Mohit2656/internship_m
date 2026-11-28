@@ -37,6 +37,7 @@ class InternshipOnboardingIntegrationTest {
     User admin; User mentor; User studentA; User studentB; Cookie adminCookie; Cookie mentorCookie; Cookie studentACookie; Cookie studentBCookie;
 
     @BeforeEach void setUp() throws Exception {
+        jdbc.update("delete from attendance_records");
         details.deleteAll(); documents.deleteAll(); onboardings.deleteAll(); profiles.deleteAll(); assignments.deleteAll(); accounts.deleteAll(); users.deleteAll();
         admin = users.save(new User("incharge@example.edu", encoder.encode("AdminPassword!23"), Role.ADMIN, true));
         mentor = users.save(new User("mentor@example.edu", encoder.encode("MentorPassword!23"), Role.MENTOR, true));

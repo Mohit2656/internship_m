@@ -72,21 +72,14 @@ test("automatic daily absences have no student submission or verification eviden
   }
 });
 
-test("the noon submission deadline closes at the exact server timestamp", () => {
-  const today = { attendanceDate: "2026-10-19", attendance: null, submissionOpen: true, submissionDeadlineAt: "2026-10-19T06:30:00Z", attendanceZone: "Asia/Kolkata" };
-  assert.equal(attendance.attendanceSubmissionOpen(today, Date.parse("2026-10-19T06:29:59.999Z")), true);
-  assert.equal(attendance.attendanceSubmissionOpen(today, Date.parse("2026-10-19T06:30:00Z")), false);
-  assert.equal(attendance.attendanceSubmissionOpen(today, Date.parse("2026-10-19T07:00:00Z")), false);
-  assert.equal(attendance.attendanceSubmissionOpen({ ...today, submissionOpen: false }, Date.parse("2026-10-19T06:00:00Z")), false);
-});
-
-test("late permission overrides noon only on the attendance date in the configured time zone", () => {
-  const today = { attendanceDate: "2026-10-19", attendance: null, submissionOpen: true, latePermissionEnabled: true, submissionDeadlineAt: "2026-10-19T06:30:00Z", attendanceZone: "Asia/Kolkata" };
+test("daily submission remains open all day in configured zone and closes after midnight or 2 submissions", () => {
+  const today = { attendanceDate: "2026-10-19", attendance: null, submissionOpen: true, submissionDeadlineAt: "2026-10-19T18:30:00Z", attendanceZone: "Asia/Kolkata", submissionsCount: 0, maxDailySubmissions: 2 };
   assert.equal(attendance.attendanceSubmissionOpen(today, Date.parse("2026-10-19T07:00:00Z")), true);
   assert.equal(attendance.attendanceSubmissionOpen(today, Date.parse("2026-10-19T18:29:59.999Z")), true);
   assert.equal(attendance.attendanceSubmissionOpen(today, Date.parse("2026-10-19T18:30:00Z")), false);
-  assert.equal(attendance.attendanceSubmissionOpen({ ...today, latePermissionEnabled: false }, Date.parse("2026-10-19T07:00:00Z")), false);
-  assert.equal(attendance.attendanceSubmissionOpen({ ...today, submissionOpen: false }, Date.parse("2026-10-19T07:00:00Z")), false);
+  assert.equal(attendance.attendanceSubmissionOpen({ ...today, submissionsCount: 1 }, Date.parse("2026-10-19T10:00:00Z")), true);
+  assert.equal(attendance.attendanceSubmissionOpen({ ...today, submissionsCount: 2 }, Date.parse("2026-10-19T10:00:00Z")), false);
+  assert.equal(attendance.attendanceSubmissionOpen({ ...today, submissionOpen: false }, Date.parse("2026-10-19T06:00:00Z")), false);
 });
 
 function cameraHarness({ liveness = true, method = "PHYSICAL", today = {}, locationOutcome, maxGpsAccuracyMeters = 100 } = {}) {
@@ -126,18 +119,14 @@ function navigatorWithoutLocation(t) {
   return () => locationRequests;
 }
 
-test("the student sees the configured noon deadline and cannot start submission after it", async t => {
+test("the student can submit anytime during the working day up to 2 daily submissions", async t => {
   const originalNow = Date.now;
-  let now = Date.parse("2026-10-19T06:29:59Z");
+  let now = Date.parse("2026-10-19T10:00:00Z"); // 3:30 PM IST (formerly after noon cutoff)
   Date.now = () => now; t.after(() => { Date.now = originalNow; });
-  const h = cameraHarness({ today: { attendanceDate: "2026-10-19", submissionOpen: true, submissionDeadlineAt: "2026-10-19T06:30:00Z", attendanceZone: "Asia/Kolkata" } });
+  const h = cameraHarness({ today: { attendanceDate: "2026-10-19", submissionOpen: true, submissionDeadlineAt: "2026-10-19T18:30:00Z", attendanceZone: "Asia/Kolkata", submissionsCount: 0, maxDailySubmissions: 2 } });
   await h.mount();
-  assert.match(h.html(), /12:00 pm|12:00 PM/); assert.match(h.html(), /Asia\/Kolkata/);
+  assert.match(h.html(), /2 attendance records/); assert.match(h.html(), /Asia\/Kolkata/);
   assert.equal(h.button("Mark Today's Attendance").props.disabled, false);
-  now = Date.parse("2026-10-19T06:30:00Z");
-  assert.equal(h.button("Mark Today's Attendance").props.disabled, true);
-  h.button("Mark Today's Attendance").props.onClick(); await flush();
-  assert.equal(h.calls.length, 0); assert.match(h.html(), /submission window has closed/);
 });
 test("attendance cannot submit before required location capture", async t => {
   const requests = navigatorWithoutLocation(t);
@@ -167,7 +156,10 @@ test("basic attendance requires location and still records liveness not performe
   assert.equal(h.button("Mark Today's Attendance").props.disabled, false);
   h.button("Mark Today's Attendance").props.onClick(); await flush();
   assert.equal(h.calls.length, 1); assert.equal(h.calls[0].url, "/student/attendance/today");
-  assert.deepEqual(h.calls[0].config.params, { latitude: 18, longitude: 73, accuracy: 10 });
+  assert.equal(h.calls[0].config.params.latitude, 18);
+  assert.equal(h.calls[0].config.params.longitude, 73);
+  assert.equal(h.calls[0].config.params.accuracy, 10);
+  assert.ok(!Number.isNaN(Date.parse(h.calls[0].config.params.submittedAt)));
   assert.match(h.html(), /Liveness not performed/); assert.doesNotMatch(h.html(), /Liveness verified/);
 });
 
@@ -237,13 +229,12 @@ test("same-day late permission lets an automatically absent student complete the
   }});
   t.after(() => { if (original) Object.defineProperty(globalThis, "navigator", original); else delete globalThis.navigator; });
   const today = {
-    attendanceDate: "2026-10-19", submissionOpen: true, latePermissionEnabled: true,
-    submissionDeadlineAt: "2026-10-19T06:30:00Z", attendanceZone: "Asia/Kolkata",
+    attendanceDate: "2026-10-19", submissionOpen: true,
+    submissionDeadlineAt: "2026-10-19T18:30:00Z", attendanceZone: "Asia/Kolkata",
+    submissionsCount: 0, maxDailySubmissions: 2,
     attendance: { ...record("NOT_APPLICABLE"), attendanceDate: "2026-10-19", attendanceResult: "ABSENT", automaticAbsent: true, submissionType: "AUTO_ABSENT", evidence: null }
   };
   const h = cameraHarness({ today }); await h.mount();
-  assert.match(h.html(), /mentor has enabled late attendance submission/);
-  assert.match(h.html(), /valid submission will update today&#x27;s automatic absence/);
   assert.equal(h.button("Mark Today's Attendance").props.disabled, false);
   assert.equal(h.calls.length, 0);
   h.button("Mark Today's Attendance").props.onClick(); await flush();
@@ -256,19 +247,19 @@ test("same-day late permission lets an automatically absent student complete the
   h.button("Submit Attendance").props.onClick(); await flush();
   const submitted = h.calls.find(call => call.url.endsWith("/physical"));
   assert.equal(JSON.parse(await submitted.body.get("aiEvidence").text()).livenessPassed, true);
-  assert.match(h.html(), /Submitted late with faculty mentor permission/);
-  assert.equal(h.button("Mark Today's Attendance"), undefined);
+  assert.match(h.html(), /Daily submissions: 1 \/ 2 recorded today/);
+  assert.ok(h.button("Mark Today's Attendance (2 of 2)"));
   h.cancel();
 });
 
-test("late permission leaves failed liveness blocked", async t => {
+test("any-time daily submission leaves failed liveness blocked", async t => {
   const originalNow = Date.now;
   Date.now = () => Date.parse("2026-10-19T07:00:00Z");
   t.after(() => { Date.now = originalNow; });
   navigatorWithoutLocation(t);
   const h = cameraHarness({ liveness: false, today: {
-    attendanceDate: "2026-10-19", submissionOpen: true, latePermissionEnabled: true,
-    submissionDeadlineAt: "2026-10-19T06:30:00Z", attendanceZone: "Asia/Kolkata"
+    attendanceDate: "2026-10-19", submissionOpen: true,
+    submissionDeadlineAt: "2026-10-19T18:30:00Z", attendanceZone: "Asia/Kolkata"
   }});
   await h.mount(); h.button("Mark Today's Attendance").props.onClick(); await flush();
   assert.equal(h.button("Capture Attendance").props.disabled, true);
@@ -375,7 +366,7 @@ test("closing the attendance window cancels pending GPS and clears its loading s
   h.button("Capture submission location (required)").props.onClick();
   assert.ok(h.html().includes("Capturing submission location"));
   t.mock.timers.tick(1000);
-  assert.match(h.html(), /submission window has closed/);
+  assert.equal(h.button("Mark Today's Attendance").props.disabled, true);
   assert.ok(h.button("Capture submission location (required)"));
   lateSuccess({ timestamp: Date.now(), coords: { latitude: 18, longitude: 73, accuracy: 1 } });
   assert.doesNotMatch(h.html(), /Submission location captured/);

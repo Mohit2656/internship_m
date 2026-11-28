@@ -13,14 +13,16 @@ class AttendanceSubmissionWindowTest {
     private static final LocalDate DAY = LocalDate.of(2026, 10, 19);
 
     @Test
-    void submissionIsOpenBeforeNoonAndClosedAtNoonInConfiguredZone() {
-        Clock beforeNoon = Clock.fixed(Instant.parse("2026-10-19T06:29:59Z"), ZoneId.of("Asia/Kolkata"));
-        Clock noon = Clock.fixed(Instant.parse("2026-10-19T06:30:00Z"), ZoneId.of("Asia/Kolkata"));
+    void submissionStaysOpenAllDayAndClosesAtMidnightInConfiguredZone() {
+        Clock noon = Clock.fixed(Instant.parse("2026-10-19T06:30:00Z"), ZoneId.of("Asia/Kolkata")); // 12:00 PM IST
+        Clock beforeMidnight = Clock.fixed(Instant.parse("2026-10-19T18:29:59Z"), ZoneId.of("Asia/Kolkata")); // 23:59:59 IST
+        Clock afterMidnight = Clock.fixed(Instant.parse("2026-10-19T18:30:00Z"), ZoneId.of("Asia/Kolkata")); // 00:00:00 IST Oct 20
 
-        assertThat(AttendanceSubmissionWindow.isClosed(DAY, beforeNoon)).isFalse();
-        assertThatCode(() -> policy(beforeNoon).requireSubmissionOpen(DAY)).doesNotThrowAnyException();
-        assertThat(AttendanceSubmissionWindow.isClosed(DAY, noon)).isTrue();
-        assertThatThrownBy(() -> policy(noon).requireSubmissionOpen(DAY))
+        assertThat(AttendanceSubmissionWindow.isClosed(DAY, noon)).isFalse();
+        assertThatCode(() -> policy(noon).requireSubmissionOpen(10L, null, DAY)).doesNotThrowAnyException();
+        assertThat(AttendanceSubmissionWindow.isClosed(DAY, beforeMidnight)).isFalse();
+        assertThat(AttendanceSubmissionWindow.isClosed(DAY, afterMidnight)).isTrue();
+        assertThatThrownBy(() -> policy(afterMidnight).requireSubmissionOpen(DAY))
                 .isInstanceOfSatisfying(AttendanceException.class, failure -> {
                     assertThat(failure.getCode()).isEqualTo("ATTENDANCE_WINDOW_CLOSED");
                     assertThat(failure.getStatus()).isEqualTo(HttpStatus.CONFLICT);
@@ -29,15 +31,13 @@ class AttendanceSubmissionWindowTest {
 
     @Test
     void deadlineFollowsTheConfiguredZoneInsteadOfTheHostZone() {
-        Instant instant = Instant.parse("2026-10-19T06:30:00Z");
-        Clock india = Clock.fixed(instant, ZoneId.of("Asia/Kolkata"));
-        Clock utc = Clock.fixed(instant, ZoneOffset.UTC);
+        Instant indiaMidnight = Instant.parse("2026-10-19T18:30:00Z"); // 00:00 Oct 20 IST
+        Clock india = Clock.fixed(indiaMidnight, ZoneId.of("Asia/Kolkata"));
+        Clock utc = Clock.fixed(indiaMidnight, ZoneOffset.UTC);
 
         assertThat(AttendanceSubmissionWindow.isClosed(DAY, india)).isTrue();
-        assertThat(AttendanceSubmissionWindow.isClosed(DAY, utc)).isFalse();
-        assertThat(AttendanceSubmissionWindow.deadline(DAY, india)).isEqualTo(instant);
-        assertThat(AttendanceSubmissionWindow.deadline(DAY, utc))
-                .isEqualTo(Instant.parse("2026-10-19T12:00:00Z"));
+        assertThat(AttendanceSubmissionWindow.isClosed(DAY, utc)).isTrue(); // Attendance zone defaults to Asia/Kolkata
+        assertThat(AttendanceSubmissionWindow.deadline(DAY, india)).isEqualTo(indiaMidnight);
     }
 
     @Test
@@ -49,20 +49,17 @@ class AttendanceSubmissionWindowTest {
     }
 
     @Test
-    void sameDayPermissionAllowsAtNoonOnlyForItsStudent() {
-        Clock noon = Clock.fixed(Instant.parse("2026-10-19T06:30:00Z"), ZoneId.of("Asia/Kolkata"));
+    void sameDaySubmissionsAreAllowedAnyTimeWithoutLatePermission() {
+        Clock evening = Clock.fixed(Instant.parse("2026-10-19T15:00:00Z"), ZoneId.of("Asia/Kolkata")); // 8:30 PM IST
         LateAttendancePermissionService permissions = mock(LateAttendancePermissionService.class);
-        when(permissions.isEnabled(10L, DAY)).thenReturn(true);
-        AttendancePolicyService policy = policy(noon, permissions);
+        AttendancePolicyService policy = policy(evening, permissions);
 
         assertThatCode(() -> policy.requireSubmissionOpen(10L, DAY)).doesNotThrowAnyException();
-        assertThatThrownBy(() -> policy.requireSubmissionOpen(11L, DAY))
-                .isInstanceOfSatisfying(AttendanceException.class,
-                        failure -> assertThat(failure.getCode()).isEqualTo("ATTENDANCE_WINDOW_CLOSED"));
+        verifyNoInteractions(permissions);
     }
 
     @Test
-    void permissionCannotOpenPastOrFutureAttendanceDates() {
+    void pastOrFutureDatesAreRejectedEvenWithoutLatePermission() {
         Clock noon = Clock.fixed(Instant.parse("2026-10-19T06:30:00Z"), ZoneId.of("Asia/Kolkata"));
         LateAttendancePermissionService permissions = mock(LateAttendancePermissionService.class);
         AttendancePolicyService policy = policy(noon, permissions);

@@ -210,6 +210,11 @@ class PhysicalAttendanceIntegrationTest {
                             .queryParam("internshipId", String.valueOf(internship.getId()))
                             .param("latitude", "18.520400").param("longitude", "73.856700").param("accuracy", "10")
                             .cookie(studentSession))
+                    .andExpect(status().isCreated()).andExpect(jsonPath("$.submissionSlot").value(2));
+            mvc.perform(multipart("/api/v1/student/attendance/today/physical").file(photo())
+                            .queryParam("internshipId", String.valueOf(internship.getId()))
+                            .param("latitude", "18.520400").param("longitude", "73.856700").param("accuracy", "10")
+                            .cookie(studentSession))
                     .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("ATTENDANCE_ALREADY_SUBMITTED"));
         }
     }

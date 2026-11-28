@@ -78,6 +78,18 @@ class MentorAssignmentIntegrationTest {
                 .andExpect(jsonPath("$[*].uid").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("UID300"))));
         mvc.perform(get("/api/v1/mentor/students").cookie(loginCookie(mentorB.getEmail(), "MentorPassword!24")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+
+        Cookie studentASession = loginCookie(studentA.getEmail(), "StudentPassword!23");
+        Cookie unassignedSession = loginCookie(unassignedStudent.getEmail(), "StudentPassword!25");
+        mvc.perform(get("/api/v1/student/mentor").cookie(studentASession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mentorName").value("Dr. Asha"))
+                .andExpect(jsonPath("$.mentorEmail").value("mentor.a@example.edu"))
+                .andExpect(jsonPath("$.internship1MentorName").value("Dr. Asha"))
+                .andExpect(jsonPath("$.internship2MentorName").value("Dr. Asha"));
+        mvc.perform(get("/api/v1/student/mentor").cookie(unassignedSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mentorName").isEmpty());
     }
 
     @Test

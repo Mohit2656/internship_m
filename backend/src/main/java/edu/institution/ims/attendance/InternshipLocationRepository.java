@@ -9,6 +9,6 @@ public interface InternshipLocationRepository extends JpaRepository<InternshipLo
     @org.springframework.data.jpa.repository.Query("select l from InternshipLocation l where l.internship.id = :internshipId")
     Optional<InternshipLocation> findForVerification(@org.springframework.data.repository.query.Param("internshipId") Long internshipId);
 
-    @EntityGraph(attributePaths = {"internship", "confirmedBy"})
+    @EntityGraph(attributePaths = {"internship", "confirmedBy", "mentorReviewer"})
     Optional<InternshipLocation> findByInternshipId(Long internshipId);
 }

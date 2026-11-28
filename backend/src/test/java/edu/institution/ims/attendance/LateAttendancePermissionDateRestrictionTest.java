@@ -149,18 +149,22 @@ class LateAttendancePermissionDateRestrictionTest {
     }
 
     @Test
-    @DisplayName("AttendanceSubmissionWindow correctly identifies before and after noon in Asia/Kolkata")
+    @DisplayName("AttendanceSubmissionWindow remains open all day and closes at midnight in Asia/Kolkata")
     void testSubmissionWindowCutoffInAsiaKolkata() {
-        // 11:59 AM IST on Nov 25 -> submission window open (not closed)
-        Clock beforeNoon = Clock.fixed(Instant.parse("2026-11-25T06:29:00Z"), zone); // 11:59 IST
+        // 11:59 AM IST on Nov 25 -> open
+        Clock beforeNoon = Clock.fixed(Instant.parse("2026-11-25T06:29:00Z"), zone);
         assertThat(AttendanceSubmissionWindow.isClosed(nov25, beforeNoon)).isFalse();
 
-        // 12:01 PM IST on Nov 25 -> submission window closed
-        Clock afterNoon = Clock.fixed(Instant.parse("2026-11-25T06:31:00Z"), zone); // 12:01 IST
-        assertThat(AttendanceSubmissionWindow.isClosed(nov25, afterNoon)).isTrue();
+        // 12:01 PM IST on Nov 25 -> still open (no noon lock)
+        Clock afterNoon = Clock.fixed(Instant.parse("2026-11-25T06:31:00Z"), zone);
+        assertThat(AttendanceSubmissionWindow.isClosed(nov25, afterNoon)).isFalse();
 
-        // End of day: 23:59 IST -> window closed
-        Clock endOfDay = Clock.fixed(Instant.parse("2026-11-25T18:29:00Z"), zone); // 23:59 IST
-        assertThat(AttendanceSubmissionWindow.isClosed(nov25, endOfDay)).isTrue();
+        // 23:59 IST on Nov 25 -> still open
+        Clock endOfDay = Clock.fixed(Instant.parse("2026-11-25T18:29:00Z"), zone);
+        assertThat(AttendanceSubmissionWindow.isClosed(nov25, endOfDay)).isFalse();
+
+        // 00:00 IST on Nov 26 -> closed for Nov 25
+        Clock midnightNextDay = Clock.fixed(Instant.parse("2026-11-25T18:30:00Z"), zone);
+        assertThat(AttendanceSubmissionWindow.isClosed(nov25, midnightNextDay)).isTrue();
     }
 }

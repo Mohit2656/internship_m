@@ -68,16 +68,21 @@ class AttendanceAbsenceIntegrationTest {
     }
 
     @Test
-    void backfillsDailyAbsencesOnceIncludingTodayAfterNoonAndSkipsWeekends() {
+    void backfillsDailyAbsencesOnceExcludingSameDayBeforeMidnightAndSkipsWeekends() {
         InternshipDetails internship = internship(TODAY.minusDays(7), TODAY.plusDays(3));
 
-        assertThat(service.processOverdueAttendance()).isEqualTo(6);
+        // At Friday 12:30 PM (NOW), 5 past working days (Mon..Thu + previous Fri) * 2 slots = 10 overdue absent entries
+        assertThat(service.processOverdueAttendance()).isEqualTo(10);
         assertThat(service.processOverdueAttendance()).isZero();
 
         List<AttendanceRecord> records = records(internship);
+        assertThat(records).hasSize(10);
         assertThat(records).extracting(AttendanceRecord::getAttendanceDate).containsExactly(
-                TODAY, TODAY.minusDays(1), TODAY.minusDays(2), TODAY.minusDays(3),
-                TODAY.minusDays(4), TODAY.minusDays(7));
+                TODAY.minusDays(1), TODAY.minusDays(1),
+                TODAY.minusDays(2), TODAY.minusDays(2),
+                TODAY.minusDays(3), TODAY.minusDays(3),
+                TODAY.minusDays(4), TODAY.minusDays(4),
+                TODAY.minusDays(7), TODAY.minusDays(7));
         assertThat(records).allSatisfy(record -> {
             assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.ABSENT);
             assertThat(record.getSubmissionType()).isEqualTo(AttendanceSubmissionType.AUTO_ABSENT);
@@ -92,17 +97,17 @@ class AttendanceAbsenceIntegrationTest {
     }
 
     @Test
-    void waitsUntilExactlyNoonInConfiguredZone() {
+    void waitsUntilEndOfDayInConfiguredZone() {
         InternshipDetails internship = internship(TODAY, TODAY.plusDays(3));
-        clock.setInstant(Instant.parse("2026-09-18T06:29:59Z"));
+        clock.setInstant(Instant.parse("2026-09-18T18:29:59Z")); // 23:59:59 IST
 
         assertThat(service.processOverdueAttendance()).isZero();
-        assertThat(writer.createIfMissing(internship.getId(), TODAY)).isFalse();
+        assertThat(writer.createIfMissing(internship.getId(), TODAY, 1)).isFalse();
         assertThat(records(internship)).isEmpty();
 
-        clock.setInstant(Instant.parse("2026-09-18T06:30:00Z"));
-        assertThat(service.processOverdueAttendance()).isEqualTo(1);
-        assertThat(records(internship)).extracting(AttendanceRecord::getAttendanceDate).containsExactly(TODAY);
+        clock.setInstant(Instant.parse("2026-09-18T18:30:00Z")); // 00:00:00 IST Sep 19
+        assertThat(service.processOverdueAttendance()).isEqualTo(2);
+        assertThat(records(internship)).extracting(AttendanceRecord::getAttendanceDate).containsExactly(TODAY, TODAY);
         assertThat(writer.createIfMissing(internship.getId(), TODAY.plusDays(3))).isFalse();
     }
 
@@ -125,9 +130,9 @@ class AttendanceAbsenceIntegrationTest {
         jdbc.update("update attendance_records set deleted_at = ?, active_slot = null where id = ?",
                 Timestamp.from(NOW), removed.getId());
 
-        assertThat(service.processOverdueAttendance()).isEqualTo(1);
+        // Overdue days are TODAY-2 (1 submitted + 1 missing slot) and TODAY-1 (1 soft-deleted + 1 missing slot) -> 2 created
+        assertThat(service.processOverdueAttendance()).isEqualTo(2);
         assertThat(service.processOverdueAttendance()).isZero();
-        assertThat(writer.createIfMissing(internship.getId(), TODAY.minusDays(1))).isFalse();
 
         AttendanceRecord preserved = attendance.findById(submitted.getId()).orElseThrow();
         assertThat(preserved.getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
@@ -137,9 +142,9 @@ class AttendanceAbsenceIntegrationTest {
         AttendanceEvidence preservedEvidence = evidence.findById(submittedEvidence.getId()).orElseThrow();
         assertThat(preservedEvidence.getDailyWorkSummary()).isEqualTo("Completed the daily task");
         assertThat(preservedEvidence.getImageSizeBytes()).isEqualTo(123);
-        assertThat(attendance.countIncludingDeleted(internship.getId(), TODAY.minusDays(1))).isEqualTo(1);
+        assertThat(attendance.countIncludingDeleted(internship.getId(), TODAY.minusDays(1))).isEqualTo(2);
         assertThat(attendance.findById(removed.getId())).isEmpty();
-        assertThat(records(internship)).hasSize(2);
+        assertThat(records(internship)).hasSize(3);
     }
 
     @Test
@@ -150,10 +155,10 @@ class AttendanceAbsenceIntegrationTest {
         calendar.getApprovedLeave().put(ended.getOnboarding().getStudent().getId(), List.of(
                 new AttendanceCalendarProperties.LeavePeriod(TODAY.minusDays(2), TODAY.minusDays(2))));
 
-        assertThat(service.processOverdueAttendance()).isEqualTo(2);
+        assertThat(service.processOverdueAttendance()).isEqualTo(4);
 
         assertThat(records(ended)).extracting(AttendanceRecord::getAttendanceDate)
-                .containsExactly(TODAY.minusDays(1), TODAY.minusDays(4));
+                .containsExactly(TODAY.minusDays(1), TODAY.minusDays(1), TODAY.minusDays(4), TODAY.minusDays(4));
         assertThat(records(future)).isEmpty();
     }
 
@@ -170,8 +175,8 @@ class AttendanceAbsenceIntegrationTest {
     }
 
     @Test
-    void concurrentWritersPersistOnlyOneDailyRecord() throws Exception {
-        InternshipDetails internship = internship(TODAY, TODAY.plusDays(1));
+    void concurrentWritersPersistUpToTwoDailyRecordsAndRejectDuplicateSlot() throws Exception {
+        InternshipDetails internship = internship(TODAY.minusDays(1), TODAY.plusDays(1));
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService workers = Executors.newFixedThreadPool(2);
@@ -179,9 +184,9 @@ class AttendanceAbsenceIntegrationTest {
             ready.countDown();
             if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Concurrent writer timed out");
             try {
-                return writer.createIfMissing(internship.getId(), TODAY);
+                return writer.createIfMissing(internship.getId(), TODAY.minusDays(1), 1);
             } catch (DataIntegrityViolationException concurrentInsert) {
-                assertThat(attendance.countIncludingDeleted(internship.getId(), TODAY)).isEqualTo(1);
+                assertThat(attendance.countIncludingDeleted(internship.getId(), TODAY.minusDays(1))).isEqualTo(1);
                 return false;
             }
         };
@@ -197,21 +202,70 @@ class AttendanceAbsenceIntegrationTest {
             workers.shutdownNow();
             workers.awaitTermination(10, TimeUnit.SECONDS);
         }
-        assertThat(attendance.countIncludingDeleted(internship.getId(), TODAY)).isEqualTo(1);
+        assertThat(attendance.countIncludingDeleted(internship.getId(), TODAY.minusDays(1))).isEqualTo(1);
+        assertThat(service.processOverdueAttendance()).isEqualTo(1); // fills slot 2 for TODAY-1
+        assertThat(attendance.countIncludingDeleted(internship.getId(), TODAY.minusDays(1))).isEqualTo(2);
         assertThat(service.processOverdueAttendance()).isZero();
     }
 
     @Test
-    void migrationRestrictsAutomaticSourceToAbsentStatus() {
-        InternshipDetails internship = internship(TODAY, TODAY.plusDays(1));
-        assertThat(writer.createIfMissing(internship.getId(), TODAY)).isTrue();
+    void migrationAllowsAutomaticSourceOverrideToPresentAndBlocksPendingOrThirdSlot() {
+        InternshipDetails internship = internship(TODAY.minusDays(1), TODAY.plusDays(1));
+        assertThat(writer.createIfMissing(internship.getId(), TODAY.minusDays(1), 1)).isTrue();
 
-        assertThatThrownBy(() -> jdbc.update("update attendance_records set attendance_result = 'PRESENT' "
+        assertThatThrownBy(() -> jdbc.update("update attendance_records set attendance_result = 'PENDING_MENTOR_REVIEW' "
                 + "where internship_id = ?", internship.getId()))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
+        assertThatCode(() -> jdbc.update("update attendance_records set attendance_result = 'PRESENT' "
+                + "where internship_id = ?", internship.getId()))
+                .doesNotThrowAnyException();
+
         assertThat(records(internship)).extracting(AttendanceRecord::getAttendanceResult)
-                .containsExactly(AttendanceResult.ABSENT);
+                .containsExactly(AttendanceResult.PRESENT);
+    }
+
+    @Test
+    void processOverdueForInternshipBackfillsPastStartDateAndReconcilesUpdatedWorkingDays() {
+        User student = users.saveAndFlush(new User("backfill-" + UUID.randomUUID() + "@example.edu",
+                "test-only-unused-password", Role.STUDENT, true));
+        InternshipOnboarding onboarding = new InternshipOnboarding(student);
+        onboarding.markDocumentsComplete();
+        onboarding.confirmDiary();
+        onboarding.markInternshipDetailsComplete();
+        onboardings.saveAndFlush(onboarding);
+        InternshipDetails details = new InternshipDetails(onboarding);
+        details.apply("Seven Day Co", CompanyType.IT, null, "Test address", "1234567890",
+                "Supervisor", "Manager", "1234567890", 6,
+                TODAY.minusDays(4), TODAY.plusDays(14), 3,
+                InternshipMode.HYBRID, BigDecimal.ZERO, false,
+                7, "MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY,SATURDAY,SUNDAY");
+        details = internships.saveAndFlush(details);
+        fixtures.add(details);
+
+        // TODAY is Friday 2026-09-18 (open until midnight) -> Mon(14)..Thu(17) = 4 past overdue days * 2 slots = 8
+        assertThat(service.processOverdueForInternship(details.getId())).isEqualTo(8);
+        assertThat(attendance.findAllByStudentIdOrderByAttendanceDateDescServerSubmittedAtDesc(student.getId()))
+                .extracting(AttendanceRecord::getAttendanceDate)
+                .containsExactly(
+                        TODAY.minusDays(1), TODAY.minusDays(1),
+                        TODAY.minusDays(2), TODAY.minusDays(2),
+                        TODAY.minusDays(3), TODAY.minusDays(3),
+                        TODAY.minusDays(4), TODAY.minusDays(4));
+
+        // Update schedule to 3 working days/week (Mon, Wed, Fri) and shift startDate later to Wed (TODAY - 2)
+        details.apply("Seven Day Co", CompanyType.IT, null, "Test address", "1234567890",
+                "Supervisor", "Manager", "1234567890", 6,
+                TODAY.minusDays(2), TODAY.plusDays(14), 3,
+                InternshipMode.HYBRID, BigDecimal.ZERO, false,
+                3, "MONDAY,WEDNESDAY,FRIDAY");
+        details = internships.saveAndFlush(details);
+
+        assertThat(service.processOverdueForInternship(details.getId())).isZero();
+        // Mon(14), Tue(15) pruned (< startDate); Thu(17) pruned (non-working day); Wed(16) slots 1 & 2 remain
+        assertThat(attendance.findAllByStudentIdOrderByAttendanceDateDescServerSubmittedAtDesc(student.getId()))
+                .extracting(AttendanceRecord::getAttendanceDate)
+                .containsExactly(TODAY.minusDays(2), TODAY.minusDays(2));
     }
 
     private List<AttendanceRecord> records(InternshipDetails internship) {

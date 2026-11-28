@@ -33,15 +33,15 @@ class StudentAttendanceDirectoryServiceTest {
     private AttendanceRecord row(String date, AttendanceResult result) { return new AttendanceRecord(student, internship, LocalDate.parse(date), result, VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC, clock.instant()); }
     private UserPrincipal principal(String role) { return new UserPrincipal(9L, "test@example.edu", "unused", true, role, false, 0); }
 
-    @Test void countsPresentAndAbsentOncePerApplicableDateAndExcludesNonWorkingDays() {
+    @Test void countsPresentAndAbsentPerSubmissionOnApplicableDatesAndExcludesNonWorkingDays() {
         calendar.getHolidays().add(LocalDate.parse("2026-10-20"));
         calendar.getApprovedLeave().put(1L, List.of(new AttendanceCalendarProperties.LeavePeriod(LocalDate.parse("2026-10-21"), LocalDate.parse("2026-10-21"))));
         when(policies.resolve(internship, LocalDate.parse("2026-10-15"))).thenReturn(new ResolvedAttendancePolicy(null, AttendanceVerificationMethod.UNAVAILABLE, false));
         var totals = service.totals(List.of(row("2026-10-19", AttendanceResult.PRESENT), row("2026-10-19", AttendanceResult.PRESENT),
                 row("2026-10-22", AttendanceResult.ABSENT), row("2026-10-23", AttendanceResult.PRESENT), row("2026-10-18", AttendanceResult.PRESENT),
                 row("2026-10-20", AttendanceResult.PRESENT), row("2026-10-21", AttendanceResult.PRESENT), row("2026-10-15", AttendanceResult.PRESENT), row("2026-09-30", AttendanceResult.PRESENT)));
-        assertThat(totals.presentDays()).isEqualTo(1); assertThat(totals.absentDays()).isEqualTo(1);
-        assertThat(totals.totalDays()).isEqualTo(2); assertThat(totals.percentage()).isEqualByComparingTo("50.0");
+        assertThat(totals.presentDays()).isEqualTo(2); assertThat(totals.absentDays()).isEqualTo(1);
+        assertThat(totals.totalDays()).isEqualTo(3); assertThat(totals.percentage()).isEqualByComparingTo("66.7");
         assertThat(service.totals(List.of()).percentage()).isNull();
     }
     @Test void directoryHasOneUnscopedRowPerAccountWhenNoInternshipExists() {
@@ -75,6 +75,39 @@ class StudentAttendanceDirectoryServiceTest {
         assertThat(totals.absentDays()).isEqualTo(0);
         assertThat(totals.totalDays()).isEqualTo(1);
         assertThat(totals.percentage()).isEqualByComparingTo("100.0");
+    }
+
+    @Test void unconfiguredHybridInternshipCountsScheduledWorkingDaysAndAutomaticAbsences() {
+        User hybridStudent = mock(User.class);
+        InternshipOnboarding onboarding = mock(InternshipOnboarding.class);
+        when(hybridStudent.getId()).thenReturn(88L);
+        when(onboarding.getStudent()).thenReturn(hybridStudent);
+
+        InternshipDetails hybrid = new InternshipDetails(onboarding);
+        org.springframework.test.util.ReflectionTestUtils.setField(hybrid, "id", 881L);
+        hybrid.apply("Pagalworld Ltd", CompanyType.IT, null, "Test address", "1234567890",
+                "Supervisor", "Manager", "1234567890", 6,
+                LocalDate.of(2026, 10, 16), LocalDate.of(2026, 12, 31), 10,
+                InternshipMode.HYBRID, java.math.BigDecimal.ZERO, false,
+                7, "MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY,SATURDAY,SUNDAY");
+
+        when(policies.resolve(eq(hybrid), any(LocalDate.class)))
+                .thenReturn(new ResolvedAttendancePolicy(null, AttendanceVerificationMethod.UNAVAILABLE, false));
+        when(policies.hasConfiguredHybridSchedule(881L)).thenReturn(false);
+
+        AttendanceRecord autoAbsent = new AttendanceRecord(hybridStudent, hybrid, LocalDate.of(2026, 10, 17),
+                AttendanceResult.ABSENT, VerificationStatus.UNVERIFIED, AttendanceSubmissionType.AUTO_ABSENT, clock.instant());
+        AttendanceRecord basicPresent = new AttendanceRecord(hybridStudent, hybrid, LocalDate.of(2026, 10, 18),
+                AttendanceResult.PRESENT, VerificationStatus.UNVERIFIED, AttendanceSubmissionType.BASIC, clock.instant());
+
+        var totals = service.totals(List.of(autoAbsent, basicPresent), hybrid);
+        // clock is 2026-10-22; inclusive 2026-10-16..2026-10-22 = 7 working days
+        assertThat(totals.workingDays()).isEqualTo(7);
+        assertThat(totals.submittedDays()).isEqualTo(1);
+        assertThat(totals.presentDays()).isEqualTo(1);
+        assertThat(totals.absentDays()).isEqualTo(1);
+        assertThat(totals.totalDays()).isEqualTo(2);
+        assertThat(totals.percentage()).isEqualByComparingTo("50.0");
     }
 
     @Test void bismeetScenarioCountsVerifiedPresentWhileMentorReviewIsPending() {

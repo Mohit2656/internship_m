@@ -52,23 +52,23 @@ public class AttendanceReviewService {
         var assignment=assignments.findByStudentIdAndActiveTrueForLateAttendanceUpdate(studentId)
                 .filter(a -> a.getMentor().getId().equals(actor.getId())).orElseThrow(AttendanceReviewService::missing);
         AttendanceRecord record=attendance.findForReviewUpdate(id).orElseThrow(AttendanceReviewService::missing);
-        if (record.isAutomaticAbsent() || record.getEvidence()==null)
-            throw error(HttpStatus.CONFLICT,"ATTENDANCE_NOT_SUBMITTED","Only student-submitted attendance can be reviewed");
-        if (record.getAttendanceResult()!=AttendanceResult.PENDING_MENTOR_REVIEW)
-            throw error(HttpStatus.CONFLICT,"ATTENDANCE_ALREADY_FINALIZED","Only attendance pending mentor review can be approved or rejected");
         AttendanceReviewResponse previous=AttendanceReviewResponse.from(record);
         if (request.revision()!=previous.revision())
             throw error(HttpStatus.CONFLICT,"ATTENDANCE_REVIEW_CHANGED","This attendance review changed. Reload before reviewing it");
-        if (previous.status()==AttendanceReviewStatus.APPROVED || previous.status()==AttendanceReviewStatus.REJECTED
-                || previous.status()==request.status())
-            throw error(HttpStatus.CONFLICT,"INVALID_REVIEW_TRANSITION","This attendance decision cannot be repeated or changed");
+        boolean redundantPresent = request.status()==AttendanceReviewStatus.APPROVED && record.getAttendanceResult()==AttendanceResult.PRESENT;
+        boolean redundantAbsent = request.status()==AttendanceReviewStatus.REJECTED && record.getAttendanceResult()==AttendanceResult.ABSENT;
+        boolean redundantManual = request.status()==AttendanceReviewStatus.MANUAL_REVIEW && previous.status()==AttendanceReviewStatus.MANUAL_REVIEW;
+        if (redundantPresent || redundantAbsent || redundantManual)
+            throw error(HttpStatus.CONFLICT,"INVALID_REVIEW_TRANSITION","Attendance already has that decision");
         String name=jdbc.queryForList("select name from mentor_profiles where user_id=?",String.class,actor.getId())
                 .stream().findFirst().orElse(actor.getEmail());
         Instant at=clock.instant();
         AttendanceReview review=record.getReview()==null?new AttendanceReview(record):record.getReview();
+        if (record.getReview()==null) record.attachReview(review);
         review.decide(request.status(),actor.getId(),name,at,reason);
         record.applyMentorDecision(request.status());
         reviews.saveAndFlush(review);
+        attendance.saveAndFlush(record);
         jdbc.update("insert into attendance_review_audit(attendance_id,assignment_id,revision,previous_status,status,reviewer_id,reviewer_name,reviewed_at,reason) values (?,?,?,?,?,?,?,?,?)",
                 id,assignment.getId(),review.getRevision(),previous.status().name(),review.getStatus().name(),actor.getId(),name,Timestamp.from(at),reason);
         String action=request.status()==AttendanceReviewStatus.APPROVED?"approved":request.status()==AttendanceReviewStatus.REJECTED?"rejected":"requested manual review of";
@@ -76,7 +76,7 @@ public class AttendanceReviewService {
                 +(request.status()==AttendanceReviewStatus.MANUAL_REVIEW?" Contact your mentor about the requested review; original submission remains available.":"");
         notifications.create(studentId,"attendance-review:"+id+":"+review.getRevision(),"ATTENDANCE_"+request.status().name(),
                 request.status()==AttendanceReviewStatus.MANUAL_REVIEW?"Attendance requires manual review":"Attendance "+action,
-                message,reason,name,"/student/dashboard#daily-attendance",at);
+                message,reason,name,"/student/attendance",at);
         return AttendanceService.response(record);
     }
 

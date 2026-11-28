@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import java.sql.Timestamp;
 import java.time.*;
+import java.util.List;
 
 /** Shared persistence path after the existing attendance validations have completed. */
 @Service
@@ -69,28 +70,30 @@ public class AttendanceSubmissionService {
             exceptionService.recordOrUpdateExtraWorkday(student.getId(), internship.getId(), date, "Working today (extra work)", true);
         }
 
-        boolean late = AttendanceSubmissionWindow.isClosed(date, clock);
-        LateAttendancePermission permission = late ? permissions.activePermission(student.getId(), internship.getId(), date)
-                .orElseThrow(() -> AttendanceService.error(HttpStatus.CONFLICT, "ATTENDANCE_WINDOW_CLOSED",
-                        "Late attendance permission is no longer active")) : null;
-        AttendanceRecord record = attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), internship.getId(), date).orElse(null);
-        if (record != null) {
-            if (!late || permission == null || !record.isAutomaticAbsent() || record.getEvidence() != null
-                    || !record.getInternship().getId().equals(internship.getId())) throw duplicate();
-            audit(record, "AUTO_ABSENT");
-            record.replaceAutomaticAbsence(status, type, clock.instant());
+        List<AttendanceRecord> todayRecords = attendance.findAllByStudentIdAndInternshipIdAndAttendanceDateOrderByActiveSlotAscIdAsc(
+                student.getId(), internship.getId(), date);
+        AttendanceRecord replaceableAbsence = todayRecords.stream()
+                .filter(r -> r.isAutomaticAbsent() && r.getEvidence() == null && r.getInternship().getId().equals(internship.getId()))
+                .findFirst().orElse(null);
+        long submittedCount = todayRecords.stream().filter(r -> !r.isAutomaticAbsent()).count();
+        AttendanceRecord record;
+        if (replaceableAbsence != null) {
+            audit(replaceableAbsence, "AUTO_ABSENT");
+            replaceableAbsence.replaceAutomaticAbsence(status, type, clock.instant());
+            record = replaceableAbsence;
         } else {
+            if (submittedCount >= AttendanceAbsenceService.DAILY_SUBMISSION_SLOTS) throw duplicate();
+            int nextSlot = todayRecords.stream().anyMatch(r -> Integer.valueOf(1).equals(r.getActiveSlot())) ? 2 : 1;
             record = new AttendanceRecord(student, internship, date, AttendanceResult.PENDING_MENTOR_REVIEW,
                     status, type, clock.instant());
+            record.setActiveSlot(nextSlot);
         }
         record.useLivenessVerification();
-        if (permission != null) record.recordLatePermission(permission.getAuthorizedBy(), permission.getAuthorizedAt());
         try {
             attendance.saveAndFlush(record);
         } catch (DataIntegrityViolationException exception) {
             throw duplicate();
         }
-        if (late) audit(record, "LATE_SUBMISSION");
         return record;
     }
 

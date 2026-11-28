@@ -39,57 +39,68 @@ class AttendanceAbsenceServiceTest {
         calendar = new AttendanceCalendarProperties();
         writer = mock(AttendanceAbsenceWriter.class);
         when(writer.createIfMissing(anyLong(), any(LocalDate.class))).thenReturn(true);
+        when(writer.createIfMissing(anyLong(), any(LocalDate.class), anyInt())).thenReturn(true);
     }
 
     @Test
-    void createsOneDailyAbsenceForEachExpiredWeekdayAndSkipsWeekend() {
+    void createsTwoDailyAbsencesForEachExpiredWeekdayAndSkipsWeekend() {
         candidates.add(internship(MONDAY.minusDays(3), MONDAY.plusDays(10), InternshipMode.ONLINE));
 
-        assertThat(service("2026-10-21T05:00:00Z").processOverdueAttendance()).isEqualTo(3);
+        assertThat(service("2026-10-21T05:00:00Z").processOverdueAttendance()).isEqualTo(6);
 
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.minusDays(3));
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1));
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.minusDays(3), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.minusDays(3), 2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 2);
         verifyNoMoreInteractions(writer);
     }
 
     @Test
-    void waitsUntilNoonSubmissionDeadlineUsingConfiguredTimeZone() {
+    void waitsUntilMidnightEndOfDayInConfiguredTimeZone() {
         candidates.add(internship(MONDAY.plusDays(1), MONDAY.plusDays(5), InternshipMode.ONLINE));
 
-        assertThat(service("2026-10-20T06:29:59Z").processOverdueAttendance()).isZero();
+        assertThat(service("2026-10-20T18:29:59Z").processOverdueAttendance()).isZero();
         verifyNoInteractions(writer);
 
-        assertThat(service("2026-10-20T06:30:00Z").processOverdueAttendance()).isEqualTo(1);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1));
+        assertThat(service("2026-10-20T18:30:00Z").processOverdueAttendance()).isEqualTo(2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 2);
         verifyNoMoreInteractions(writer);
     }
 
     @Test
-    void neverGeneratesCurrentAttendanceBeforeNoonOrFutureAttendance() {
+    void neverGeneratesCurrentDayAbsenceDuringDayOrFutureDates() {
         candidates.add(internship(MONDAY, MONDAY.plusDays(10), InternshipMode.COLLEGE_REPORTING));
 
-        assertThat(service("2026-10-19T05:00:00Z").processOverdueAttendance()).isZero();
+        assertThat(service("2026-10-19T10:00:00Z").processOverdueAttendance()).isZero();
         verifyNoInteractions(writer);
     }
 
     @Test
-    void atNoonGeneratesOnlyTodayAndNeverFutureDates() {
+    void atMidnightGeneratesPreviousDayOnlyAndNeverFutureDates() {
         candidates.add(internship(MONDAY, MONDAY.plusDays(10), InternshipMode.COLLEGE_REPORTING));
 
-        assertThat(service("2026-10-19T06:30:00Z").processOverdueAttendance()).isEqualTo(1);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY);
+        assertThat(service("2026-10-19T18:30:00Z").processOverdueAttendance()).isEqualTo(2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 2);
         verifyNoMoreInteractions(writer);
     }
 
     @Test
-    void preservesSubmittedAndSoftDeletedHistoricalDays() {
+    void preservesSubmittedAndSoftDeletedHistoricalDaysUpToTwoEntriesPerDay() {
         candidates.add(internship(MONDAY, MONDAY.plusDays(2), InternshipMode.ONLINE));
         when(attendance.findRecordedDatesIncludingDeleted(INTERNSHIP_ID))
-                .thenReturn(List.of(java.sql.Date.valueOf(MONDAY), java.sql.Date.valueOf(MONDAY.plusDays(1))));
+                .thenReturn(List.of(
+                        java.sql.Date.valueOf(MONDAY), java.sql.Date.valueOf(MONDAY),
+                        java.sql.Date.valueOf(MONDAY.plusDays(1))));
+        when(attendance.findActiveSlots(INTERNSHIP_ID, MONDAY.plusDays(1))).thenReturn(List.of(1));
 
-        assertThat(service("2026-10-22T05:00:00Z").processOverdueAttendance()).isEqualTo(1);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(2));
+        assertThat(service("2026-10-22T05:00:00Z").processOverdueAttendance()).isEqualTo(3);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(2), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(2), 2);
         verifyNoMoreInteractions(writer);
     }
 
@@ -97,9 +108,11 @@ class AttendanceAbsenceServiceTest {
     void includesInternshipStartAndEndButNoDaysOutsideThePeriod() {
         candidates.add(internship(MONDAY, MONDAY.plusDays(1), InternshipMode.OFFICE_REPORTING));
 
-        assertThat(service("2026-10-23T05:00:00Z").processOverdueAttendance()).isEqualTo(2);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1));
+        assertThat(service("2026-10-23T05:00:00Z").processOverdueAttendance()).isEqualTo(4);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 2);
         verifyNoMoreInteractions(writer);
     }
 
@@ -110,9 +123,11 @@ class AttendanceAbsenceServiceTest {
         calendar.getApprovedLeave().put(STUDENT_ID, List.of(
                 new AttendanceCalendarProperties.LeavePeriod(MONDAY.plusDays(2), MONDAY.plusDays(3))));
 
-        assertThat(service("2026-10-24T05:00:00Z").processOverdueAttendance()).isEqualTo(2);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(4));
+        assertThat(service("2026-10-24T05:00:00Z").processOverdueAttendance()).isEqualTo(4);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(4), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(4), 2);
         verifyNoMoreInteractions(writer);
     }
 
@@ -127,51 +142,99 @@ class AttendanceAbsenceServiceTest {
                 .thenReturn(Optional.of(new HybridWorkSchedule(internship, DayOfWeek.WEDNESDAY,
                         HybridWorkMode.REMOTE, Instant.parse("2026-10-01T00:00:00Z"))));
 
-        assertThat(service("2026-10-22T05:00:00Z").processOverdueAttendance()).isEqualTo(2);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(2));
+        assertThat(service("2026-10-22T05:00:00Z").processOverdueAttendance()).isEqualTo(4);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(2), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(2), 2);
         verifyNoMoreInteractions(writer);
     }
 
     @Test
     void repeatedExecutionCountsOnlyNewRecords() {
         candidates.add(internship(MONDAY, MONDAY.plusDays(1), InternshipMode.ONLINE));
-        Set<LocalDate> storedDates = new HashSet<>();
-        when(writer.createIfMissing(eq(INTERNSHIP_ID), any(LocalDate.class)))
-                .thenAnswer(invocation -> storedDates.add(invocation.getArgument(1)));
+        Map<LocalDate, Set<Integer>> stored = new HashMap<>();
+        when(writer.createIfMissing(eq(INTERNSHIP_ID), any(LocalDate.class), anyInt()))
+                .thenAnswer(invocation -> stored.computeIfAbsent(invocation.getArgument(1), d -> new HashSet<>())
+                        .add(invocation.getArgument(2)));
         AttendanceAbsenceService service = service("2026-10-21T05:00:00Z");
 
-        assertThat(service.processOverdueAttendance()).isEqualTo(2);
+        assertThat(service.processOverdueAttendance()).isEqualTo(4);
         assertThat(service.processOverdueAttendance()).isZero();
-        assertThat(storedDates).containsExactlyInAnyOrder(MONDAY, MONDAY.plusDays(1));
+        assertThat(stored.keySet()).containsExactlyInAnyOrder(MONDAY, MONDAY.plusDays(1));
     }
 
     @Test
     void failureForOneDayDoesNotPreventOtherDaysAndIsRetriedOnNextRun() {
         candidates.add(internship(MONDAY, MONDAY.plusDays(1), InternshipMode.ONLINE));
-        when(writer.createIfMissing(INTERNSHIP_ID, MONDAY))
+        when(writer.createIfMissing(INTERNSHIP_ID, MONDAY, 1))
                 .thenThrow(new DataAccessResourceFailureException("temporary database failure"))
                 .thenReturn(true);
-        when(writer.createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1))).thenReturn(true, false);
+        when(writer.createIfMissing(INTERNSHIP_ID, MONDAY, 2)).thenReturn(true, false);
+        when(writer.createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 1)).thenReturn(true, false);
+        when(writer.createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 2)).thenReturn(true, false);
         AttendanceAbsenceService service = service("2026-10-21T05:00:00Z");
 
+        assertThat(service.processOverdueAttendance()).isEqualTo(3);
         assertThat(service.processOverdueAttendance()).isEqualTo(1);
-        assertThat(service.processOverdueAttendance()).isEqualTo(1);
-        verify(writer, times(2)).createIfMissing(INTERNSHIP_ID, MONDAY);
-        verify(writer, times(2)).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1));
+        verify(writer, times(2)).createIfMissing(INTERNSHIP_ID, MONDAY, 1);
+        verify(writer, times(2)).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 2);
+    }
+
+    @Test
+    void unconfiguredHybridInternshipGeneratesAbsencesOnRegisteredWorkingDaysIncludingSevenDaySchedule() {
+        InternshipDetails hybrid = internship(LocalDate.of(2026, 11, 22), LocalDate.of(2027, 6, 30), InternshipMode.HYBRID);
+        hybrid.apply("Pagalworld Ltd", CompanyType.IT, null, "Test address", "1234567890",
+                "Supervisor", "Manager", "1234567890", 6,
+                LocalDate.of(2026, 11, 22), LocalDate.of(2027, 6, 30), 32,
+                InternshipMode.HYBRID, BigDecimal.ZERO, false,
+                7, "MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY,SATURDAY,SUNDAY");
+        candidates.add(hybrid);
+
+        // 2026-11-29 00:00 AM IST (18:30Z on Nov 28) -> Nov 22..28 = 7 overdue days * 2 entries = 14
+        assertThat(service("2026-11-28T18:30:00Z").processOverdueAttendance()).isEqualTo(14);
+        for (int offset = 0; offset < 7; offset++) {
+            LocalDate d = LocalDate.of(2026, 11, 22).plusDays(offset);
+            verify(writer).createIfMissing(INTERNSHIP_ID, d, 1);
+            verify(writer).createIfMissing(INTERNSHIP_ID, d, 2);
+        }
+        verifyNoMoreInteractions(writer);
     }
 
     @Test
     void concurrentDailyInsertIsAcceptedWithoutReplacingTheExistingRecord() {
         candidates.add(internship(MONDAY, MONDAY.plusDays(1), InternshipMode.ONLINE));
-        when(writer.createIfMissing(INTERNSHIP_ID, MONDAY))
+        when(writer.createIfMissing(INTERNSHIP_ID, MONDAY, 1))
                 .thenThrow(new DataIntegrityViolationException("concurrent daily record"));
-        when(attendance.countIncludingDeleted(INTERNSHIP_ID, MONDAY)).thenReturn(1L);
+        when(attendance.countIncludingDeleted(INTERNSHIP_ID, MONDAY)).thenReturn(2L);
 
-        assertThat(service("2026-10-21T05:00:00Z").processOverdueAttendance()).isEqualTo(1);
-        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1));
+        assertThat(service("2026-10-21T05:00:00Z").processOverdueAttendance()).isEqualTo(3);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1), 2);
         verify(attendance, never()).save(any(AttendanceRecord.class));
         verify(attendance, never()).delete(any(AttendanceRecord.class));
+    }
+
+    @Test
+    void processOverdueForInternshipBackfillsOnlySubmittedWorkingDaysFromStartDate() {
+        InternshipDetails customThreeDay = internship(MONDAY, MONDAY.plusDays(10), InternshipMode.ONLINE);
+        customThreeDay.apply("Three Day Ltd", CompanyType.IT, null, "Test address", "1234567890",
+                "Supervisor", "Manager", "1234567890", 6,
+                MONDAY, MONDAY.plusDays(10), 2,
+                InternshipMode.ONLINE, BigDecimal.ZERO, false,
+                3, "MONDAY,WEDNESDAY,FRIDAY");
+        when(internships.findByIdWithOnboardingAndStudent(INTERNSHIP_ID)).thenReturn(Optional.of(customThreeDay));
+
+        // 2026-10-23T18:30:00Z = midnight after Friday Oct 23 -> Mon (19), Wed (21), Fri (23) = 3 days * 2 = 6
+        assertThat(service("2026-10-23T18:30:00Z").processOverdueForInternship(INTERNSHIP_ID)).isEqualTo(6);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY, 2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(2), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(2), 2);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(4), 1);
+        verify(writer).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(4), 2);
+        verifyNoMoreInteractions(writer);
     }
 
     private AttendanceAbsenceService service(String instant) {

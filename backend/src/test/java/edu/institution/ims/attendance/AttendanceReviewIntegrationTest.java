@@ -58,6 +58,7 @@ class AttendanceReviewIntegrationTest {
         var original=jdbc.queryForMap("select verification_status,submission_type,server_submitted_at from attendance_records where id=?",record.getId());
         var location=jdbc.queryForMap("select latitude,longitude,gps_accuracy_meters,distance_meters,location_verification_status from attendance_evidence where attendance_id=?",record.getId());
         decide(record,mentor,"APPROVED",0,null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
                 .andExpect(jsonPath("$.review.status").value("APPROVED")).andExpect(jsonPath("$.review.reviewerId").value(mentor.getId()))
                 .andExpect(jsonPath("$.review.reviewedAt").isNotEmpty()).andExpect(jsonPath("$.review.revision").value(1));
         decide(record,mentor,"APPROVED",1,null).andExpect(status().isConflict());
@@ -70,15 +71,19 @@ class AttendanceReviewIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.records[0].review.status").value("APPROVED"));
     }
 
-    @Test void rejectionRequiresReasonAndPreservesItInStudentFeedbackAndAudit() throws Exception {
+    @Test void rejectionRequiresReasonAndMentorCanStillOverrideDecisionBetweenPresentAndAbsent() throws Exception {
         var record=record(student,internship,LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.BASIC);
         decide(record,mentor,"REJECTED",0," ").andExpect(status().isBadRequest());
         decide(record,mentor,"REJECTED",0,"Submitted workplace does not match supporting evidence.")
-                .andExpect(status().isOk()).andExpect(jsonPath("$.review.reason").value("Submitted workplace does not match supporting evidence."));
-        decide(record,mentor,"APPROVED",1,null).andExpect(status().isConflict());
+                .andExpect(status().isOk()).andExpect(jsonPath("$.attendanceResult").value("ABSENT"))
+                .andExpect(jsonPath("$.review.reason").value("Submitted workplace does not match supporting evidence."));
+        // Mentor can later change an absent record to present
+        decide(record,mentor,"APPROVED",1,"Student provided valid supporting documentation.")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.review.status").value("APPROVED"));
         mvc.perform(get("/api/v1/student/attendance/{id}/review/history",record.getId()).with(user(UserPrincipal.from(student))))
-                .andExpect(status().isOk()).andExpect(jsonPath("$[0].previousStatus").value("PENDING"))
-                .andExpect(jsonPath("$[0].status").value("REJECTED")).andExpect(jsonPath("$[0].reviewerId").value(mentor.getId()));
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].previousStatus").value("REJECTED"))
+                .andExpect(jsonPath("$[0].status").value("APPROVED")).andExpect(jsonPath("$[0].reviewerId").value(mentor.getId()));
         assertThat(jdbc.queryForObject("select rejection_reason from student_notifications where student_user_id=? and notification_type='ATTENDANCE_REJECTED'",String.class,student.getId()))
                 .isEqualTo("Submitted workplace does not match supporting evidence.");
     }
@@ -105,7 +110,8 @@ class AttendanceReviewIntegrationTest {
             var record=record(owner,details,status,AttendanceSubmissionType.BASIC);
             assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PENDING_MENTOR_REVIEW);
             decide(record,mentor,"APPROVED",0,null).andExpect(status().isOk())
-                    .andExpect(jsonPath("$.attendanceResult").value("PRESENT"));
+                    .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                    .andExpect(jsonPath("$.review.status").value("APPROVED"));
             assertThat(attendance.findById(record.getId()).orElseThrow().getEvidence().getLocationVerificationStatus()).isEqualTo(status);
         }
         assertThat(jdbc.queryForObject("select count(*) from attendance_reviews",Long.class)).isEqualTo(5);
@@ -131,20 +137,25 @@ class AttendanceReviewIntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from student_notifications where student_user_id=? and notification_type like 'ATTENDANCE_%'",Long.class,student.getId())).isEqualTo(2);
     }
 
-    @Test void automaticAbsencesAndDeletedHistoryCannotBeReviewed() throws Exception {
-        var absent=attendance.saveAndFlush(AttendanceRecord.automaticAbsent(student,internship,LocalDate.now(clock),clock.instant()));
-        decide(absent,mentor,"APPROVED",0,null).andExpect(status().isConflict());
+    @Test void mentorCanChangeAutomaticAbsenceToPresentWhileDeletedHistoryRemainsUnavailable() throws Exception {
+        var absent=attendance.saveAndFlush(AttendanceRecord.automaticAbsent(student,internship,LocalDate.now(clock).minusDays(1),clock.instant()));
+        decide(absent,mentor,"APPROVED",0,"Student forgot to mark attendance for genuine medical reason.")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendanceResult").value("PRESENT"))
+                .andExpect(jsonPath("$.review.status").value("APPROVED"));
+        assertThat(attendance.findById(absent.getId()).orElseThrow().getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
         var record=record(otherStudent,internship(otherStudent),LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.BASIC);
         jdbc.update("update attendance_records set deleted_at=?,active_slot=null where id=?",java.sql.Timestamp.from(clock.instant()),record.getId());
         decide(record,mentor,"REJECTED",0,"Deleted record must remain unavailable.").andExpect(status().isNotFound());
     }
 
-    @Test void finalizedAttendanceCanOnlyBeAcknowledgedWithoutChangingItsResult() throws Exception {
+    @Test void finalizedAttendanceCanBeAcknowledgedAndOverriddenBetweenPresentAndAbsent() throws Exception {
         var record=record(student,internship,LocationVerificationStatus.VERIFIED,AttendanceSubmissionType.BASIC);
         record.finalizeSubmission(true); attendance.saveAndFlush(record);
         assertThat(record.getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+        // Repeating PRESENT -> APPROVED stays conflict
         decide(record,mentor,"APPROVED",0,null).andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("ATTENDANCE_ALREADY_FINALIZED"));
+                .andExpect(jsonPath("$.code").value("INVALID_REVIEW_TRANSITION"));
         mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(otherMentor))))
                 .andExpect(status().isNotFound());
         var first=mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(mentor))))
@@ -154,7 +165,10 @@ class AttendanceReviewIntegrationTest {
         String seen=json.readTree(first.getResponse().getContentAsString()).at("/acknowledgement/seenAt").asText();
         mvc.perform(post("/api/v1/mentor/attendance/{id}/acknowledgement",record.getId()).with(user(UserPrincipal.from(mentor))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.acknowledgement.seenAt").value(seen));
-        assertThat(attendance.findById(record.getId()).orElseThrow().getAttendanceResult()).isEqualTo(AttendanceResult.PRESENT);
+        // Mentor can change finalized PRESENT to ABSENT with reason
+        decide(record,mentor,"REJECTED",0,"Correction after verifying workplace exit.")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.attendanceResult").value("ABSENT"));
+        assertThat(attendance.findById(record.getId()).orElseThrow().getAttendanceResult()).isEqualTo(AttendanceResult.ABSENT);
     }
 
     @Test void pendingAttendanceRequiresDecisionAndCannotBeAcknowledged() throws Exception {

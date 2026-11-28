@@ -53,10 +53,13 @@ public class AiVerificationService {
             throw error(HttpStatus.CONFLICT, "EDGE_AI_NOT_APPLICABLE",
                     "Edge verification is not available for today's attendance policy");
         }
-        if (attendance.findByStudentIdAndInternshipIdAndAttendanceDate(student.getId(), internship.getId(), today)
-                .filter(record -> !policies.canReplaceAutomaticAbsence(record, student.getId(), internship.getId(), today)).isPresent()) {
+        long activeSubmissions = attendance.findAllByStudentIdAndInternshipIdAndAttendanceDateOrderByActiveSlotAscIdAsc(
+                        student.getId(), internship.getId(), today).stream()
+                .filter(record -> !policies.canReplaceAutomaticAbsence(record, student.getId(), internship.getId(), today))
+                .count();
+        if (activeSubmissions >= AttendanceAbsenceService.DAILY_SUBMISSION_SLOTS) {
             throw error(HttpStatus.CONFLICT, "ATTENDANCE_ALREADY_SUBMITTED",
-                    "Today's attendance has already been submitted");
+                    "All 2 daily attendance submissions have already been recorded for today");
         }
         Instant now = clock.instant();
         AiChallengeType challenge = CHALLENGES.get(random.nextInt(CHALLENGES.size()));

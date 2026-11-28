@@ -28,15 +28,17 @@ export type AttendanceTotals = {
 export type StudentAttendanceSummary = { studentUserId: number; internshipId: number | null; internshipNumber: number | null; uid: string | null; studentName: string | null; branch: string | null; facultyMentor: string | null; company: string | null; workflowStatus: string; attendance: AttendanceTotals; reviewSummary?: { submitted: number; gpsVerified: number; pending: number; approved: number; rejected: number; manualReview: number } };
 export const formatAttendancePercentage = (value: number | null) => (value == null || isNaN(value)) ? "—" : `${value.toFixed(1)}%`;
 export const formatAttendanceDays = (totals?: AttendanceTotals | null) => {
-  if (!totals || totals.totalDays === 0) return "—";
-  const submitted = totals.submittedDays != null ? totals.submittedDays : totals.presentDays;
+  if (!totals) return "—";
   const present = totals.presentDays;
   const absent = totals.absentDays;
-  const dayStr = (n: number) => n === 1 ? "1 Day" : `${n} Days`;
-  if (absent > 0) {
-    return `${submitted} Submitted (${present} Present, ${absent} Absent)`;
-  }
-  return `${dayStr(submitted)} (${present} Present)`;
+  const pending = totals.pendingDays ?? 0;
+  const working = totals.workingDays ?? 0;
+  if (totals.totalDays === 0 && present === 0 && absent === 0 && pending === 0 && working === 0) return "—";
+  const parts = [`${present} Present`];
+  if (absent > 0) parts.push(`${absent} Absent`);
+  if (pending > 0) parts.push(`${pending} Pending review`);
+  if (totals.percentage != null) parts.push(`${totals.percentage.toFixed(1)}%`);
+  return parts.join(" · ");
 };
 
 export type InternshipSummary = { id: number; internshipNumber: number; companyName: string | null; internshipMode: string | null };
@@ -112,14 +114,16 @@ export function StudentAttendanceHistory({ role, studentId, initialInternshipId,
 
     {error ? <p role="alert" className="mt-4 text-red-700">{error}</p> : !history ? <p role="status" className="mt-4 text-slate-500">Loading attendance history...</p> : <>
       <p className="mt-3 font-semibold text-slate-900">
-        {(history.totals.submittedDays ?? history.totals.presentDays) === 1 ? "1 Submitted Day" : `${history.totals.submittedDays ?? history.totals.presentDays} Submitted Days`} · {history.totals.presentDays} Present{history.totals.absentDays > 0 ? ` · ${history.totals.absentDays} Absent` : ""}
-        {history.totals.workingDays != null && history.totals.workingDays > 0 ? ` · ${history.totals.workingDays} Scheduled Working Days` : ""}
+        {history.totals.presentDays} present{history.totals.absentDays > 0 ? ` · ${history.totals.absentDays} absent` : ""}
+        {(history.totals.pendingDays ?? 0) > 0 ? ` · ${history.totals.pendingDays} pending review` : ""}
+        {history.totals.workingDays != null && history.totals.workingDays > 0 ? ` · ${history.totals.workingDays} scheduled working days` : ""}
+        {history.totals.percentage != null ? ` (${history.totals.percentage.toFixed(1)}%)` : ""}
         {history.totals.approvedHolidayDays != null && history.totals.approvedHolidayDays > 0 ? ` · ${history.totals.approvedHolidayDays} Approved Holidays` : ""}
         {history.totals.approvedExtraWorkingDays != null && history.totals.approvedExtraWorkingDays > 0 ? ` · ${history.totals.approvedExtraWorkingDays} Extra Workdays` : ""}
       </p>
       <p className="mt-2 text-xs text-slate-500">Totals are calculated against registered company working schedules, excluding approved holidays and unscheduled days. Times use {history.attendanceZone}.</p>
-      <div className="mt-4 w-full overflow-x-auto"><table className="w-full min-w-[950px] border-collapse text-left text-sm text-slate-900"><thead><tr className="border-b border-slate-200">{["Date", "Status", "Submission time", "Liveness", "Late submission", "Mentor approval", ...(role === "MENTOR" ? ["Actions"] : [])].map(label => <th key={label} className="p-3 font-semibold text-slate-900 whitespace-nowrap">{label}</th>)}</tr></thead>
-        <tbody>{history.records.map(record => <tr key={record.id} className="border-t border-slate-100 align-top"><td className="p-3 text-slate-900 whitespace-nowrap">{record.attendanceDate}</td><td className="p-3 text-slate-900"><p className="font-semibold text-slate-900">{record.attendanceResult}</p><LocationVerificationResult evidence={record.evidence} />{record.evidence?.dailyWorkSummary && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-600">{record.evidence.dailyWorkSummary}</p>}</td><td className="p-3 text-slate-900">{isAutomaticAbsence(record) ? "— (automatic absence)" : record.serverSubmittedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: history.attendanceZone }).format(new Date(record.serverSubmittedAt)) : "—"}<AttendanceLocations evidence={record.evidence} /></td><td className="p-3 text-slate-900 whitespace-nowrap">{livenessLabel(record.livenessStatus)}</td><td className="p-3 text-slate-900 whitespace-nowrap">{record.submittedLate ? "Yes · mentor permission" : "—"}</td><td className="p-3 text-slate-900"><AttendanceReviewPanel record={record} role={role} onChanged={() => { setRevision(value => value + 1); onChanged?.(); }} /></td>{role === "MENTOR" && <td className="p-3 text-slate-900"><MentorRecordDelete kind="attendance" id={record.id} description={`${name} · ${record.attendanceDate}`} onDeleted={() => { setRevision(value => value + 1); onChanged?.(); }} /></td>}</tr>)}</tbody>
+      <div className="mt-4 w-full overflow-x-auto"><table className="w-full min-w-[850px] border-collapse text-left text-sm text-slate-900"><thead><tr className="border-b border-slate-200">{["Date & Slot", "Status", "Submission time", "Liveness", "Mentor approval", ...(role === "MENTOR" ? ["Actions"] : [])].map(label => <th key={label} className="p-3 font-semibold text-slate-900 whitespace-nowrap">{label}</th>)}</tr></thead>
+        <tbody>{history.records.map(record => <tr key={record.id} className="border-t border-slate-100 align-top"><td className="p-3 text-slate-900 whitespace-nowrap"><span>{record.attendanceDate}</span><span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">#{record.submissionSlot ?? 1}</span></td><td className="p-3 text-slate-900"><p className="font-semibold text-slate-900">{record.attendanceResult}</p><LocationVerificationResult evidence={record.evidence} />{record.evidence?.dailyWorkSummary && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-600">{record.evidence.dailyWorkSummary}</p>}</td><td className="p-3 text-slate-900">{isAutomaticAbsence(record) ? "— (automatic absence)" : record.serverSubmittedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: history.attendanceZone }).format(new Date(record.serverSubmittedAt)) : "—"}<AttendanceLocations evidence={record.evidence} /></td><td className="p-3 text-slate-900 whitespace-nowrap">{livenessLabel(record.livenessStatus)}</td><td className="p-3 text-slate-900"><AttendanceReviewPanel record={record} role={role} onChanged={() => { setRevision(value => value + 1); onChanged?.(); }} /></td>{role === "MENTOR" && <td className="p-3 text-slate-900"><MentorRecordDelete kind="attendance" id={record.id} description={`${name} · ${record.attendanceDate}`} onDeleted={() => { setRevision(value => value + 1); onChanged?.(); }} /></td>}</tr>)}</tbody>
       </table>{!history.records.length && <p className="p-3 text-slate-500">No attendance records yet.</p>}</div>
     </>}
   </section>;
@@ -150,7 +154,7 @@ export function AttendanceAbsenceOverview({ role }: { role: "ADMIN" | "MENTOR" }
     : ["", "UID", "Student Name", "Branch", "Faculty Mentor", "Company", "Attendance", "Mentor Review", "Workflow Status"];
   return <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
     <h2 className="text-xl font-bold text-slate-950 dark:text-slate-100">{role === "MENTOR" ? "Assigned Students" : "Student Attendance"}</h2>
-    <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Click the chevron next to a student to expand or collapse attendance history. Attendance displays submitted and present days on applicable working days.</p>
+    <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Click the chevron next to a student to expand or collapse attendance history. Attendance displays present and absent days on applicable working days.</p>
     <label className="mt-4 block text-sm font-semibold text-slate-900 dark:text-slate-200">Search by name or enrollment number<input value={search} onChange={event => setSearch(event.target.value)} className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 font-normal text-slate-900 sm:max-w-md dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" /></label>
     {error && <p role="alert" className="mt-4 text-red-700 dark:text-red-400">{error}</p>}
     {loading ? <p role="status" className="mt-4 text-slate-500 dark:text-slate-400">Loading students...</p> : (!error || rows.length > 0) && <div className="mt-4 w-full overflow-x-auto min-h-[300px]"><table className="w-full min-w-[760px] text-left text-sm text-slate-900 dark:text-slate-100"><thead><tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wider text-slate-600 dark:border-slate-800 dark:text-slate-400">{headers.map((label, idx) => <th key={label || `col-${idx}`} className={`break-words p-3 ${idx === 0 ? "w-10 text-center" : ""}`}>{label}</th>)}</tr></thead>
@@ -229,10 +233,6 @@ export function AttendanceAbsenceOverview({ role }: { role: "ADMIN" | "MENTOR" }
                         <div className="absolute left-0 top-full z-30 mt-1.5 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-800">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Review Breakdown</p>
                           <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
-                            <div className="flex justify-between items-center py-0.5 border-b border-slate-100 dark:border-slate-700/60">
-                              <span className="text-slate-600 dark:text-slate-400">Submitted Records</span>
-                              <span className="font-semibold text-slate-900 dark:text-slate-100">{row.reviewSummary.submitted}</span>
-                            </div>
                             <div className="flex justify-between items-center py-0.5 border-b border-slate-100 dark:border-slate-700/60">
                               <span className="text-slate-600 dark:text-slate-400">GPS Verified</span>
                               <span className="font-semibold text-blue-700 dark:text-blue-400">{row.reviewSummary.gpsVerified}</span>

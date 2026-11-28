@@ -87,13 +87,22 @@ public class AttendanceService {
         LocalDate today = InternshipLifecycle.today(clock);
         InternshipDetails internship=eligibleInternship(principal.id(),internshipId);
         AttendanceLifecycleStatus lifecycle = policies.lifecycle(internship, today);
-        boolean latePermission = permissions.isEnabled(principal.id(), internship.getId(), today);
-        return new TodayAttendanceResponse(today,
-                attendance.findByStudentIdAndInternshipIdAndAttendanceDate(principal.id(),internship.getId(), today)
-                        .map(AttendanceService::response).orElse(null),
-                AttendanceSubmissionWindow.deadline(today, clock),
-                lifecycle == AttendanceLifecycleStatus.ACTIVE && (!AttendanceSubmissionWindow.isClosed(today, clock) || latePermission),
-                clock.getZone().getId(), latePermission, lifecycle);
+        List<AttendanceRecord> todayRecords = attendance.findAllByStudentIdAndInternshipIdAndAttendanceDateOrderByActiveSlotAscIdAsc(
+                principal.id(), internship.getId(), today);
+        List<AttendanceResponse> todaySubmissions = todayRecords.stream()
+                .filter(record -> !record.isAutomaticAbsent())
+                .map(AttendanceService::response)
+                .toList();
+        AttendanceResponse latest = !todaySubmissions.isEmpty()
+                ? todaySubmissions.get(todaySubmissions.size() - 1)
+                : todayRecords.stream().findFirst().map(AttendanceService::response).orElse(null);
+        int submissionsCount = todaySubmissions.size();
+        boolean submissionOpen = lifecycle == AttendanceLifecycleStatus.ACTIVE
+                && submissionsCount < AttendanceAbsenceService.DAILY_SUBMISSION_SLOTS
+                && !AttendanceSubmissionWindow.isClosed(today, clock);
+        return new TodayAttendanceResponse(today, latest, AttendanceSubmissionWindow.deadline(today, clock),
+                submissionOpen, clock.getZone().getId(), false, lifecycle, todaySubmissions,
+                submissionsCount, AttendanceAbsenceService.DAILY_SUBMISSION_SLOTS);
     }
 
     @Transactional(readOnly = true)
@@ -131,7 +140,8 @@ public class AttendanceService {
                 record.getServerSubmittedAt(), AttendanceEvidenceResponse.from(record.getEvidence()),
                 record.getVerificationBasis(), record.getLivenessStatus(), record.isAutomaticAbsent(),
                 record.isSubmittedLate(), AttendanceReviewResponse.from(record),
-                record.getMentorSeenAt() == null ? null : new AttendanceAcknowledgementResponse(record.getMentorSeenBy(), record.getMentorSeenAt()));
+                record.getMentorSeenAt() == null ? null : new AttendanceAcknowledgementResponse(record.getMentorSeenBy(), record.getMentorSeenAt()),
+                record.getActiveSlot());
     }
 
     static AttendanceException error(HttpStatus status, String code, String message) {

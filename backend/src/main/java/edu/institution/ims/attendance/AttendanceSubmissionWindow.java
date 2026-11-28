@@ -2,7 +2,7 @@ package edu.institution.ims.attendance;
 
 import java.time.*;
 
-/** One daily submission, closing at 12 noon in the configured attendance zone. */
+/** Daily submission window remains open for the full calendar day in the configured attendance zone. */
 final class AttendanceSubmissionWindow {
     private AttendanceSubmissionWindow() {}
 
@@ -13,7 +13,7 @@ final class AttendanceSubmissionWindow {
     }
 
     static Instant deadline(LocalDate date, Clock clock) {
-        return date.atTime(LocalTime.NOON).atZone(zone(clock)).toInstant();
+        return date.plusDays(1).atStartOfDay(zone(clock)).toInstant();
     }
 
     static boolean isClosed(LocalDate date, Clock clock) {

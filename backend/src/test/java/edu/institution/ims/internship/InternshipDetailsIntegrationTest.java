@@ -31,6 +31,7 @@ class InternshipDetailsIntegrationTest {
     @Autowired edu.institution.ims.professionalprofile.StudentProfessionalProfileRepository professionalProfiles;
     @Autowired edu.institution.ims.mentor.MentorStudentAssignmentRepository assignments;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired java.time.Clock clock;
     User admin; User studentA; User studentB; Cookie adminCookie; Cookie studentACookie; Cookie studentBCookie;
 
     @AfterEach void cleanupProfessionalProfileFixture() {
@@ -41,6 +42,7 @@ class InternshipDetailsIntegrationTest {
 
     @BeforeEach void setUp() throws Exception {
         jdbc.update("delete from student_edit_permission_audit"); jdbc.update("delete from student_edit_permissions");
+        jdbc.update("delete from attendance_records");
         jdbc.update("delete from second_internship_requests"); locations.deleteAll(); details.deleteAll(); documents.deleteAll(); onboardings.deleteAll(); profiles.deleteAll(); assignments.deleteAll(); accounts.deleteAll(); users.deleteAll();
         admin = users.save(new User("incharge@example.edu", encoder.encode("AdminPassword!23"), Role.ADMIN, true));
         studentA = student("student.a@example.edu", "StudentAPassword!23"); studentB = student("student.b@example.edu", "StudentBPassword!23");
@@ -439,6 +441,51 @@ class InternshipDetailsIntegrationTest {
         assertThat(retained.getLongitude()).isEqualByComparingTo("76.779419");
         assertThat(retained.getStatus()).isEqualTo(edu.institution.ims.attendance.InternshipLocationStatus.APPROVED);
         assertThat(retained.getMentorReviewedAt()).isNotNull();
+    }
+
+    @Test void submittingOrUpdatingInternshipWithPastStartDateImmediatelyBackfillsAndReconcilesAbsences() throws Exception {
+        ready(studentACookie, "A", "UID-A", "a@college.edu");
+        java.time.LocalDate today = InternshipLifecycle.today(clock);
+        try {
+            Map<String, Object> data = internship("Backfill Systems");
+            data.put("startDate", today.minusDays(4).toString());
+            data.put("endDate", today.plusDays(60).toString());
+            data.put("workingDaysPerWeek", 7);
+            data.put("workingDays", List.of("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"));
+            mvc.perform(post("/api/v1/student/internship").cookie(studentACookie)
+                            .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(data)))
+                    .andExpect(status().isCreated());
+
+            String todayBody = mvc.perform(get("/api/v1/student/attendance/today").cookie(studentACookie))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            var todayJson = json.readTree(todayBody);
+            today = java.time.LocalDate.parse(todayJson.path("attendanceDate").asText());
+            java.time.LocalDate cutoff = todayJson.path("submissionOpen").asBoolean() ? today.minusDays(1) : today;
+
+            long expectedSevenDayAbsent = today.minusDays(4).datesUntil(today).count() * 2;
+            mvc.perform(get("/api/v1/student/attendance/summary").cookie(studentACookie))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.totals.absentDays").value(expectedSevenDayAbsent));
+
+            Map<String, Object> updated = internship("Backfill Systems");
+            updated.put("startDate", today.minusDays(2).toString());
+            updated.put("endDate", today.plusDays(60).toString());
+            updated.put("workingDaysPerWeek", 3);
+            updated.put("workingDays", List.of("MONDAY", "WEDNESDAY", "FRIDAY"));
+            mvc.perform(put("/api/v1/student/internship").cookie(studentACookie)
+                            .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(updated)))
+                    .andExpect(status().isOk());
+
+            Set<java.time.DayOfWeek> threeDays = Set.of(java.time.DayOfWeek.MONDAY, java.time.DayOfWeek.WEDNESDAY, java.time.DayOfWeek.FRIDAY);
+            long expectedThreeDayAbsent = today.minusDays(2).datesUntil(today)
+                    .filter(d -> threeDays.contains(d.getDayOfWeek()))
+                    .count() * 2;
+            mvc.perform(get("/api/v1/student/attendance/summary").cookie(studentACookie))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.totals.absentDays").value(expectedThreeDayAbsent));
+        } finally {
+            jdbc.update("delete from attendance_records");
+        }
     }
 
     private User student(String email, String password) { User user = users.save(new User(email, encoder.encode(password), Role.STUDENT, true)); accounts.save(new StudentAccount(user)); return user; }

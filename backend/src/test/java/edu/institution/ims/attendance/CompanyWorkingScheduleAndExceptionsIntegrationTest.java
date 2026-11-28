@@ -162,7 +162,7 @@ class CompanyWorkingScheduleAndExceptionsIntegrationTest {
     @DisplayName("Scenario 7: Saturday normally working but missed becomes ABSENT")
     void test7_saturdayNormallyWorkingMissedIsAbsent() {
         LocalDate saturday = LocalDate.of(2026, 11, 21);
-        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T08:00:00Z"), ZoneId.of("Asia/Kolkata"));
+        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T18:30:00Z"), ZoneId.of("Asia/Kolkata")); // end of Nov 21 IST
 
         boolean applicable = AttendanceAbsenceService.isApplicable(
                 internshipMonSat, saturday, pastCutoffClock, policies, calendar, exceptions);
@@ -178,7 +178,7 @@ class CompanyWorkingScheduleAndExceptionsIntegrationTest {
                 internshipMonSat.getId(), saturday, AttendanceExceptionType.COMPANY_HOLIDAY, AttendanceExceptionStatus.APPROVED))
                 .thenReturn(true);
 
-        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T08:00:00Z"), ZoneId.of("Asia/Kolkata"));
+        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T18:30:00Z"), ZoneId.of("Asia/Kolkata"));
         boolean applicable = AttendanceAbsenceService.isApplicable(
                 internshipMonSat, saturday, pastCutoffClock, policies, calendar, exceptions);
 
@@ -198,7 +198,7 @@ class CompanyWorkingScheduleAndExceptionsIntegrationTest {
                 internshipMonSat.getId(), saturday, AttendanceExceptionType.COMPANY_HOLIDAY, AttendanceExceptionStatus.APPROVED))
                 .thenReturn(false);
 
-        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T08:00:00Z"), ZoneId.of("Asia/Kolkata"));
+        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T18:30:00Z"), ZoneId.of("Asia/Kolkata"));
         boolean applicable = AttendanceAbsenceService.isApplicable(
                 internshipMonSat, saturday, pastCutoffClock, policies, calendar, exceptions);
 
@@ -210,7 +210,7 @@ class CompanyWorkingScheduleAndExceptionsIntegrationTest {
     void test10_companyScheduleRespected() {
         LocalDate saturday = LocalDate.of(2026, 11, 21);
         // For Mon-Sat company, Saturday is an applicable working day
-        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T08:00:00Z"), ZoneId.of("Asia/Kolkata"));
+        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T18:30:00Z"), ZoneId.of("Asia/Kolkata"));
         boolean applicable = AttendanceAbsenceService.isApplicable(
                 internshipMonSat, saturday, pastCutoffClock, policies, calendar, exceptions);
         assertThat(applicable).isTrue();
@@ -253,7 +253,7 @@ class CompanyWorkingScheduleAndExceptionsIntegrationTest {
     @DisplayName("Scenario 13: Two internships with different schedules calculate independently")
     void test13_dualInternshipsIndependentSchedules() {
         LocalDate saturday = LocalDate.of(2026, 11, 21);
-        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T08:00:00Z"), ZoneId.of("Asia/Kolkata"));
+        Clock pastCutoffClock = Clock.fixed(Instant.parse("2026-11-21T18:30:00Z"), ZoneId.of("Asia/Kolkata")); // end of Nov 21 IST
 
         // Internship 1 (Mon-Fri) ignores Saturday
         boolean int1Applicable = AttendanceAbsenceService.isApplicable(

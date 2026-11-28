@@ -19,7 +19,7 @@ import static org.mockito.Mockito.*;
 class AttendanceAbsenceWriterTest {
     private static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
     private static final LocalDate MONDAY = LocalDate.of(2026, 10, 19);
-    private static final Instant NOON = Instant.parse("2026-10-19T06:30:00Z");
+    private static final Instant AFTER_END_OF_DAY = Instant.parse("2026-10-19T18:30:00Z"); // 00:00 IST Oct 20
     private static final long INTERNSHIP_ID = 10L;
     private AttendanceRepository attendance;
     private InternshipDetailsRepository internships;
@@ -46,7 +46,7 @@ class AttendanceAbsenceWriterTest {
 
     @Test
     void createsDailyRecordWithExplicitAutomaticOriginAndNoVerificationEvidence() {
-        assertThat(writer(NOON).createIfMissing(INTERNSHIP_ID, MONDAY)).isTrue();
+        assertThat(writer(AFTER_END_OF_DAY).createIfMissing(INTERNSHIP_ID, MONDAY)).isTrue();
 
         ArgumentCaptor<AttendanceRecord> saved = ArgumentCaptor.forClass(AttendanceRecord.class);
         verify(attendance).saveAndFlush(saved.capture());
@@ -61,9 +61,9 @@ class AttendanceAbsenceWriterTest {
         assertThat(record.getLivenessStatus()).isEqualTo(LivenessStatus.NOT_APPLICABLE);
         assertThat(record.getVerificationStatus()).isEqualTo(VerificationStatus.UNVERIFIED);
         assertThat(record.getEvidence()).isNull();
-        assertThat(record.getCreatedAt()).isEqualTo(NOON);
-        assertThat(record.getUpdatedAt()).isEqualTo(NOON);
-        assertThat(record.getServerSubmittedAt()).isEqualTo(NOON);
+        assertThat(record.getCreatedAt()).isEqualTo(AFTER_END_OF_DAY);
+        assertThat(record.getUpdatedAt()).isEqualTo(AFTER_END_OF_DAY);
+        assertThat(record.getServerSubmittedAt()).isEqualTo(AFTER_END_OF_DAY);
 
         AttendanceResponse response = AttendanceService.response(record);
         assertThat(response.attendanceResult()).isEqualTo(AttendanceResult.ABSENT);
@@ -74,41 +74,44 @@ class AttendanceAbsenceWriterTest {
     }
 
     @Test
-    void preservesAnyExistingRecordIncludingSoftDeletedHistoryAndSubmittedEvidence() {
-        when(attendance.countIncludingDeleted(INTERNSHIP_ID, MONDAY)).thenReturn(1L);
+    void preservesExistingTwoRecordsIncludingSoftDeletedHistoryAndSubmittedEvidence() {
+        when(attendance.countIncludingDeleted(INTERNSHIP_ID, MONDAY)).thenReturn(2L);
 
-        assertThat(writer(NOON).createIfMissing(INTERNSHIP_ID, MONDAY)).isFalse();
+        assertThat(writer(AFTER_END_OF_DAY).createIfMissing(INTERNSHIP_ID, MONDAY, 1)).isFalse();
+        assertThat(writer(AFTER_END_OF_DAY).createIfMissing(INTERNSHIP_ID, MONDAY, 2)).isFalse();
 
         verify(attendance, never()).saveAndFlush(any());
         verify(attendance, never()).delete(any(AttendanceRecord.class));
     }
 
     @Test
-    void rechecksSubmissionDeadlineBeforeInserting() {
-        assertThat(writer(NOON.minusSeconds(1)).createIfMissing(INTERNSHIP_ID, MONDAY)).isFalse();
-        assertThat(writer(NOON).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1))).isFalse();
+    void rechecksEndOfDayDeadlineBeforeInserting() {
+        assertThat(writer(AFTER_END_OF_DAY.minusSeconds(1)).createIfMissing(INTERNSHIP_ID, MONDAY)).isFalse();
+        assertThat(writer(AFTER_END_OF_DAY).createIfMissing(INTERNSHIP_ID, MONDAY.plusDays(1))).isFalse();
         verify(attendance, never()).saveAndFlush(any());
     }
 
     @Test
     void rechecksCalendarExclusionsAndInternshipEligibilityBeforeInserting() {
         calendar.getHolidays().add(MONDAY);
-        assertThat(writer(NOON).createIfMissing(INTERNSHIP_ID, MONDAY)).isFalse();
+        assertThat(writer(AFTER_END_OF_DAY).createIfMissing(INTERNSHIP_ID, MONDAY)).isFalse();
         calendar.getHolidays().clear();
         ReflectionTestUtils.setField(internship.getOnboarding().getStudent(), "active", false);
-        assertThat(writer(NOON).createIfMissing(INTERNSHIP_ID, MONDAY)).isFalse();
+        assertThat(writer(AFTER_END_OF_DAY).createIfMissing(INTERNSHIP_ID, MONDAY)).isFalse();
         verify(attendance, never()).saveAndFlush(any());
     }
 
     @Test
-    void repeatedInsertDoesNotCreateAnotherRecord() {
-        when(attendance.countIncludingDeleted(INTERNSHIP_ID, MONDAY)).thenReturn(0L, 1L);
-        AttendanceAbsenceWriter writer = writer(NOON);
+    void repeatedInsertDoesNotCreateAnotherRecordInSameSlotOrBeyondTwo() {
+        when(attendance.countIncludingDeleted(INTERNSHIP_ID, MONDAY)).thenReturn(0L, 1L, 2L);
+        when(attendance.findActiveSlots(INTERNSHIP_ID, MONDAY)).thenReturn(java.util.List.of(), java.util.List.of(1), java.util.List.of(1, 2));
+        AttendanceAbsenceWriter writer = writer(AFTER_END_OF_DAY);
 
-        assertThat(writer.createIfMissing(INTERNSHIP_ID, MONDAY)).isTrue();
-        assertThat(writer.createIfMissing(INTERNSHIP_ID, MONDAY)).isFalse();
+        assertThat(writer.createIfMissing(INTERNSHIP_ID, MONDAY, 1)).isTrue();
+        assertThat(writer.createIfMissing(INTERNSHIP_ID, MONDAY, 2)).isTrue();
+        assertThat(writer.createIfMissing(INTERNSHIP_ID, MONDAY, 1)).isFalse();
 
-        verify(attendance, times(1)).saveAndFlush(any(AttendanceRecord.class));
+        verify(attendance, times(2)).saveAndFlush(any(AttendanceRecord.class));
     }
 
     @Test
@@ -116,7 +119,7 @@ class AttendanceAbsenceWriterTest {
         when(attendance.saveAndFlush(any(AttendanceRecord.class)))
                 .thenThrow(new DataIntegrityViolationException("concurrent daily record"));
 
-        assertThatThrownBy(() -> writer(NOON).createIfMissing(INTERNSHIP_ID, MONDAY))
+        assertThatThrownBy(() -> writer(AFTER_END_OF_DAY).createIfMissing(INTERNSHIP_ID, MONDAY))
                 .isInstanceOf(DataIntegrityViolationException.class);
         verify(attendance, never()).save(any(AttendanceRecord.class));
     }

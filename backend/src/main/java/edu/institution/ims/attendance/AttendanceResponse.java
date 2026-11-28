@@ -12,13 +12,23 @@ public record AttendanceResponse(
         Instant serverSubmittedAt, AttendanceEvidenceResponse evidence,
         AttendanceVerificationBasis verificationBasis, LivenessStatus livenessStatus,
         boolean automaticAbsent, boolean submittedLate, AttendanceReviewResponse review,
-        AttendanceAcknowledgementResponse acknowledgement
+        AttendanceAcknowledgementResponse acknowledgement,
+        Integer submissionSlot
 ) {
+    public AttendanceResponse(Long id, Long internshipId, LocalDate attendanceDate, AttendanceResult attendanceResult,
+            VerificationStatus verificationStatus, AttendanceSubmissionType submissionType, Instant serverSubmittedAt,
+            AttendanceEvidenceResponse evidence, AttendanceVerificationBasis verificationBasis, LivenessStatus livenessStatus,
+            boolean automaticAbsent, boolean submittedLate, AttendanceReviewResponse review,
+            AttendanceAcknowledgementResponse acknowledgement) {
+        this(id, internshipId, attendanceDate, attendanceResult, verificationStatus, submissionType, serverSubmittedAt,
+                evidence, verificationBasis, livenessStatus, automaticAbsent, submittedLate, review, acknowledgement, 1);
+    }
+
     public AttendanceResponse(Long id, Long internshipId, LocalDate attendanceDate, AttendanceResult attendanceResult,
             VerificationStatus verificationStatus, AttendanceSubmissionType submissionType, Instant serverSubmittedAt,
             AttendanceEvidenceResponse evidence, AttendanceVerificationBasis verificationBasis, LivenessStatus livenessStatus,
             boolean automaticAbsent, boolean submittedLate) {
         this(id, internshipId, attendanceDate, attendanceResult, verificationStatus, submissionType, serverSubmittedAt,
-                evidence, verificationBasis, livenessStatus, automaticAbsent, submittedLate, null, null);
+                evidence, verificationBasis, livenessStatus, automaticAbsent, submittedLate, null, null, 1);
     }
 }

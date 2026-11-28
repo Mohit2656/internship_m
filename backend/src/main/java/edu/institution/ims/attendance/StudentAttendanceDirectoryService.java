@@ -187,10 +187,15 @@ public class StudentAttendanceDirectoryService {
         long leaveDays = 0;
         long approvedHolidayDays = 0;
         long approvedExtraWorkingDays = 0;
+        Map<Long, Boolean> hybridConfiguredByInternship = new HashMap<>();
         if (internship != null && internship.getStartDate() != null && internship.getEndDate() != null
                 && !today.isBefore(internship.getStartDate())) {
             LocalDate windowEnd = internship.getEndDate().isBefore(today) ? internship.getEndDate() : today;
-            Long studentId = records.isEmpty() ? null : records.get(0).getStudent() != null ? records.get(0).getStudent().getId() : null;
+            Long studentId = !records.isEmpty() && records.get(0).getStudent() != null
+                    ? records.get(0).getStudent().getId()
+                    : (internship.getOnboarding() != null && internship.getOnboarding().getStudent() != null
+                            ? internship.getOnboarding().getStudent().getId()
+                            : null);
             for (LocalDate d = internship.getStartDate(); !d.isAfter(windowEnd); d = d.plusDays(1)) {
                 boolean workingDay = isWorkingDay(internship, d);
                 boolean holiday = calendar.getHolidays().contains(d);
@@ -205,15 +210,17 @@ public class StudentAttendanceDirectoryService {
                 if (leave) leaveDays++;
                 if (approvedExtra) approvedExtraWorkingDays++;
 
-                if (workingDay && !holiday && !leave && !approvedHoliday && policies.resolve(internship, d).configurationReady()) {
+                if ((workingDay || approvedExtra) && !holiday && !leave && !approvedHoliday
+                        && isTrackedWorkingPolicy(internship, d, hybridConfiguredByInternship)) {
                     workingDays++;
                 }
             }
         }
 
-        // 3. Status mapping on applicable working days
-        Map<LocalDate, AttendanceResult> days = new HashMap<>();
-        Set<LocalDate> pendingDates = new HashSet<>();
+        // 3. Status mapping on applicable working days (each submission counts individually, up to 2 per day)
+        long pendingCount = 0;
+        long present = 0;
+        long absent = 0;
         Set<LocalDate> extraWorkDatesWithPresent = new HashSet<>();
         for (AttendanceRecord record : records) {
             if (record.getDeletedAt() != null) continue;
@@ -229,14 +236,15 @@ public class StudentAttendanceDirectoryService {
             if (approvedHoliday) continue;
 
             // Exclude if institutional student leave
-            if (calendar.isExcluded(record.getStudent().getId(), date) || !policies.resolve(curInternship, date).configurationReady()) continue;
+            if (calendar.isExcluded(record.getStudent().getId(), date)
+                    || !isTrackedWorkingPolicy(curInternship, date, hybridConfiguredByInternship)) continue;
 
             boolean isScheduledWorkingDay = isWorkingDay(curInternship, date);
             boolean isApprovedExtraWork = exceptions != null && exceptions.existsByInternshipIdAndExceptionDateAndExceptionTypeAndStatus(
                     curInternship.getId(), date, AttendanceExceptionType.EXTRA_WORKDAY, AttendanceExceptionStatus.APPROVED);
 
             if (record.getAttendanceResult() == AttendanceResult.PENDING_MENTOR_REVIEW) {
-                pendingDates.add(date);
+                pendingCount++;
                 continue;
             }
             if (record.getAttendanceResult() != AttendanceResult.PRESENT && record.getAttendanceResult() != AttendanceResult.ABSENT) continue;
@@ -244,27 +252,38 @@ public class StudentAttendanceDirectoryService {
             if (record.getAttendanceResult() == AttendanceResult.PRESENT) {
                 // Valid finalized PRESENT record counts on scheduled working days or approved extra workdays
                 if (isScheduledWorkingDay || isApprovedExtraWork) {
-                    days.merge(date, AttendanceResult.PRESENT, (a, b) -> AttendanceResult.PRESENT);
+                    present++;
                     if (!isScheduledWorkingDay) {
                         extraWorkDatesWithPresent.add(date);
                     }
                 }
             } else if (record.getAttendanceResult() == AttendanceResult.ABSENT || record.isAutomaticAbsent()) {
-                // Absent is only counted on scheduled working days (never on scheduled days off)
-                if (isScheduledWorkingDay) {
-                    days.merge(date, AttendanceResult.ABSENT, (a, b) -> a == AttendanceResult.PRESENT || b == AttendanceResult.PRESENT
-                            ? AttendanceResult.PRESENT : AttendanceResult.ABSENT);
+                // Absent is counted on scheduled working days or approved extra workdays
+                if (isScheduledWorkingDay || isApprovedExtraWork) {
+                    absent++;
                 }
             }
         }
-        long pendingDays = pendingDates.size();
-        long present = days.values().stream().filter(r -> r == AttendanceResult.PRESENT).count();
-        long absent = days.values().stream().filter(r -> r == AttendanceResult.ABSENT).count();
+        long pendingDays = pendingCount;
         long total = present + absent;
         long totalExtraWorkingDays = Math.max(approvedExtraWorkingDays, (long) extraWorkDatesWithPresent.size());
         return new Totals(submittedDays, present, absent, leaveDays, 0, holidays, workingDays, pendingDays, total,
                 total == 0 ? null : BigDecimal.valueOf(present * 100).divide(BigDecimal.valueOf(total), 1, RoundingMode.HALF_UP),
                 approvedHolidayDays, totalExtraWorkingDays);
+    }
+
+    private boolean isTrackedWorkingPolicy(InternshipDetails internship, LocalDate date,
+            Map<Long, Boolean> hybridConfiguredByInternship) {
+        if (policies.resolve(internship, date).configurationReady()) {
+            return true;
+        }
+        if (internship.getInternshipMode() != InternshipMode.HYBRID) {
+            return false;
+        }
+        Long id = internship.getId();
+        boolean configured = id != null && hybridConfiguredByInternship.computeIfAbsent(id,
+                policies::hasConfiguredHybridSchedule);
+        return !configured;
     }
 
     private static boolean isWorkingDay(InternshipDetails internship, LocalDate date) {

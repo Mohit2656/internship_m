@@ -116,6 +116,8 @@ public class AttendanceRecord {
     public Instant getAutomaticAbsentAt() { return automaticAbsentAt; }
     public Instant getDeletedAt() { return deletedAt; }
     public boolean isDeleted() { return deletedAt != null; }
+    public Integer getActiveSlot() { return activeSlot; }
+    public void setActiveSlot(Integer activeSlot) { this.activeSlot = activeSlot; }
     public Long getMentorSeenBy() { return mentorSeenBy; }
     public Instant getMentorSeenAt() { return mentorSeenAt; }
     void acknowledge(Long mentorId, Instant seenAt) {
@@ -148,9 +150,15 @@ public class AttendanceRecord {
     }
     public static AttendanceRecord automaticAbsent(User student, InternshipDetails internship,
             LocalDate date, Instant processedAt) {
+        return automaticAbsent(student, internship, date, processedAt, 1);
+    }
+
+    public static AttendanceRecord automaticAbsent(User student, InternshipDetails internship,
+            LocalDate date, Instant processedAt, int slot) {
         AttendanceRecord record = new AttendanceRecord(student, internship, date, AttendanceResult.ABSENT,
                 VerificationStatus.UNVERIFIED, AttendanceSubmissionType.AUTO_ABSENT, processedAt);
         record.verificationBasis = AttendanceVerificationBasis.AUTOMATIC;
+        record.activeSlot = slot;
         return record;
     }
     public LivenessStatus getLivenessStatus() {
